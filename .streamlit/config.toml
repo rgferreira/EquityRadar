@@ -1,0 +1,12 @@
+[theme]
+base = "dark"
+baseFontSize = 14
+metricValueFontSize = "1.8rem"
+headingFontSizes = ["2.35rem", "1.85rem", "1.45rem", "1.2rem", "1rem", "0.9rem"]
+headingFontWeights = [750, 700, 675, 650, 625, 600]
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true

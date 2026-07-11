@@ -1,0 +1,7 @@
+streamlit==1.59.1
+pandas==2.2.3
+pyarrow==19.0.1
+yfinance
+plotly
+python-dotenv
+pytest

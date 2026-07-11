@@ -1,0 +1,70 @@
+# Personal Equity Radar
+
+A local Streamlit research dashboard for a personal stock watchlist. It provides market-data metrics, simple transparent scoring, and a structured investment journal. It is a decision-support tool only: it does not connect to brokers, place orders, or automate trading.
+
+Industry coverage self-configures in the background when a ticker is added: comparable companies are discovered, ranked and persisted; peer metrics refresh daily, membership monthly, and limited cohorts retry weekly.
+
+## Setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Optionally set `EQUITY_RADAR_DB_PATH` in `.env`; by default the SQLite database is created as `personal_equity_radar.db` in the project root.
+Set `FMP_API_KEY` in `.env` to enable Financial Modeling Prep as the primary fundamentals source. Credentials are never stored in source code. When the current FMP plan returns no usable company data, the provider-neutral chain falls back to Yahoo Finance and records the provider actually used.
+
+## Run
+
+```bash
+streamlit run app.py
+```
+
+Add tickers in **Dashboard**, value current holdings in **Portfolio**, then use **Company** to inspect one- or three-year charts and target-price upside/downside. Use **Journal** to record, filter, edit, delete, and export thesis entries.
+
+## Tests
+
+```bash
+pytest
+```
+
+## Scoring
+
+- Technical (0–100): price versus 50/100/200-day averages, positive 1/3/6/12-month returns, and proximity to the 52-week high.
+- Valuation (0–100): the average of available component scores for positive trailing/forward P/E, positive price-to-sales TTM, revenue growth, and EPS growth. Invalid or negative multiples are omitted; no usable inputs yields a neutral 50.
+- Risk (0–100): lower drawdown and lower annualized daily volatility produce a higher score.
+- Entry score: 50% technical, 30% valuation, 20% risk. It expresses potential entry/add attractiveness, not a trading instruction.
+- Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
+
+Price history remains provided by yfinance. Fundamentals use a provider-neutral interface with FMP first and a separate Yahoo Finance fallback adapter, and are cached in SQLite at most once per calendar day unless explicitly refreshed. Provider failures and missing fields are isolated per ticker and do not block prices.
+
+Entry scores can be calibrated by the Industry Feature after Company detail builds a daily research snapshot. The model combines business quality, direct-peer relative valuation, technical timing, non-duplicative risk resilience, and analyst sentiment. It displays the peer cohort, confidence, revisions, target dispersion inputs, provider, and freshness rather than presenting industry adjustment as an opaque score.
+
+## Product queue
+
+The ordered backlog for the next phase is maintained in [`docs/next-best-actions.md`](docs/next-best-actions.md).
+
+### Implemented: Portfolio page and valuation
+
+Portfolio is an independent page between Dashboard and Company. It records shares, values each position and the total using current yfinance prices, and charts the reconstructed one-year value of today's holdings.
+
+- A portfolio holding must also exist in the watchlist.
+- Adding a ticker from Portfolio automatically adds it to the watchlist.
+- Removing a ticker from the watchlist must preserve this relationship safely (the implementation should require the user to remove the portfolio holding first, or offer a clear combined removal action).
+
+### Implemented: Initial market-data refresh
+
+Force-refresh market data once when the Dashboard initially loads in a browser session.
+
+### Implemented: Dashboard ordering
+
+Switch the Dashboard between a selected-column sort and a persistent manual ticker order.
+
+### Implemented: FMP fundamentals and valuation
+
+- FMP adapter behind a replaceable provider interface.
+- Daily SQLite cache for trailing P/E, forward P/E when available or derivable, price-to-sales TTM, revenue growth, EPS growth, reporting date, provider, and fetch timestamp.
+- Transparent valuation scoring and Company-page input/component breakdown.
+- Safe partial-data and provider-error behavior; yfinance continues to provide market prices independently.
