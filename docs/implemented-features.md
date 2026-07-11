@@ -1,5 +1,14 @@
 # Implemented features
 
+## Market positioning MVP
+
+- Provider-neutral daily positioning snapshots persisted in SQLite with provider, reporting date, and fetched-at metadata.
+- Automatic stale-while-refresh loading on Company selection; provider errors preserve the last successful snapshot.
+- Yahoo short interest, three nearest option expiries, ownership, insider transactions, and 90-day analyst actions, plus FMP Basic float validation where available.
+- Transparent 0–100 Long positioning, Short pressure, Squeeze potential, and Confidence outputs with evidence and explicit options-data caveats.
+- Phase 3.2 integration: official FINRA history provides six-report trend context; reliability-gated modifiers are capped at ±5 Entry points and ±7 Exit-review points and are shown explicitly in Company and Dashboard.
+- Historical bootstrap completed for the current watchlist, with 129–205 official FINRA observations per ticker. Missing current evidence still produces a zero adjustment.
+
 ## Market data
 
 - yfinance supplies one year of daily prices and moving-average/return metrics.

@@ -8,7 +8,7 @@ import pandas as pd
 import yfinance as yf
 
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 8
-SUPPORTED_PERIODS = {"1y", "3y"}
+SUPPORTED_PERIODS = {"1y", "3y", "max"}
 _price_history_fetched_at: dict[tuple[str, str], str] = {}
 
 

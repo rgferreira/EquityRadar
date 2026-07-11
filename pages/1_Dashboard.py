@@ -7,7 +7,9 @@ from datetime import datetime
 
 from src.data.database import (
     get_cached_industry_research,
+    get_cached_positioning,
     get_portfolio_holdings,
+    get_positioning_history,
     get_watchlist,
     init_db,
 )
@@ -16,11 +18,13 @@ from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
+from src.data.positioning_refresh import positioning_refresh_status, schedule_positioning_refresh
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
 from src.scoring.valuation import calculate_valuation_score, explain_valuation_score
 from src.scoring.industry import industry_entry_score
+from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
 
@@ -56,7 +60,7 @@ def render_dashboard_table(frame: pd.DataFrame) -> None:
     """Render a dense, legible scan table with controlled typography and row height."""
     percentage_columns = {"1M %", "3M %", "6M %", "12M %", "Drawdown %"}
     price_columns = {"Price", "52W High", "52W Low", "50D MA", "100D MA", "200D MA"}
-    score_columns = {"Technical", "Valuation", "Risk", "Entry score", "Exit-review score", "Exit score"}
+    score_columns = {"Technical", "Valuation", "Risk", "Entry score", "Exit-review score", "Exit score", "Positioning entry adj", "Positioning exit adj", "Positioning reliability"}
 
     def display_value(column: str, value: object) -> str:
         if pd.isna(value):
@@ -156,6 +160,16 @@ if refresh or initial_refresh:
                 float(industry_breakdown["score"])
                 if industry_research else calculate_entry_score(technical, valuation, risk)
             )
+            positioning_modifier = positioning_score_adjustments(
+                get_cached_positioning(ticker), get_positioning_history(ticker), technical,
+            )
+            base_exit = calculate_exit_review_score(technical, risk)
+            calibrated_entry = apply_positioning_adjustment(
+                calibrated_entry, float(positioning_modifier["entry_adjustment"]),
+            )
+            calibrated_exit = apply_positioning_adjustment(
+                base_exit, float(positioning_modifier["exit_adjustment"]),
+            )
             rows.append({
                 "Ticker": ticker,
                 "Price": metrics["latest_price"],
@@ -173,10 +187,13 @@ if refresh or initial_refresh:
                 "Valuation": valuation,
                 "Risk": risk,
                 "Entry score": calibrated_entry,
+                "Positioning entry adj": positioning_modifier["entry_adjustment"],
                 "Entry signal": entry_label(calibrated_entry),
                 "Industry calibrated": "Yes" if industry_research else "Pending",
-                "Exit-review score": calculate_exit_review_score(technical, risk),
-                "Exit signal": exit_review_label(calculate_exit_review_score(technical, risk)),
+                "Exit-review score": calibrated_exit,
+                "Positioning exit adj": positioning_modifier["exit_adjustment"],
+                "Positioning reliability": positioning_modifier["reliability"],
+                "Exit signal": exit_review_label(calibrated_exit),
                 "Technical rationale": explain_technical_score(metrics),
                 "Risk rationale": explain_risk_score(metrics, history),
                 "Valuation rationale": explain_valuation_score(fundamentals),
@@ -199,6 +216,7 @@ if rows:
     portfolio_tickers = [str(item["ticker"]) for item in get_portfolio_holdings()]
     refresh_priority = [*portfolio_tickers, *(ticker for ticker in tickers if ticker not in portfolio_tickers)]
     schedule_industry_refresh(refresh_priority, max_new=2)
+    schedule_positioning_refresh(refresh_priority, max_new=2)
     for row in rows:
         research = get_cached_industry_research(str(row["Ticker"]))
         status = industry_refresh_status(str(row["Ticker"]))
@@ -209,8 +227,18 @@ if rows:
             calibrated = industry_entry_score(
                 float(row["Technical"]), min(100, float(row["Risk"]) + drawdown_penalty), research
             )
-            row["Entry score"] = float(calibrated["score"])
-            row["Entry signal"] = entry_label(float(calibrated["score"]))
+            modifier = positioning_score_adjustments(
+                get_cached_positioning(str(row["Ticker"])),
+                get_positioning_history(str(row["Ticker"])), float(row["Technical"]),
+            )
+            row["Positioning entry adj"] = modifier["entry_adjustment"]
+            row["Positioning exit adj"] = modifier["exit_adjustment"]
+            row["Positioning reliability"] = modifier["reliability"]
+            row["Entry score"] = apply_positioning_adjustment(float(calibrated["score"]), float(modifier["entry_adjustment"]))
+            base_exit = calculate_exit_review_score(float(row["Technical"]), float(row["Risk"]))
+            row["Exit-review score"] = apply_positioning_adjustment(base_exit, float(modifier["exit_adjustment"]))
+            row["Entry signal"] = entry_label(float(row["Entry score"]))
+            row["Exit signal"] = exit_review_label(float(row["Exit-review score"]))
             row["Industry rationale"] = "; ".join(
                 [*calibrated["quality_notes"], *calibrated["valuation_notes"], *calibrated["analyst_notes"]]
             )
@@ -274,6 +302,7 @@ if rows:
         optional_columns = [
             "1M %", "3M %", "6M %", "12M %", "Drawdown %",
             "Technical", "Valuation", "Risk",
+            "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
         ]
         selected_metrics = st.multiselect(
             "Additional table columns",
@@ -295,7 +324,9 @@ if rows:
     @st.fragment(run_every=5)
     def render_cohort_refresh_status() -> None:
         schedule_industry_refresh(refresh_priority, max_new=2)
+        schedule_positioning_refresh(refresh_priority, max_new=2)
         statuses = tuple((ticker, industry_refresh_status(ticker)) for ticker in tickers)
+        positioning_statuses = tuple((ticker, positioning_refresh_status(ticker)) for ticker in tickers)
         ready = sum(status in {"Ready", "Limited coverage", "Not applicable"} for _, status in statuses)
         updating = [ticker for ticker, status in statuses if status in {"Updating", "Discovering peers"}]
         st.caption(
@@ -303,8 +334,9 @@ if rows:
             + (f" · Updating {', '.join(updating)} automatically" if updating else "")
         )
         previous = st.session_state.get("cohort_status_signature")
-        st.session_state.cohort_status_signature = statuses
-        if previous is not None and previous != statuses:
+        signature = (statuses, positioning_statuses)
+        st.session_state.cohort_status_signature = signature
+        if previous is not None and previous != signature:
             st.rerun()
 
     render_cohort_refresh_status()
@@ -320,6 +352,11 @@ if rows:
             st.write(f"**Risk ({row['Risk']}/100):** {row['Risk rationale']}")
             st.write(f"**Valuation ({row['Valuation']}/100):** {row['Valuation rationale']}")
             st.write(f"**Industry Feature:** {row['Industry rationale']}")
+            st.write(
+                f"**Market positioning:** Entry {float(row['Positioning entry adj']):+.1f}; "
+                f"Exit {float(row['Positioning exit adj']):+.1f}; "
+                f"reliability {float(row['Positioning reliability']):.0f}/100."
+            )
 if errors:
     st.error("Some data could not be fetched:")
     for error in errors:

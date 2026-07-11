@@ -59,6 +59,22 @@ def init_db(db_path: str | Path | None = None) -> None:
                 provider_name TEXT NOT NULL,
                 fetched_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS positioning_cache (
+                ticker TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                provider_name TEXT NOT NULL,
+                reporting_date TEXT,
+                fetched_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS positioning_history (
+                ticker TEXT NOT NULL,
+                snapshot_date TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                provider_name TEXT NOT NULL,
+                reporting_date TEXT,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (ticker, snapshot_date)
+            );
             CREATE TABLE IF NOT EXISTS portfolio_lots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticker TEXT NOT NULL,
@@ -585,6 +601,88 @@ def get_cached_industry_research(
     payload["provider_name"] = row["provider_name"]
     payload["fetched_at"] = row["fetched_at"]
     return payload
+
+
+def save_positioning_snapshot(
+    ticker: str, payload: Mapping[str, object], provider_name: str,
+    reporting_date: str | None, fetched_at: str, db_path: str | Path | None = None,
+) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO positioning_cache
+                (ticker, payload_json, provider_name, reporting_date, fetched_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET payload_json=excluded.payload_json,
+                provider_name=excluded.provider_name, reporting_date=excluded.reporting_date,
+                fetched_at=excluded.fetched_at
+            """,
+            (ticker.strip().upper(), json.dumps(payload), provider_name, reporting_date, fetched_at),
+        )
+        connection.execute(
+            """
+            INSERT INTO positioning_history
+                (ticker, snapshot_date, payload_json, provider_name, reporting_date, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker, snapshot_date) DO UPDATE SET payload_json=excluded.payload_json,
+                provider_name=excluded.provider_name, reporting_date=excluded.reporting_date,
+                fetched_at=excluded.fetched_at
+            """,
+            (ticker.strip().upper(), fetched_at[:10], json.dumps(payload), provider_name, reporting_date, fetched_at),
+        )
+
+
+def get_cached_positioning(
+    ticker: str, db_path: str | Path | None = None,
+) -> dict[str, object] | None:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            "SELECT payload_json, provider_name, reporting_date, fetched_at FROM positioning_cache WHERE ticker = ?",
+            (ticker.strip().upper(),),
+        ).fetchone()
+    if not row:
+        return None
+    payload = json.loads(row["payload_json"])
+    payload.update({
+        "provider_name": row["provider_name"], "reporting_date": row["reporting_date"],
+        "fetched_at": row["fetched_at"],
+    })
+    return payload
+
+
+def get_positioning_history(ticker: str, db_path: str | Path | None = None) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM positioning_history WHERE ticker = ? ORDER BY snapshot_date",
+            (ticker.strip().upper(),),
+        ).fetchall()
+    return [{**json.loads(row["payload_json"]), **{
+        "snapshot_date": row["snapshot_date"], "provider_name": row["provider_name"],
+        "reporting_date": row["reporting_date"], "fetched_at": row["fetched_at"],
+    }} for row in rows]
+
+
+def save_positioning_history_snapshot(
+    ticker: str, snapshot_date: str, payload: Mapping[str, object], provider_name: str,
+    reporting_date: str | None, fetched_at: str, db_path: str | Path | None = None,
+) -> None:
+    """Persist historical evidence without replacing the current positioning cache."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO positioning_history
+                (ticker, snapshot_date, payload_json, provider_name, reporting_date, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker, snapshot_date) DO UPDATE SET payload_json=excluded.payload_json,
+                provider_name=excluded.provider_name, reporting_date=excluded.reporting_date,
+                fetched_at=excluded.fetched_at
+            """,
+            (ticker.strip().upper(), snapshot_date, json.dumps(payload), provider_name, reporting_date, fetched_at),
+        )
 
 
 def add_journal_entry(entry: Mapping[str, object], db_path: str | Path | None = None) -> None:

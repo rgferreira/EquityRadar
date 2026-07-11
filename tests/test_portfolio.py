@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src.portfolio import (
-    calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
+    calculate_flow_adjusted_benchmark, calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
     calculate_time_weighted_return, enrich_holdings, normalize_performance,
     calculate_rebalance,
 )
@@ -74,9 +74,36 @@ def test_portfolio_history_applies_fx_conversion():
     assert result.tolist() == pytest.approx([24.0, 28.8])
 
 
+def test_portfolio_history_respects_each_lot_purchase_date_and_cash():
+    dates = pd.date_range("2026-01-01", periods=4)
+    result = calculate_portfolio_history(
+        [{"ticker": "AAA", "shares": 3}],
+        {"AAA": pd.DataFrame({"Close": [10.0, 11.0, 12.0, 13.0]}, index=dates)},
+        lots=[
+            {"ticker": "AAA", "shares": 1, "purchase_date": "2026-01-02"},
+            {"ticker": "AAA", "shares": 2, "purchase_date": "2026-01-04"},
+        ],
+        cash_transactions=[
+            {"transaction_date": "2026-01-03", "amount": 5, "currency": "USD"},
+        ],
+    )
+    assert result.index.tolist() == dates[1:].tolist()
+    assert result.tolist() == [11.0, 17.0, 44.0]
+
+
 def test_normalize_performance_rebases_to_100():
     result = normalize_performance(pd.Series([50.0, 55.0, 45.0]))
     assert result.tolist() == pytest.approx([100.0, 110.0, 90.0])
+
+
+def test_benchmark_receives_same_proportional_jump_as_portfolio_inflow():
+    dates = pd.date_range("2026-01-01", periods=3)
+    result = calculate_flow_adjusted_benchmark(
+        pd.Series([100.0, 110.0, 120.0], index=dates),
+        pd.Series([1000.0, 1200.0, 2200.0], index=dates),
+        pd.Series([1000.0, 1000.0], index=[dates[0], dates[2]]),
+    )
+    assert result.tolist() == pytest.approx([100.0, 110.0, 220.0])
 
 
 def test_return_risk_metrics_include_return_drawdown_and_volatility():

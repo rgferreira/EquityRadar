@@ -3,17 +3,19 @@
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.data.database import get_cached_industry_research, get_journal_entries, get_watchlist, init_db
+from src.data.database import get_cached_industry_research, get_cached_positioning, get_journal_entries, get_positioning_history, get_watchlist, init_db
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
+from src.data.positioning_refresh import positioning_refresh_status, schedule_positioning_refresh
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.decision import calculate_exit_review_score, entry_label, exit_review_label
 from src.scoring.valuation import calculate_valuation_score, explain_valuation_score, valuation_score_breakdown
 from src.scoring.industry import industry_entry_score
+from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, style_figure
 
@@ -43,6 +45,7 @@ with history_col:
 history_period = "1y" if history_label == "1 year" else "3y"
 
 schedule_industry_refresh([ticker], max_new=1)
+schedule_positioning_refresh([ticker], max_new=1)
 
 @st.fragment(run_every=4)
 def render_selected_company_refresh_status() -> None:
@@ -64,6 +67,24 @@ def render_selected_company_refresh_status() -> None:
 
 render_selected_company_refresh_status()
 
+@st.fragment(run_every=4)
+def render_positioning_refresh_status() -> None:
+    schedule_positioning_refresh([ticker], max_new=1)
+    status = positioning_refresh_status(ticker)
+    if status == "Updating":
+        st.caption("Market positioning is updating automatically in the background…")
+    elif status == "Stale":
+        st.caption("Showing the previous positioning snapshot while today’s update runs.")
+    elif status == "Provider unavailable":
+        st.caption("Positioning provider unavailable; the last successful snapshot is preserved.")
+    key = f"company_positioning_status_{ticker}"
+    previous = st.session_state.get(key)
+    st.session_state[key] = status
+    if previous is not None and previous != status:
+        st.rerun()
+
+render_positioning_refresh_status()
+
 try:
     with st.spinner(f"Loading {ticker} market data…"):
         history = fetch_price_history(ticker, period=history_period)
@@ -81,6 +102,10 @@ try:
     risk_details = risk_score_details(metrics, metric_history)
     industry_risk = min(100, risk + int(risk_details["drawdown_penalty"] or 0))
     industry_research = get_cached_industry_research(ticker)
+    positioning = get_cached_positioning(ticker)
+    positioning_breakdown = positioning_scores(positioning)
+    positioning_history = get_positioning_history(ticker)
+    positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
 
     figure = go.Figure()
@@ -99,8 +124,10 @@ try:
     style_figure(figure, height=470)
     st.plotly_chart(figure, width="stretch")
 
-    entry_score = float(industry_breakdown["score"])
-    exit_score = calculate_exit_review_score(technical, risk)
+    base_entry_score = float(industry_breakdown["score"])
+    base_exit_score = calculate_exit_review_score(technical, risk)
+    entry_score = apply_positioning_adjustment(base_entry_score, float(positioning_modifier["entry_adjustment"]))
+    exit_score = apply_positioning_adjustment(base_exit_score, float(positioning_modifier["exit_adjustment"]))
     entry_color = "#38d996" if entry_score >= 60 else "#f0ad4e" if entry_score >= 40 else "#ff6375"
     entry_figure = go.Figure(go.Indicator(
         mode="number",
@@ -126,7 +153,7 @@ try:
         "<b>Technical timing · 20%</b><br>" + f"{float(industry_breakdown['technical_timing']):.1f}/100",
         "<b>Risk resilience · 15%</b><br>" + f"{float(industry_breakdown['risk_resilience']):.1f}/100",
         "<b>Analyst sentiment · 10%</b><br>" + f"{float(industry_breakdown['analyst_sentiment']):.1f}/100",
-        "",
+        "<b>Positioning modifier · capped ±5</b><br>" + f"{float(positioning_modifier['entry_adjustment']):+.1f} points",
     ]
     component_figure = go.Figure(go.Table(
         columnwidth=[1, 1],
@@ -150,17 +177,20 @@ try:
     exit_column, exit_context = st.columns([1, 2], vertical_alignment="center")
     exit_column.metric("Exit-review score", f"{exit_score:.1f}/100")
     exit_column.caption(exit_review_label(exit_score))
-    exit_context.caption("Uses technical deterioration and the legacy market-risk score. It is not an input to the entry score.")
+    exit_context.caption(
+        f"Base {base_exit_score:.1f} · positioning {float(positioning_modifier['exit_adjustment']):+.1f}. "
+        "This remains separate from the entry score."
+    )
 
     with st.expander("How these scores were calculated"):
-        st.write("**Entry score:** 25% business quality + 30% peer-relative valuation + 20% technical timing + 15% risk resilience + 10% analyst sentiment.")
+        st.write(f"**Entry score:** base {base_entry_score:.1f} from 25% business quality + 30% peer-relative valuation + 20% technical timing + 15% risk resilience + 10% analyst sentiment; positioning adjustment {float(positioning_modifier['entry_adjustment']):+.1f}.")
         st.write(f"**Technical timing ({technical}/100):** {explain_technical_score(metrics)}")
         st.write(f"**Legacy absolute valuation ({valuation}/100, shown in Fundamentals):** {explain_valuation_score(fundamentals)}")
         st.write(f"**Legacy market risk ({risk}/100, used by Exit Review):** {explain_risk_score(metrics, metric_history)}")
-        st.write("**Exit-review score:** a separate technical/risk deterioration signal, not an entry-score component or execution instruction.")
+        st.write(f"**Exit-review score:** base technical/risk deterioration {base_exit_score:.1f}; positioning adjustment {float(positioning_modifier['exit_adjustment']):+.1f}. It is not an execution instruction.")
 
-    fundamentals_tab, industry_tab, metrics_tab, journal_tab = st.tabs([
-        "Fundamentals & valuation", "Industry & analysts", "Market metrics", "Journal context"
+    fundamentals_tab, industry_tab, positioning_tab, metrics_tab, journal_tab = st.tabs([
+        "Fundamentals & valuation", "Industry & analysts", "Market positioning", "Market metrics", "Journal context"
     ])
     with fundamentals_tab:
         st.subheader("Fundamentals and valuation")
@@ -248,6 +278,47 @@ try:
                         st.write(f"- {note}")
         else:
             st.warning("Industry and analyst research is currently unavailable; the feature remains neutral.")
+
+    with positioning_tab:
+        st.subheader("Market positioning")
+        st.caption("Factored into decisions through small, reliability-gated modifiers")
+        if positioning:
+            score_columns = st.columns(4)
+            score_columns[0].metric("Long positioning", f"{positioning_breakdown['long_positioning']:.1f}/100")
+            score_columns[1].metric("Short pressure", f"{positioning_breakdown['short_pressure']:.1f}/100")
+            score_columns[2].metric("Squeeze potential", f"{positioning_breakdown['squeeze_potential']:.1f}/100")
+            score_columns[3].metric("Confidence", f"{positioning_breakdown['confidence']:.0f}/100")
+            st.info(f"Decision implication: {positioning_breakdown['decision_implication']}")
+            modifier_columns = st.columns(3)
+            modifier_columns[0].metric("Entry adjustment", f"{float(positioning_modifier['entry_adjustment']):+.1f}")
+            modifier_columns[1].metric("Exit adjustment", f"{float(positioning_modifier['exit_adjustment']):+.1f}")
+            modifier_columns[2].metric("Modifier reliability", f"{float(positioning_modifier['reliability']):.0f}/100")
+            st.caption(
+                f"Provider: {positioning.get('provider_name')} · Short-interest report: "
+                f"{positioning.get('reporting_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')}"
+            )
+            short, options = positioning.get("short", {}), positioning.get("options", {})
+            ownership = positioning.get("ownership", {})
+            rows = [
+                {"Signal": "Short float", "Value": "—" if short.get("short_percent_float") is None else f"{float(short['short_percent_float']):.2%}"},
+                {"Signal": "Short-interest change", "Value": "—" if short.get("short_change_pct") is None else f"{float(short['short_change_pct']):+.2f}%"},
+                {"Signal": "Days to cover", "Value": "—" if short.get("days_to_cover") is None else f"{float(short['days_to_cover']):.2f}"},
+                {"Signal": "Put/call volume", "Value": "—" if options.get("put_call_volume_ratio") is None else f"{float(options['put_call_volume_ratio']):.2f}"},
+                {"Signal": "Put/call open interest", "Value": "—" if options.get("put_call_oi_ratio") is None else f"{float(options['put_call_oi_ratio']):.2f}"},
+                {"Signal": "Median contract IV", "Value": "—" if options.get("median_contract_iv") is None else f"{float(options['median_contract_iv']):.2%}"},
+                {"Signal": "Institutional ownership", "Value": "—" if ownership.get("institutional_percent") is None else f"{float(ownership['institutional_percent']):.2%}"},
+                {"Signal": "FMP float validation", "Value": "—" if ownership.get("public_float_shares_fmp") is None else f"{float(ownership['public_float_shares_fmp']):,.0f} shares"},
+            ]
+            st.dataframe(rows, hide_index=True, width="stretch")
+            with st.expander("Positioning evidence and interpretation"):
+                for note in positioning_breakdown["notes"]:
+                    st.write(f"- {note}")
+                st.markdown("**Historical calibration**")
+                for note in positioning_modifier["notes"]:
+                    st.write(f"- {note}")
+                st.info("Options may be bought, written, or used as hedges. Short-sale volume is not used as a substitute for open short interest.")
+        else:
+            st.info("Positioning coverage is being assembled automatically. Price and company research remain available.")
 
     with metrics_tab:
         st.subheader("Calculated metrics")

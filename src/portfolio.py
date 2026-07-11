@@ -12,6 +12,39 @@ def normalize_performance(series: pd.Series, base: float = 100.0) -> pd.Series:
     return (clean / float(clean.iloc[0]) * base).rename(series.name)
 
 
+def calculate_flow_adjusted_benchmark(
+    benchmark_prices: pd.Series, portfolio_values: pd.Series, external_flows: pd.Series,
+    base: float = 100.0,
+) -> pd.Series:
+    """Apply portfolio inflow/outflow jumps to a benchmark price-return curve.
+
+    A flow on a non-trading day is applied on the next shared trading date. The
+    initial funding establishes the base and therefore does not create a jump.
+    """
+    aligned = pd.concat(
+        [benchmark_prices.rename("benchmark"), portfolio_values.rename("portfolio")],
+        axis=1, join="inner",
+    ).dropna().sort_index()
+    if aligned.empty:
+        return pd.Series(dtype=float, name="Flow-adjusted benchmark")
+    flows = pd.Series(0.0, index=aligned.index)
+    normalized_dates = pd.DatetimeIndex(aligned.index).tz_localize(None).normalize()
+    for flow_date, amount in external_flows.groupby(level=0).sum().items():
+        eligible = normalized_dates >= pd.Timestamp(flow_date).tz_localize(None).normalize()
+        if eligible.any():
+            flows.iloc[int(eligible.argmax())] += float(amount)
+    result = pd.Series(index=aligned.index, dtype=float, name="Flow-adjusted benchmark")
+    result.iloc[0] = base
+    for position in range(1, len(aligned)):
+        market_growth = float(aligned["benchmark"].iloc[position]) / float(aligned["benchmark"].iloc[position - 1])
+        flow = float(flows.iloc[position])
+        after_flow = float(aligned["portfolio"].iloc[position])
+        before_flow = after_flow - flow
+        flow_factor = after_flow / before_flow if flow and before_flow > 0 else 1.0
+        result.iloc[position] = float(result.iloc[position - 1]) * market_growth * flow_factor
+    return result
+
+
 def calculate_return_risk_metrics(series: pd.Series, risk_free_rate: float = 0.0) -> dict[str, float | None]:
     clean = series.dropna()
     returns = clean.pct_change().dropna()
@@ -95,10 +128,20 @@ def calculate_portfolio_history(
     currencies: Mapping[str, str] | None = None,
     fx_rates: Mapping[str, float | None] | None = None,
     base_currency: str = "USD",
+    lots: list[Mapping[str, object]] | None = None,
+    cash_transactions: list[Mapping[str, object]] | None = None,
 ) -> pd.Series:
-    """Value current shares across historical adjusted closes on common dates."""
+    """Value open lots only from their purchase dates across historical closes.
+
+    Legacy holdings without dated lots retain the old current-shares reconstruction,
+    because their true ownership start cannot be inferred safely.
+    """
     components: list[pd.Series] = []
     currencies, fx_rates = currencies or {}, fx_rates or {}
+    dated_lots: dict[str, list[Mapping[str, object]]] = {}
+    for lot in lots or []:
+        if lot.get("purchase_date"):
+            dated_lots.setdefault(str(lot["ticker"]), []).append(lot)
     for holding in holdings:
         ticker = str(holding["ticker"])
         history = histories.get(ticker)
@@ -108,11 +151,31 @@ def calculate_portfolio_history(
         rate = 1.0 if currency == base_currency else fx_rates.get(currency)
         if rate is None:
             continue
-        components.append(history["Close"].dropna().rename(ticker) * float(holding["shares"]) * rate)
+        close = history["Close"].dropna().sort_index()
+        position_lots = dated_lots.get(ticker, [])
+        if position_lots:
+            shares_by_day = pd.Series(0.0, index=close.index)
+            normalized_index = pd.DatetimeIndex(close.index).tz_localize(None).normalize()
+            for lot in position_lots:
+                bought = pd.Timestamp(str(lot["purchase_date"])).normalize()
+                shares_by_day.loc[normalized_index >= bought] += float(lot["shares"])
+            components.append((close * shares_by_day * rate).rename(ticker))
+        else:
+            components.append(close.rename(ticker) * float(holding["shares"]) * rate)
     if not components:
         return pd.Series(dtype=float, name="Portfolio value")
-    frame = pd.concat(components, axis=1).sort_index().ffill().dropna(how="all")
-    return frame.sum(axis=1, min_count=1).rename("Portfolio value")
+    frame = pd.concat(components, axis=1).sort_index().ffill().fillna(0.0)
+    result = frame.sum(axis=1)
+    for transaction in cash_transactions or []:
+        currency = str(transaction.get("currency") or base_currency)
+        rate = 1.0 if currency == base_currency else fx_rates.get(currency)
+        if rate is None:
+            continue
+        transaction_date = pd.Timestamp(str(transaction["transaction_date"])).normalize()
+        normalized_index = pd.DatetimeIndex(result.index).tz_localize(None).normalize()
+        result.loc[normalized_index >= transaction_date] += float(transaction["amount"]) * rate
+    result = result.rename("Portfolio value")
+    return result[result > 0]
 
 
 def enrich_holdings(

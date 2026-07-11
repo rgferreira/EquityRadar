@@ -30,3 +30,19 @@ This ordered development-phase backlog is now complete and retained as an implem
 ## UI — Phase 3
 
 Redesign Dashboard, Portfolio, and Company without changing their page identities or underlying behavior. Introduce a cohesive premium visual system, clearer information hierarchy, compact executive summaries, consistent chart styling, and progressive disclosure for detailed research data.
+
+## Market factoring-in — Phase 3.2 (implemented)
+
+Use accumulated positioning history to add a small, capped, transparent adjustment to Entry and Exit-review scores. Official FINRA backfill supplied the short-interest history needed to implement the first calibrated version without waiting for new short reports.
+
+Readiness gate:
+
+- Add a bounded daily cohort collector so every watchlist equity accumulates snapshots without requiring manual Company-page visits.
+- At least 30 valid daily positioning snapshots for most watchlist equities, with 60 preferred for calibration.
+- At least two distinct short-interest reporting dates per ticker so a repeated provider value is not mistaken for a daily observation.
+- Sufficient option-chain continuity to calculate changes rather than only absolute put/call readings.
+- Separate data-coverage confidence from directional-signal reliability.
+- Measure overlap with technical, analyst, and risk inputs before selecting weights.
+- Backtest a capped initial adjustment (proposed maximum: ±5 Entry points and ±7 Exit-review points) and display the exact contribution.
+
+The initial gate is met for short-interest history. Options history continues accumulating and affects confidence through current coverage; future calibration can add options-change signals once sufficient dated chains exist. Phase 4 remains on hold.

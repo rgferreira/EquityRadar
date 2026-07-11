@@ -14,7 +14,6 @@ from src.data.database import (
     get_portfolio_holdings,
     get_portfolio_lots,
     get_portfolio_sales,
-    get_portfolio_snapshots,
     get_portfolio_targets,
     get_cash_transactions,
     get_watchlist,
@@ -28,13 +27,13 @@ from src.data.market_data import (
     clear_market_data_cache, fetch_asset_profile, fetch_fx_rate, fetch_price_history, fetch_quote_currency,
 )
 from src.portfolio import (
-    calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
-    calculate_rebalance, calculate_time_weighted_return, enrich_holdings, normalize_performance,
+    calculate_flow_adjusted_benchmark, calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
+    calculate_rebalance, enrich_holdings, normalize_performance,
 )
 from src.import_export import CSV_TEMPLATE, import_transactions_csv
 from src.downloads import download_link
 from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
-from src.ui import inject_app_styles, page_header, style_figure
+from src.ui import inject_app_styles, page_header
 
 st.set_page_config(page_title="Portfolio | Personal Equity Radar", page_icon="💼", layout="wide")
 init_db()
@@ -143,7 +142,7 @@ with st.spinner("Valuing portfolio…"):
     for holding in holdings:
         ticker = str(holding["ticker"])
         try:
-            histories[ticker] = fetch_price_history(ticker, period="1y")
+            histories[ticker] = fetch_price_history(ticker, period="max")
         except Exception as exc:
             errors.append(f"{ticker}: {exc}")
 
@@ -208,34 +207,6 @@ summary_columns[2].metric("Priced positions", f"{len(known_values)}/{len(holding
 summary_columns[3].metric("Known unrealized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_unrealized):,.2f}" if known_unrealized else "—")
 summary_columns[4].metric("Known realized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_realized):,.2f}" if known_realized else "—")
 summary_columns[5].metric("Cash balance", f"{PORTFOLIO_BASE_CURRENCY} {cash_balance_base:,.2f}")
-
-snapshots = get_portfolio_snapshots()
-if snapshots:
-    st.subheader("Recorded portfolio value")
-    st.caption("One end-of-day record per calendar date; today's value updates whenever Portfolio is loaded.")
-    snapshot_frame = pd.DataFrame(snapshots)
-    snapshot_frame["snapshot_date"] = pd.to_datetime(snapshot_frame["snapshot_date"])
-    snapshot_figure = go.Figure()
-    snapshot_figure.add_scatter(
-        x=snapshot_frame["snapshot_date"], y=snapshot_frame["total_value"],
-        name="Recorded value", mode="lines+markers",
-    )
-    snapshot_figure.update_layout(yaxis_title=f"Value ({PORTFOLIO_BASE_CURRENCY})", xaxis_title=None)
-    style_figure(snapshot_figure, height=350)
-    st.plotly_chart(snapshot_figure, width="stretch")
-    external_flow_types = {"deposit", "withdrawal", "adjustment"}
-    flow_rows = []
-    for item in cash_transactions:
-        if item["transaction_type"] not in external_flow_types:
-            continue
-        rate = 1.0 if item["currency"] == PORTFOLIO_BASE_CURRENCY else fx_rates.get(str(item["currency"]))
-        if rate is not None:
-            flow_rows.append((pd.Timestamp(item["transaction_date"]), float(item["amount"]) * rate))
-    flows = pd.Series(dtype=float)
-    if flow_rows:
-        flows = pd.DataFrame(flow_rows, columns=["date", "amount"]).groupby("date")["amount"].sum()
-    twr = calculate_time_weighted_return(snapshot_frame.set_index("snapshot_date")["total_value"], flows)
-    st.metric("Recorded time-weighted return", "—" if twr is None else f"{twr:.2f}%")
 
 st.dataframe(
     holdings_frame,
@@ -380,13 +351,13 @@ if cash_transactions:
         st.rerun()
 
 portfolio_history = calculate_portfolio_history(
-    holdings, histories, currencies, fx_rates, PORTFOLIO_BASE_CURRENCY
+    holdings, histories, currencies, fx_rates, PORTFOLIO_BASE_CURRENCY, lots, cash_transactions
 )
 if not portfolio_history.empty:
-    st.subheader("Historical value of current holdings")
+    st.subheader("Portfolio value over time")
     st.caption(
-        "Reconstructed using today's share counts across historical prices. Because purchase dates are not yet stored, "
-        "this is not the portfolio's actual historical value or performance."
+        "Each purchase lot enters the portfolio on its recorded purchase date. Values use historical closing prices; "
+        "legacy lots with no date are necessarily treated as held throughout the available history."
     )
     figure = go.Figure()
     figure.add_scatter(x=portfolio_history.index, y=portfolio_history, name="Portfolio value", fill="tozeroy")
@@ -394,10 +365,10 @@ if not portfolio_history.empty:
     st.plotly_chart(figure, width="stretch")
 
     st.subheader("Return and risk analytics")
-    st.caption("Metrics below use the reconstructed current-holdings series, not transaction-accurate TWR.")
+    st.caption("Metrics use the same lot- and purchase-date-aware value series shown above.")
     analytics = calculate_return_risk_metrics(portfolio_history)
     analytics_columns = st.columns(4)
-    analytics_columns[0].metric("Reconstructed return", "—" if analytics["total_return_pct"] is None else f"{analytics['total_return_pct']:.2f}%")
+    analytics_columns[0].metric("Value change", "—" if analytics["total_return_pct"] is None else f"{analytics['total_return_pct']:.2f}%")
     analytics_columns[1].metric("Annualized volatility", "—" if analytics["annualized_volatility_pct"] is None else f"{analytics['annualized_volatility_pct']:.2f}%")
     analytics_columns[2].metric("Maximum drawdown", "—" if analytics["max_drawdown_pct"] is None else f"{analytics['max_drawdown_pct']:.2f}%")
     analytics_columns[3].metric("Sharpe (0% risk-free)", "—" if analytics["sharpe"] is None else f"{analytics['sharpe']:.2f}")
@@ -416,17 +387,38 @@ if not portfolio_history.empty:
     benchmark_label = st.selectbox("Benchmark", list(benchmark_options))
     benchmark_ticker = benchmark_options[benchmark_label]
     try:
-        benchmark_history = fetch_price_history(benchmark_ticker, period="1y")
-        aligned = pd.concat(
-            [normalize_performance(portfolio_history), normalize_performance(benchmark_history["Close"])],
-            axis=1, join="inner",
-        ).dropna()
+        benchmark_history = fetch_price_history(benchmark_ticker, period="max")
+        flow_rows = []
+        for lot in lots:
+            if lot.get("purchase_date") and lot.get("price_per_share") is not None:
+                currency = currencies.get(str(lot["ticker"]), PORTFOLIO_BASE_CURRENCY)
+                rate = 1.0 if currency == PORTFOLIO_BASE_CURRENCY else fx_rates.get(currency)
+                if rate is not None:
+                    amount = (float(lot["shares"]) * float(lot["price_per_share"]) + float(lot.get("fees", 0) or 0)) * rate
+                    flow_rows.append((pd.Timestamp(str(lot["purchase_date"])), amount))
+        for item in cash_transactions:
+            if item["transaction_type"] not in {"deposit", "withdrawal", "adjustment"}:
+                continue
+            rate = 1.0 if item["currency"] == PORTFOLIO_BASE_CURRENCY else fx_rates.get(str(item["currency"]))
+            if rate is not None:
+                flow_rows.append((pd.Timestamp(str(item["transaction_date"])), float(item["amount"]) * rate))
+        external_flows = (
+            pd.DataFrame(flow_rows, columns=["date", "amount"]).groupby("date")["amount"].sum()
+            if flow_rows else pd.Series(dtype=float)
+        )
+        adjusted_benchmark = calculate_flow_adjusted_benchmark(
+            benchmark_history["Close"], portfolio_history, external_flows,
+        )
+        aligned = pd.concat([
+            normalize_performance(portfolio_history), adjusted_benchmark,
+        ], axis=1, join="inner").dropna()
         aligned.columns = ["Portfolio", benchmark_label]
         comparison = go.Figure()
         comparison.add_scatter(x=aligned.index, y=aligned["Portfolio"], name="Portfolio")
         comparison.add_scatter(x=aligned.index, y=aligned[benchmark_label], name=benchmark_label)
         comparison.update_layout(height=380, yaxis_title="Growth of 100", xaxis_title=None)
         st.plotly_chart(comparison, width="stretch")
+        st.caption("Both curves receive the same proportional jump when new capital enters the portfolio.")
     except Exception as exc:
         st.warning(f"Benchmark unavailable: {exc}")
 

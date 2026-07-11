@@ -4,6 +4,8 @@ A local Streamlit research dashboard for a personal stock watchlist. It provides
 
 Industry coverage self-configures in the background when a ticker is added: comparable companies are discovered, ranked and persisted; peer metrics refresh daily, membership monthly, and limited cohorts retry weekly.
 
+Company detail also includes market positioning: short interest, near-term option-chain balance, ownership, insider activity and analyst actions become transparent Long positioning, Short pressure, Squeeze potential and Confidence scores. Official FINRA history gates small, visible modifiers capped at ±5 Entry points and ±7 Exit-review points.
+
 ## Setup
 
 ```bash
