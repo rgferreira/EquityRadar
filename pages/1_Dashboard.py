@@ -10,6 +10,7 @@ from src.data.database import (
     get_cached_positioning,
     save_dashboard_order,
     get_portfolio_holdings,
+    get_portfolio_targets,
     get_positioning_history,
     get_backtest_runs,
     get_active_backtest,
@@ -29,6 +30,7 @@ from src.scoring.decision import calculate_entry_score, calculate_exit_review_sc
 from src.scoring.valuation import calculate_valuation_score, explain_valuation_score
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
+from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
 from src.backtesting import learned_score_adjustments, lesson_summary
@@ -64,7 +66,7 @@ def move_manual_ticker(offset: int) -> None:
         st.session_state.dashboard_manual_order = order
 
 
-def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str]) -> int | None:
+def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str], key_suffix: str = "all") -> int | None:
     """Render a compact table and return a selected row for same-tab drill-down."""
     longest_diagnostic = max((len(str(value)) for value in frame["Diagnostic"]), default=14)
     diagnostic_width = int(min(205, max(135, longest_diagnostic * 6.2)))
@@ -90,7 +92,7 @@ def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str]) -> int 
     generation = int(st.session_state.get("decision_table_generation", 0))
     event = st.dataframe(
         styled, hide_index=True, width="stretch", height=36 + 35 * len(frame), column_config=config,
-        on_select="rerun", selection_mode="single-row", key=f"decision_table_{generation}",
+        on_select="rerun", selection_mode="single-row", key=f"decision_table_{key_suffix}_{generation}",
     )
     selected_rows = event.selection.rows if hasattr(event, "selection") else []
     return int(selected_rows[0]) if selected_rows else None
@@ -350,7 +352,8 @@ if historical_mode:
 rows = st.session_state.get("dashboard_rows", [])
 errors = st.session_state.get("dashboard_errors", [])
 if rows:
-    portfolio_tickers = [str(item["ticker"]) for item in get_portfolio_holdings()]
+    portfolio_holdings = get_portfolio_holdings()
+    portfolio_tickers = [str(item["ticker"]) for item in portfolio_holdings]
     refresh_priority = [*portfolio_tickers, *(ticker for ticker in tickers if ticker not in portfolio_tickers)]
     if not historical_mode:
         schedule_industry_refresh(refresh_priority, max_new=2)
@@ -389,6 +392,38 @@ if rows:
                 [*calibrated["quality_notes"], *calibrated["valuation_notes"], *calibrated["analyst_notes"]]
             )
     frame = pd.DataFrame(rows)
+    if not historical_mode:
+        shares_map = {str(item["ticker"]): float(item["shares"]) for item in portfolio_holdings}
+        target_map = {str(item["ticker"]): float(item["target_weight_pct"]) for item in get_portfolio_targets()}
+        position_values = {
+            str(row["Ticker"]): shares_map[str(row["Ticker"])] * float(row["Price"])
+            for row in rows if str(row["Ticker"]) in shares_map and row.get("Price") is not None
+        }
+        total_position_value = sum(position_values.values())
+        for row in rows:
+            symbol = str(row["Ticker"])
+            row["Company diagnostic"] = row["Diagnostic"]
+            if symbol in shares_map:
+                weight = position_values.get(symbol, 0.0) / total_position_value * 100 if total_position_value else 0.0
+                action = position_action(
+                    float(row["Entry score"]), float(row["Exit-review score"]), weight, target_map.get(symbol),
+                )
+                row["Ownership"] = "Owned"
+                row["Position action"] = action["action"]
+                row["Add score"] = action["add_score"]
+                row["Trim score"] = action["trim_score"]
+                row["Position rationale"] = "; ".join(action["notes"])
+                row["Diagnostic"] = f"Position · {action['action']}"
+            else:
+                row["Ownership"] = "Watchlist"
+                row["Position action"] = "—"
+                row["Add score"] = None
+                row["Trim score"] = None
+                row["Position rationale"] = "Not owned; interpreted as a possible new position."
+                row["Diagnostic"] = initiation_diagnostic(
+                    float(row["Entry score"]), str(row["Entry signal"]), str(row["Exit signal"]),
+                )
+        frame = pd.DataFrame(rows)
     above_50 = int((frame["Price"] > frame["50D MA"]).sum())
     above_200 = int((frame["Price"] > frame["200D MA"]).sum())
     avg_entry = frame["Entry score"].mean()
@@ -447,6 +482,7 @@ if rows:
             "1M %", "3M %", "6M %", "12M %", "Drawdown %",
             "Technical", "Valuation", "Risk",
             "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
+            "Ownership", "Add score", "Trim score", "Company diagnostic",
         ]
         selected_metrics = st.multiselect(
             "Additional table columns",
@@ -459,13 +495,30 @@ if rows:
         *identity_columns, "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
     ]].copy()
     display_frame = non_wrapping_signal_labels(display_frame)
-    selected_row = render_dashboard_table(display_frame, set(portfolio_tickers))
-    if selected_row is not None:
-        st.session_state.company_requested_ticker = str(display_frame.iloc[selected_row]["Ticker"])
+    selected_ticker_from_table = None
+    if not historical_mode and portfolio_tickers:
+        owned_frame = display_frame[display_frame["Ticker"].isin(portfolio_tickers)].copy()
+        watchlist_frame = display_frame[~display_frame["Ticker"].isin(portfolio_tickers)].copy()
+        if not owned_frame.empty:
+            st.markdown("#### Portfolio actions")
+            st.caption("Owned positions · sizing-aware Add / Hold / Monitor / Trim / Exit decisions")
+            owned_selection = render_dashboard_table(owned_frame, set(portfolio_tickers), "portfolio")
+            if owned_selection is not None:
+                selected_ticker_from_table = str(owned_frame.iloc[owned_selection]["Ticker"])
+        if not watchlist_frame.empty:
+            st.markdown("#### Watchlist opportunities")
+            st.caption("Unowned securities · potential position-initiation decisions")
+            watchlist_selection = render_dashboard_table(watchlist_frame, set(), "watchlist")
+            if watchlist_selection is not None:
+                selected_ticker_from_table = str(watchlist_frame.iloc[watchlist_selection]["Ticker"])
+    else:
+        selected_row = render_dashboard_table(display_frame, set(portfolio_tickers), "historical")
+        if selected_row is not None:
+            selected_ticker_from_table = str(display_frame.iloc[selected_row]["Ticker"])
+    if selected_ticker_from_table:
+        st.session_state.company_requested_ticker = selected_ticker_from_table
         st.session_state.decision_table_generation = int(st.session_state.get("decision_table_generation", 0)) + 1
         st.switch_page("pages/3_Company.py")
-    if portfolio_tickers:
-        st.caption("Highlighted rows · currently held in Portfolio")
     st.caption("MARKET SNAPSHOT")
     summary_frame = pd.DataFrame({
         "Breadth": [
@@ -547,6 +600,14 @@ if rows:
                 f"reliability {float(row['Positioning reliability']):.0f}/100."
             )
             st.caption(f"Short reversal lever · {row['Short reversal lever']}")
+            if not historical_mode:
+                if row.get("Ownership") == "Owned":
+                    st.write(
+                        f"**Position action — {row['Position action']}:** Add {float(row['Add score']):.1f}/100 · "
+                        f"Trim {float(row['Trim score']):.1f}/100. {row['Position rationale']}"
+                    )
+                else:
+                    st.write(f"**Initiation decision:** {row['Diagnostic']}. {row['Position rationale']}")
             if not historical_mode:
                 st.write(
                     f"**Backtested learning:** Entry {float(row.get('Learning entry adj', 0)):+.1f}; "

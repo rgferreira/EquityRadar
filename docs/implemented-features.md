@@ -39,6 +39,15 @@
 - Saved runs automatically refresh incomplete forward outcomes once per calendar day. Immature 3M/12M horizons are labelled with their required trading-session count instead of displaying an ambiguous null value.
 - Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.
 
+## Phase 3.5 · Position-Aware Decisions
+
+- Company Entry and Exit-review remain common research evidence so owned and unowned securities stay analytically comparable.
+- Decision dashboard separates owned positions into **Portfolio actions** and unowned securities into **Watchlist opportunities** instead of relying on row highlighting.
+- Unowned diagnostics use initiation vocabulary: Initiate / Buy candidate / Watch / Wait.
+- Owned positions receive a transparent Add score, Trim pressure and final Add / Hold / Monitor closely / Trim review / Exit review action.
+- Position actions incorporate current portfolio weight, optional target-weight gap and concentration; company deterioration still independently drives Exit review.
+- Company detail detects ownership automatically and shows current weight, target weight, Add score, Trim pressure and full position-action rationale. Unowned companies explicitly remain initiation decisions.
+
 ## Market data
 
 - yfinance supplies one year of daily prices and moving-average/return metrics.

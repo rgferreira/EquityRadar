@@ -255,13 +255,15 @@ save_portfolio_snapshot(
     date.today().isoformat(), total_value, len(known_values), len(holdings), PORTFOLIO_BASE_CURRENCY
 )
 
-summary_columns = st.columns(6)
-summary_columns[0].metric("Current portfolio value", f"{PORTFOLIO_BASE_CURRENCY} {total_value:,.2f}")
-summary_columns[1].metric("Positions", len(holdings))
-summary_columns[2].metric("Priced positions", f"{len(known_values)}/{len(holdings)}")
-summary_columns[3].metric("Known unrealized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_unrealized):,.2f}" if known_unrealized else "—")
-summary_columns[4].metric("Known realized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_realized):,.2f}" if known_realized else "—")
-summary_columns[5].metric("Cash balance", f"{PORTFOLIO_BASE_CURRENCY} {cash_balance_base:,.2f}")
+value_columns = st.columns(3)
+value_columns[0].metric("Current portfolio value", f"{PORTFOLIO_BASE_CURRENCY} {total_value:,.2f}")
+value_columns[1].metric("Known unrealized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_unrealized):,.2f}" if known_unrealized else "—")
+value_columns[2].metric("Cash balance", f"{PORTFOLIO_BASE_CURRENCY} {cash_balance_base:,.2f}")
+
+coverage_columns = st.columns(3)
+coverage_columns[0].metric("Positions", len(holdings))
+coverage_columns[1].metric("Priced positions", f"{len(known_values)}/{len(holdings)}")
+coverage_columns[2].metric("Known realized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_realized):,.2f}" if known_realized else "—")
 
 st.dataframe(
     holdings_frame,

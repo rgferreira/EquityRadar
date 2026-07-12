@@ -40,6 +40,7 @@ pytest
 - Entry score: 50% technical, 30% valuation, 20% risk. It expresses potential entry/add attractiveness, not a trading instruction.
 - Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
 - Backtested learning: historical simulations are stored per ticker. After at least three completed three-month outcomes, their win rate and average return can contribute a visible, confidence-weighted modifier capped at ±5 Entry points, with the opposite adjustment applied to Exit review. No modifier is applied below the sample threshold.
+- Position-aware decision layer: unowned companies use initiation decisions, while holdings translate the same company evidence into Add/Hold/Monitor/Trim/Exit using current weight, optional target weight and concentration. This changes the action, not the underlying company research scores.
 
 ## Time Machine and point-in-time learning
 

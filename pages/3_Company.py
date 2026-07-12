@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import streamlit as st
 
-from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_positioning_history, get_watchlist, init_db
+from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_watchlist, init_db
 from src.backtesting import learned_score_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
@@ -19,6 +19,7 @@ from src.scoring.decision import calculate_exit_review_score, entry_label, exit_
 from src.scoring.valuation import calculate_valuation_score, explain_valuation_score, valuation_score_breakdown
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
+from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, style_figure
 
@@ -201,6 +202,23 @@ try:
     exit_score = apply_positioning_adjustment(base_exit_score, float(positioning_modifier["exit_adjustment"]))
     entry_score = apply_positioning_adjustment(entry_score, float(learning_modifier["entry_adjustment"]))
     exit_score = apply_positioning_adjustment(exit_score, float(learning_modifier["exit_adjustment"]))
+    portfolio_holdings = get_portfolio_holdings()
+    selected_holding = next((item for item in portfolio_holdings if item["ticker"] == ticker), None)
+    target_map = {str(item["ticker"]): float(item["target_weight_pct"]) for item in get_portfolio_targets()}
+    position_values: dict[str, float] = {}
+    for holding in portfolio_holdings:
+        symbol = str(holding["ticker"])
+        try:
+            price = float(metrics["latest_price"]) if symbol == ticker else float(fetch_price_history(symbol)["Close"].dropna().iloc[-1])
+            position_values[symbol] = float(holding["shares"]) * price
+        except Exception:
+            continue
+    total_position_value = sum(position_values.values())
+    current_weight = position_values.get(ticker, 0.0) / total_position_value * 100 if total_position_value else 0.0
+    portfolio_decision = (
+        position_action(entry_score, exit_score, current_weight, target_map.get(ticker))
+        if selected_holding else None
+    )
     entry_color = "#38d996" if entry_score >= 60 else "#f0ad4e" if entry_score >= 40 else "#ff6375"
     entry_figure = go.Figure(go.Indicator(
         mode="number",
@@ -286,6 +304,31 @@ try:
         f"Backtested learning <strong style='color:{learning_exit_color}'>{learning_exit_adjustment:+.1f}</strong></div>",
         unsafe_allow_html=True,
     )
+
+    st.markdown("### Investor decision")
+    if portfolio_decision:
+        action = str(portfolio_decision["action"])
+        action_color = "#38d996" if action == "Add candidate" else "#ff6375" if action in {"Trim review", "Exit review"} else "#f0ad4e" if action == "Monitor closely" else "#9fd3ff"
+        st.markdown(
+            f"<div style='border:1px solid #344457;border-radius:12px;padding:14px'>"
+            f"<div style='color:#9aa4b2;font-size:.8rem'>OWNED POSITION</div>"
+            f"<div style='color:{action_color};font-size:1.55rem;font-weight:750'>{action}</div>"
+            f"</div>", unsafe_allow_html=True,
+        )
+        action_columns = st.columns(4)
+        action_columns[0].metric("Add score", f"{float(portfolio_decision['add_score']):.1f}/100")
+        action_columns[1].metric("Trim pressure", f"{float(portfolio_decision['trim_score']):.1f}/100")
+        action_columns[2].metric("Current weight", f"{float(portfolio_decision['current_weight_pct']):.1f}%")
+        action_columns[3].metric(
+            "Target weight", "Not set" if portfolio_decision["target_weight_pct"] is None else f"{float(portfolio_decision['target_weight_pct']):.1f}%",
+        )
+        with st.expander("Position-action rationale"):
+            for note in portfolio_decision["notes"]:
+                st.write(f"- {note}")
+            st.caption("Trim reflects position sizing; Exit review reflects deterioration in the investment case.")
+    else:
+        initiation = initiation_diagnostic(entry_score, entry_label(entry_score), exit_review_label(exit_score))
+        st.info(f"**Not currently owned · {initiation}.** Entry/Exit evidence is interpreted as a possible new position, not an add/trim decision.")
 
     with st.expander("How these scores were calculated"):
         st.write(f"**Entry score:** base {base_entry_score:.1f} from 25% business quality + 30% peer-relative valuation + 20% technical timing + 15% risk resilience + 10% analyst sentiment; market-positioning adjustment {float(positioning_modifier['entry_adjustment']):+.1f}; backtested-learning adjustment {float(learning_modifier['entry_adjustment']):+.1f}.")
