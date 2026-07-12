@@ -46,3 +46,7 @@ Readiness gate:
 - Backtest a capped initial adjustment (proposed maximum: ±5 Entry points and ±7 Exit-review points) and display the exact contribution.
 
 The initial gate is met for short-interest history. Options history continues accumulating and affects confidence through current coverage; future calibration can add options-change signals once sufficient dated chains exist. Phase 4 remains on hold.
+
+## Backtested Learning — Phase 3.4 backlog
+
+1. **Automatically backfill every newly added watchlist ticker across all saved simulation cutoff dates — implemented.** Adding a ticker enqueues point-in-time reconstruction and outcome retrieval for each persisted simulation without requiring manual reruns. Work continues in the background with per-date progress and isolated errors, respects the original cutoff, and includes a recovery trigger for tickers added before this automation existed.

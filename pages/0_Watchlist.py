@@ -5,6 +5,7 @@ import streamlit as st
 
 from src.data.database import add_ticker, get_watchlist, init_db, remove_ticker
 from src.data.industry_refresh import schedule_industry_refresh
+from src.data.backtest_refresh import schedule_ticker_backfill, ticker_backfill_status
 from src.ui import inject_app_styles, page_header
 
 st.set_page_config(page_title="Watchlist | Personal Equity Radar", page_icon="⚙️", layout="wide")
@@ -32,7 +33,11 @@ with add_tab:
             normalized = ticker.strip().upper()
             add_ticker(normalized)
             schedule_industry_refresh([normalized], max_new=1)
-            st.success(f"Added {normalized}. Peer discovery has started automatically.")
+            scheduled_dates = schedule_ticker_backfill(normalized)
+            st.success(
+                f"Added {normalized}. Peer discovery and backfill across "
+                f"{len(scheduled_dates)} saved simulation(s) started automatically."
+            )
             st.rerun()
         else:
             st.warning("Enter a ticker symbol.")
@@ -58,6 +63,27 @@ with remove_tab:
                 st.warning(str(exc))
 
 if tickers:
+    # Recovery trigger: catches tickers added before automatic backfill existed.
+    for symbol in tickers:
+        schedule_ticker_backfill(symbol)
+
+    @st.fragment(run_every=2)
+    def render_backfill_status() -> None:
+        active = [ticker_backfill_status(symbol) for symbol in tickers]
+        relevant = [status for status in active if status["busy"] or status["completed"] < status["total"]]
+        for status in relevant:
+            if status["busy"]:
+                st.status(
+                    f"Backtesting {status['ticker']} · {status['completed']}/{status['total']} saved dates completed",
+                    state="running",
+                )
+            elif status["failed"]:
+                st.warning(
+                    f"{status['ticker']} backfill finished with exclusions · "
+                    f"{status['completed']}/{status['total']} dates persisted · {status['failed']} unavailable"
+                )
+
+    render_backfill_status()
     st.subheader("Current research universe")
     grid_width = 3
     cells = [f"{index + 1:02d} · {symbol}" for index, symbol in enumerate(tickers)]

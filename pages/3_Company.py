@@ -5,7 +5,8 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import streamlit as st
 
-from src.data.database import get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_positioning_history, get_watchlist, init_db
+from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_positioning_history, get_watchlist, init_db
+from src.backtesting import learned_score_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -130,6 +131,8 @@ try:
     positioning_breakdown = positioning_scores(positioning)
     positioning_history = get_positioning_history(ticker)
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
+    backtest_runs = get_backtest_runs(ticker)
+    learning_modifier = learned_score_adjustments(backtest_runs)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
 
     figure = make_subplots(
@@ -196,6 +199,8 @@ try:
     base_exit_score = calculate_exit_review_score(technical, risk)
     entry_score = apply_positioning_adjustment(base_entry_score, float(positioning_modifier["entry_adjustment"]))
     exit_score = apply_positioning_adjustment(base_exit_score, float(positioning_modifier["exit_adjustment"]))
+    entry_score = apply_positioning_adjustment(entry_score, float(learning_modifier["entry_adjustment"]))
+    exit_score = apply_positioning_adjustment(exit_score, float(learning_modifier["exit_adjustment"]))
     entry_color = "#38d996" if entry_score >= 60 else "#f0ad4e" if entry_score >= 40 else "#ff6375"
     entry_figure = go.Figure(go.Indicator(
         mode="number",
@@ -233,6 +238,21 @@ try:
                     st.markdown(f"**{title}**")
                     st.caption(detail)
 
+    learning_entry_adjustment = float(learning_modifier["entry_adjustment"])
+    learning_entry_color = "#38d996" if learning_entry_adjustment > 0 else "#ff6375" if learning_entry_adjustment < 0 else "#9aa4b2"
+    learning_columns = st.columns(2)
+    with learning_columns[0]:
+        with st.container(border=True):
+            st.markdown("**Backtested learning modifier · capped ±5**")
+            st.markdown(
+                f"<span style='color:{learning_entry_color};font-size:1.35rem;font-weight:700'>"
+                f"{learning_entry_adjustment:+.1f} Entry points</span>", unsafe_allow_html=True,
+            )
+    with learning_columns[1]:
+        with st.container(border=True):
+            st.markdown("**Learning evidence**")
+            st.caption(f"{int(learning_modifier['sample_size'])} completed 3M sample(s) · {learning_modifier['confidence']}")
+
     exit_color = "#ff6375" if exit_score >= 70 else "#f0ad4e" if exit_score >= 50 else "#38d996"
     exit_figure = go.Figure(go.Indicator(
         mode="number", value=exit_score,
@@ -258,20 +278,25 @@ try:
             with st.container(border=True):
                 st.markdown(f"**{title}**")
                 st.caption(detail)
-    st.caption(
-        f"Base {base_exit_score:.1f} · Market positioning modifier {float(positioning_modifier['exit_adjustment']):+.1f} · "
-        "separate from Entry"
+    learning_exit_adjustment = float(learning_modifier["exit_adjustment"])
+    learning_exit_color = "#ff6375" if learning_exit_adjustment > 0 else "#38d996" if learning_exit_adjustment < 0 else "#9aa4b2"
+    st.markdown(
+        f"<div style='color:#9aa4b2;font-size:.88rem'>Base {base_exit_score:.1f} · "
+        f"Market positioning {float(positioning_modifier['exit_adjustment']):+.1f} · "
+        f"Backtested learning <strong style='color:{learning_exit_color}'>{learning_exit_adjustment:+.1f}</strong></div>",
+        unsafe_allow_html=True,
     )
 
     with st.expander("How these scores were calculated"):
-        st.write(f"**Entry score:** base {base_entry_score:.1f} from 25% business quality + 30% peer-relative valuation + 20% technical timing + 15% risk resilience + 10% analyst sentiment; positioning adjustment {float(positioning_modifier['entry_adjustment']):+.1f}.")
+        st.write(f"**Entry score:** base {base_entry_score:.1f} from 25% business quality + 30% peer-relative valuation + 20% technical timing + 15% risk resilience + 10% analyst sentiment; market-positioning adjustment {float(positioning_modifier['entry_adjustment']):+.1f}; backtested-learning adjustment {float(learning_modifier['entry_adjustment']):+.1f}.")
         st.write(f"**Technical timing ({technical}/100):** {explain_technical_score(metrics)}")
         st.write(f"**Legacy absolute valuation ({valuation}/100, shown in Fundamentals):** {explain_valuation_score(fundamentals)}")
         st.write(f"**Legacy market risk ({risk}/100, used by Exit Review):** {explain_risk_score(metrics, metric_history)}")
-        st.write(f"**Exit-review score:** base technical/risk deterioration {base_exit_score:.1f}; positioning adjustment {float(positioning_modifier['exit_adjustment']):+.1f}. It is not an execution instruction.")
+        st.write(f"**Exit-review score:** base technical/risk deterioration {base_exit_score:.1f}; market-positioning adjustment {float(positioning_modifier['exit_adjustment']):+.1f}; backtested-learning adjustment {float(learning_modifier['exit_adjustment']):+.1f}. It is not an execution instruction.")
+        st.caption(f"Backtested learning · {learning_modifier['reason']}")
 
-    fundamentals_tab, metrics_tab, industry_tab, positioning_tab, journal_tab = st.tabs([
-        "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Journal context"
+    fundamentals_tab, metrics_tab, industry_tab, positioning_tab, learning_tab, journal_tab = st.tabs([
+        "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Backtested learning", "Journal context"
     ])
     with fundamentals_tab:
         st.subheader("Fundamentals and valuation")
@@ -401,9 +426,38 @@ try:
                 st.markdown("**Historical calibration**")
                 for note in positioning_modifier["notes"]:
                     st.write(f"- {note}")
-                st.info("Options may be bought, written, or used as hedges. Short-sale volume is not used as a substitute for open short interest.")
+            st.info("Options may be bought, written, or used as hedges. Short-sale volume is not used as a substitute for open short interest.")
         else:
             st.info("Positioning coverage is being assembled automatically. Price and company research remain available.")
+
+    with learning_tab:
+        st.subheader("Backtested learning")
+        st.caption("Ticker-specific evidence from persisted point-in-time simulations. Forward outcomes never enter their own historical score.")
+        learning_columns = st.columns(4)
+        learning_columns[0].metric("Completed 3M samples", int(learning_modifier["sample_size"]))
+        learning_columns[1].metric(
+            "3M win rate", "—" if learning_modifier["win_rate"] is None else f"{float(learning_modifier['win_rate']):.0f}%",
+        )
+        learning_columns[2].metric("Entry adjustment", f"{float(learning_modifier['entry_adjustment']):+.1f}")
+        learning_columns[3].metric("Exit adjustment", f"{float(learning_modifier['exit_adjustment']):+.1f}")
+        st.markdown(
+            f"<div style='display:flex;gap:1rem;flex-wrap:wrap'>"
+            f"<span style='color:{learning_entry_color};font-weight:700'>Entry impact {learning_entry_adjustment:+.1f}</span>"
+            f"<span style='color:{learning_exit_color};font-weight:700'>Exit-review impact {learning_exit_adjustment:+.1f}</span>"
+            f"</div>", unsafe_allow_html=True,
+        )
+        if int(learning_modifier["sample_size"]) < 3:
+            st.info(f"No score influence yet · {learning_modifier['reason']}.")
+        else:
+            st.success(f"Applied to current scores · {learning_modifier['reason']}.")
+        if backtest_runs:
+            history_rows = pd.DataFrame(backtest_runs)[[
+                "as_of_date", "coverage", "entry_signal", "entry_score", "exit_signal", "exit_score",
+                "outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m", "model_version",
+            ]].rename(columns={"as_of_date": "Cutoff date"})
+            st.dataframe(history_rows, hide_index=True, width="stretch")
+        else:
+            st.info("No saved simulations exist for this ticker yet.")
 
     with metrics_tab:
         st.subheader("Calculated metrics")

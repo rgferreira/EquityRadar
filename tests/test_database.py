@@ -27,6 +27,8 @@ from src.data.database import (
     get_portfolio_targets,
     get_dashboard_order,
     save_dashboard_order,
+    get_active_backtest,
+    save_active_backtest,
 )
 
 
@@ -34,6 +36,14 @@ def test_decision_dashboard_order_persists_across_sessions(tmp_path):
     database = tmp_path / "radar.db"
     save_dashboard_order(["NVDA", "GOOG", "AAPL"], database)
     assert get_dashboard_order(database) == ["NVDA", "GOOG", "AAPL"]
+
+
+def test_active_backtest_date_persists_and_clears(tmp_path):
+    database = tmp_path / "radar.db"
+    save_active_backtest("2026-05-08", database)
+    assert get_active_backtest(database) == "2026-05-08"
+    save_active_backtest(None, database)
+    assert get_active_backtest(database) is None
 
 
 def test_watchlist_add_and_remove(tmp_path):

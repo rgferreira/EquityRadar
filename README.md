@@ -39,6 +39,11 @@ pytest
 - Risk (0–100): lower drawdown and lower annualized daily volatility produce a higher score.
 - Entry score: 50% technical, 30% valuation, 20% risk. It expresses potential entry/add attractiveness, not a trading instruction.
 - Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
+- Backtested learning: historical simulations are stored per ticker. After at least three completed three-month outcomes, their win rate and average return can contribute a visible, confidence-weighted modifier capped at ±5 Entry points, with the opposite adjustment applied to Exit review. No modifier is applied below the sample threshold.
+
+## Time Machine and point-in-time learning
+
+The Decision dashboard can reconstruct a custom past date. Price metrics are truncated at that cutoff, timestamped fundamentals are included only when already available, and unavailable historical industry/analyst/positioning evidence is excluded rather than replaced with today's knowledge. Forward outcomes are evaluated only after the reconstructed decision and stored separately in SQLite. Each run records its inputs, coverage and model version so results remain reproducible and future scoring changes do not rewrite past evidence.
 
 Price history remains provided by yfinance. Fundamentals use a provider-neutral interface with FMP first and a separate Yahoo Finance fallback adapter, and are cached in SQLite at most once per calendar day unless explicitly refreshed. Provider failures and missing fields are isolated per ticker and do not block prices.
 

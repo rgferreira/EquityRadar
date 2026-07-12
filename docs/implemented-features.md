@@ -25,6 +25,20 @@
 - Phase 3.2 integration: official FINRA history provides six-report trend context; reliability-gated modifiers are capped at ±5 Entry points and ±7 Exit-review points and are shown explicitly in Company and Dashboard.
 - Historical bootstrap completed for the current watchlist, with 129–205 official FINRA observations per ticker. Missing current evidence still produces a zero adjustment.
 
+## Phase 3.4 · Backtested Learning
+
+- The Decision dashboard Time Machine switches between present-day analysis and a custom historical cutoff.
+- Historical reconstruction downloads sufficient price history automatically and strictly excludes observations after the selected date from technical, risk, valuation, Entry, and Exit-review calculations.
+- Fundamentals are eligible only when their reporting/fetched date is on or before the cutoff; otherwise the simulation is explicitly labelled price-only.
+- Forward 1/3/6/12-month outcomes are calculated separately after scoring and persisted in SQLite with the full inputs and scoring-model version.
+- Per-ticker lessons expose sample size, three-month win rate, average return, and confidence.
+- Once at least three completed observations exist, ticker learning can influence current Entry and Exit-review scores through transparent opposing modifiers capped at ±5 points. Smaller samples produce a zero adjustment.
+- Simulations run in a persistent background worker with per-ticker queued/running/completed/failed state, so navigating to another page does not cancel the job.
+- Dashboard provides a saved-simulation archive grouped by cutoff date and a per-ticker learning history with every stored outcome and its current derived modifiers.
+- Active simulations expose live persisted progress and remain visible after returning to Dashboard; completed jobs distinguish unavailable tickers from work still running and never retry permanent provider failures in a loop.
+- Saved runs automatically refresh incomplete forward outcomes once per calendar day. Immature 3M/12M horizons are labelled with their required trading-session count instead of displaying an ambiguous null value.
+- Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.
+
 ## Market data
 
 - yfinance supplies one year of daily prices and moving-average/return metrics.

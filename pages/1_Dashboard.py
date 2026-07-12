@@ -1,8 +1,9 @@
 """Decision dashboard."""
 
+import json
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from src.data.database import (
     get_cached_industry_research,
@@ -10,6 +11,9 @@ from src.data.database import (
     save_dashboard_order,
     get_portfolio_holdings,
     get_positioning_history,
+    get_backtest_runs,
+    get_active_backtest,
+    save_active_backtest,
     get_watchlist,
     init_db,
 )
@@ -27,6 +31,10 @@ from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
+from src.backtesting import learned_score_adjustments, lesson_summary
+from src.data.backtest_refresh import (
+    backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
+)
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -96,18 +104,104 @@ def non_wrapping_signal_labels(frame: pd.DataFrame) -> pd.DataFrame:
         "Price data fetched at": "Freshness",
     })
 
+persisted_backtest_date = get_active_backtest()
+schedule_outcome_refresh()
+default_backtest_date = (
+    pd.Timestamp(persisted_backtest_date).date() if persisted_backtest_date
+    else date.today() - timedelta(days=365)
+)
+with st.container(border=True):
+    st.markdown("#### ⏳ Time Machine")
+    mode_col, date_col = st.columns([1, 1])
+    with mode_col:
+        time_mode = st.radio(
+            "Decision date", ["Present date", "Past date"], horizontal=True,
+            index=1 if persisted_backtest_date else 0,
+        )
+    with date_col:
+        as_of_date = st.date_input(
+            "Historical cutoff", value=default_backtest_date,
+            max_value=date.today() - timedelta(days=1), disabled=time_mode == "Present date",
+        )
+    if time_mode == "Past date":
+        st.warning(f"Historical simulation · only evidence available by {as_of_date:%Y-%m-%d} is eligible.")
+    else:
+        st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
+
+historical_mode = time_mode == "Past date"
+selected_backtest_date = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
+if selected_backtest_date != persisted_backtest_date:
+    save_active_backtest(selected_backtest_date)
+
+with st.expander("Saved simulations & learning history"):
+    saved_runs = get_backtest_runs()
+    if not saved_runs:
+        st.info("No persisted simulations yet.")
+    else:
+        archive_tab, learning_tab = st.tabs(["Simulation archive", "Learning by ticker"])
+        with archive_tab:
+            archive = pd.DataFrame(saved_runs)
+            archive_summary = (
+                archive.groupby("as_of_date", as_index=False)
+                .agg(
+                    Tickers=("ticker", "nunique"),
+                    Completed_3M=("outcome_3m", "count"),
+                    Average_entry=("entry_score", "mean"),
+                    Saved_at=("created_at", "max"),
+                )
+                .sort_values("as_of_date", ascending=False)
+                .rename(columns={"as_of_date": "Cutoff date", "Completed_3M": "3M outcomes",
+                                 "Average_entry": "Average entry", "Saved_at": "Last saved"})
+            )
+            st.dataframe(archive_summary, hide_index=True, width="stretch")
+            if outcome_refresh_in_flight():
+                st.caption("Refreshing matured forward outcomes automatically…")
+        with learning_tab:
+            learned_ticker = st.selectbox(
+                "Ticker learning history", sorted({str(run["ticker"]) for run in saved_runs}),
+                key="learning_history_ticker",
+            )
+            ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
+            learned = learned_score_adjustments(ticker_runs)
+            metric_cols = st.columns(4)
+            metric_cols[0].metric("Completed samples", learned["sample_size"])
+            metric_cols[1].metric("3M win rate", "—" if learned["win_rate"] is None else f"{learned['win_rate']:.0f}%")
+            metric_cols[2].metric("Entry modifier", f"{learned['entry_adjustment']:+.1f}")
+            metric_cols[3].metric("Exit modifier", f"{learned['exit_adjustment']:+.1f}")
+            st.caption(str(learned["reason"]))
+            learning_history = pd.DataFrame(ticker_runs)[[
+                "as_of_date", "coverage", "entry_signal", "entry_score", "exit_signal", "exit_score",
+                "outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m", "model_version",
+            ]].rename(columns={"as_of_date": "Cutoff date"})
+            st.dataframe(learning_history, hide_index=True, width="stretch")
+
 refresh_col, status_col = st.columns([1, 4], vertical_alignment="center")
 with refresh_col:
-    refresh = st.button("Refresh market data", type="primary", width="stretch")
+    refresh = st.button(
+        "Run historical simulation" if historical_mode else "Refresh market data",
+        type="primary", width="stretch",
+    )
 with status_col:
-    st.caption("Prices refresh automatically on first load. Use refresh to request fresh provider data.")
+    st.caption(
+        "The simulation retrieves sufficient history automatically and persists reproducible outcomes."
+        if historical_mode else
+        "Prices refresh automatically on first load. Use refresh to request fresh provider data."
+    )
 tickers = get_watchlist()
 if not tickers:
     st.info("Add one or more tickers from Watchlist management to begin.")
     st.stop()
 
 initial_refresh = not st.session_state.get("dashboard_initial_refresh_done", False)
-if refresh or initial_refresh:
+simulation_key = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
+simulation_changed = historical_mode and st.session_state.get("backtest_active_date") != simulation_key
+current_job = backtest_status(simulation_key) if historical_mode else None
+job_missing = historical_mode and int(current_job["total"]) == 0
+if historical_mode and (refresh or simulation_changed or job_missing):
+    schedule_backtest(simulation_key, tickers)
+    st.session_state.backtest_active_date = simulation_key
+    st.session_state.dashboard_rows_mode = "historical"
+elif not historical_mode and (refresh or initial_refresh or st.session_state.get("dashboard_rows_mode") == "historical"):
     # Set this before fetching so a provider error does not cause a refresh loop.
     st.session_state.dashboard_initial_refresh_done = True
     clear_market_data_cache()
@@ -145,6 +239,9 @@ if refresh or initial_refresh:
             calibrated_exit = apply_positioning_adjustment(
                 base_exit, float(positioning_modifier["exit_adjustment"]),
             )
+            learned = learned_score_adjustments(get_backtest_runs(ticker))
+            calibrated_entry = apply_positioning_adjustment(calibrated_entry, float(learned["entry_adjustment"]))
+            calibrated_exit = apply_positioning_adjustment(calibrated_exit, float(learned["exit_adjustment"]))
             rows.append({
                 "Ticker": ticker,
                 "Price": metrics["latest_price"],
@@ -169,6 +266,9 @@ if refresh or initial_refresh:
                 "Exit-review score": calibrated_exit,
                 "Positioning exit adj": positioning_modifier["exit_adjustment"],
                 "Positioning reliability": positioning_modifier["reliability"],
+                "Learning entry adj": learned["entry_adjustment"],
+                "Learning exit adj": learned["exit_adjustment"],
+                "Learning rationale": learned["reason"],
                 "Short reversal lever": positioning_modifier.get("short_reversal_lever", "Unavailable"),
                 "Exit signal": exit_review_label(calibrated_exit),
                 "Technical rationale": explain_technical_score(metrics),
@@ -186,15 +286,76 @@ if refresh or initial_refresh:
     st.session_state.dashboard_rows = rows
     st.session_state.dashboard_errors = errors
     st.session_state.last_refreshed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.session_state.dashboard_rows_mode = "present"
+
+if historical_mode:
+    runs = [run for run in get_backtest_runs() if run["as_of_date"] == simulation_key]
+    rows, errors = [], []
+    for run in runs:
+        inputs = json.loads(str(run["inputs_json"]))
+        metrics = inputs["metrics"]
+        rows.append({
+            "Ticker": run["ticker"], "Cutoff date": run["as_of_date"], "Price": metrics["latest_price"],
+            "1M %": metrics["return_1m"], "3M %": metrics["return_3m"], "6M %": metrics["return_6m"],
+            "12M %": metrics["return_12m"], "52W High": metrics["high_52w"], "52W Low": metrics["low_52w"],
+            "Drawdown %": metrics["drawdown_from_52w_high"], "50D MA": metrics["ma_50"],
+            "100D MA": metrics["ma_100"], "200D MA": metrics["ma_200"],
+            "Technical": run["technical_score"], "Valuation": run["valuation_score"], "Risk": run["risk_score"],
+            "Entry score": run["entry_score"], "Entry signal": run["entry_signal"],
+            "Exit-review score": run["exit_score"], "Exit signal": run["exit_signal"],
+            "Diagnostic": f"{run['entry_signal']} / {run['exit_signal']}", "Industry calibrated": run["coverage"],
+            "Positioning entry adj": 0.0, "Positioning exit adj": 0.0, "Positioning reliability": 0.0,
+            "Short reversal lever": "Not available point-in-time", "Technical rationale": explain_technical_score(metrics),
+            "Risk rationale": "Reconstructed from price history available at the cutoff.",
+            "Valuation rationale": "Timestamp eligibility enforced at the cutoff.",
+            "Industry rationale": "Excluded unless timestamped evidence existed by the cutoff.",
+            "Price data fetched at": run["created_at"], "Outcome 3M %": run["outcome_3m"],
+            "Outcome 12M %": run["outcome_12m"],
+        })
+    status = backtest_status(simulation_key)
+    failed = [item for item in status["items"] if item["status"] == "failed"]
+    errors = [f"{item['ticker']}: {item['error']}" for item in failed]
+    st.session_state.dashboard_rows = rows
+    st.session_state.dashboard_errors = errors
+
+    @st.fragment(run_every=2)
+    def render_backtest_progress() -> None:
+        current = backtest_status(simulation_key)
+        total = max(int(current["total"]), len(tickers))
+        completed = int(current["completed"])
+        if current["busy"]:
+            st.status(
+                f"Calculating {simulation_key} · {completed}/{total} completed · "
+                f"{current['running']} running · {current['queued']} queued",
+                state="running", expanded=True,
+            )
+            st.progress(completed / total, text="You may navigate elsewhere; this job continues in the background.")
+        elif completed == total:
+            st.success(f"Simulation complete · cutoff {simulation_key} · {completed}/{total} tickers persisted")
+        elif completed + int(current["failed"]) == total:
+            st.warning(
+                f"Simulation finished with exclusions · cutoff {simulation_key} · "
+                f"{completed}/{total} persisted · {current['failed']} unavailable"
+            )
+        else:
+            st.warning(f"Simulation paused with {completed}/{total} completed and {current['failed']} failed. Run again to retry failures.")
+        signature = (current["completed"], current["running"], current["queued"], current["failed"])
+        previous = st.session_state.get(f"backtest_status_{simulation_key}")
+        st.session_state[f"backtest_status_{simulation_key}"] = signature
+        if previous is not None and previous != signature:
+            st.rerun()
+
+    render_backtest_progress()
 
 rows = st.session_state.get("dashboard_rows", [])
 errors = st.session_state.get("dashboard_errors", [])
 if rows:
     portfolio_tickers = [str(item["ticker"]) for item in get_portfolio_holdings()]
     refresh_priority = [*portfolio_tickers, *(ticker for ticker in tickers if ticker not in portfolio_tickers)]
-    schedule_industry_refresh(refresh_priority, max_new=2)
-    schedule_positioning_refresh(refresh_priority, max_new=2)
-    for row in rows:
+    if not historical_mode:
+        schedule_industry_refresh(refresh_priority, max_new=2)
+        schedule_positioning_refresh(refresh_priority, max_new=2)
+    for row in rows if not historical_mode else []:
         research = get_cached_industry_research(str(row["Ticker"]))
         status = industry_refresh_status(str(row["Ticker"]))
         row["Industry calibrated"] = status
@@ -215,6 +376,12 @@ if rows:
             row["Entry score"] = apply_positioning_adjustment(float(calibrated["score"]), float(modifier["entry_adjustment"]))
             base_exit = calculate_exit_review_score(float(row["Technical"]), float(row["Risk"]))
             row["Exit-review score"] = apply_positioning_adjustment(base_exit, float(modifier["exit_adjustment"]))
+            learned = learned_score_adjustments(get_backtest_runs(str(row["Ticker"])))
+            row["Learning entry adj"] = learned["entry_adjustment"]
+            row["Learning exit adj"] = learned["exit_adjustment"]
+            row["Learning rationale"] = learned["reason"]
+            row["Entry score"] = apply_positioning_adjustment(float(row["Entry score"]), float(learned["entry_adjustment"]))
+            row["Exit-review score"] = apply_positioning_adjustment(float(row["Exit-review score"]), float(learned["exit_adjustment"]))
             row["Entry signal"] = entry_label(float(row["Entry score"]))
             row["Exit signal"] = exit_review_label(float(row["Exit-review score"]))
             row["Diagnostic"] = f"{row['Entry signal']} / {row['Exit signal']}"
@@ -287,8 +454,9 @@ if rows:
             default=[],
             help="Keep this empty for the compact phone-friendly decision view.",
         )
+    identity_columns = ["Ticker", *(["Cutoff date"] if historical_mode else []), "Diagnostic"]
     display_frame = frame[[
-        "Ticker", "Diagnostic", "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
+        *identity_columns, "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
     ]].copy()
     display_frame = non_wrapping_signal_labels(display_frame)
     selected_row = render_dashboard_table(display_frame, set(portfolio_tickers))
@@ -322,6 +490,25 @@ if rows:
 
     st.caption(f"Market regime · {above_50}/{len(frame)} above 50D MA · {above_200}/{len(frame)} above 200D MA")
 
+    if historical_mode:
+        st.subheader("Backtested learning")
+        st.caption(f"Cutoff date · {simulation_key} · Forward outcomes evaluate the old decision; they were never used to calculate it.")
+        outcome_view = frame[["Ticker", "Cutoff date", "Industry calibrated", "Entry signal", "Entry score", "Outcome 3M %", "Outcome 12M %"]].copy()
+        outcome_view["Outcome 3M"] = outcome_view["Outcome 3M %"].map(
+            lambda value: "Pending · 63 sessions" if pd.isna(value) else f"{float(value):+.2f}%"
+        )
+        outcome_view["Outcome 12M"] = outcome_view["Outcome 12M %"].map(
+            lambda value: "Pending · 252 sessions" if pd.isna(value) else f"{float(value):+.2f}%"
+        )
+        outcome_view = outcome_view.drop(columns=["Outcome 3M %", "Outcome 12M %"])
+        st.dataframe(outcome_view, hide_index=True, width="stretch")
+        lesson_rows = []
+        for ticker in frame["Ticker"]:
+            lesson = lesson_summary(get_backtest_runs(str(ticker)))
+            lesson_rows.append({"Ticker": ticker, "Samples": lesson["sample_size"], "3M win rate": lesson["win_rate"],
+                                "Average 3M %": lesson["average_3m_return"], "Confidence": lesson["confidence"]})
+        st.dataframe(pd.DataFrame(lesson_rows), hide_index=True, width="stretch")
+
     @st.fragment(run_every=5)
     def render_cohort_refresh_status() -> None:
         schedule_industry_refresh(refresh_priority, max_new=2)
@@ -340,7 +527,8 @@ if rows:
         if previous is not None and previous != signature:
             st.rerun()
 
-    render_cohort_refresh_status()
+    if not historical_mode:
+        render_cohort_refresh_status()
 
     st.subheader("Score rationale")
     for _, row in frame.iterrows():
@@ -359,6 +547,11 @@ if rows:
                 f"reliability {float(row['Positioning reliability']):.0f}/100."
             )
             st.caption(f"Short reversal lever · {row['Short reversal lever']}")
+            if not historical_mode:
+                st.write(
+                    f"**Backtested learning:** Entry {float(row.get('Learning entry adj', 0)):+.1f}; "
+                    f"Exit {float(row.get('Learning exit adj', 0)):+.1f}. {row.get('Learning rationale', 'No completed simulations yet.')}"
+                )
 if errors:
     st.error("Some data could not be fetched:")
     for error in errors:

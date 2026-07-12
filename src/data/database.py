@@ -133,6 +133,36 @@ def init_db(db_path: str | Path | None = None) -> None:
                 value_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS backtest_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                coverage TEXT NOT NULL,
+                entry_score REAL NOT NULL,
+                exit_score REAL NOT NULL,
+                entry_signal TEXT NOT NULL,
+                exit_signal TEXT NOT NULL,
+                technical_score REAL NOT NULL,
+                valuation_score REAL NOT NULL,
+                risk_score REAL NOT NULL,
+                outcome_1m REAL,
+                outcome_3m REAL,
+                outcome_6m REAL,
+                outcome_12m REAL,
+                inputs_json TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                outcome_refreshed_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ticker, as_of_date, model_version)
+            );
+            CREATE TABLE IF NOT EXISTS backtest_job_items (
+                as_of_date TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed')),
+                error TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(as_of_date, ticker)
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -141,6 +171,11 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute(
                 "ALTER TABLE portfolio_snapshots ADD COLUMN base_currency TEXT NOT NULL DEFAULT 'USD'"
             )
+        backtest_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(backtest_runs)")
+        }
+        if "outcome_refreshed_at" not in backtest_columns:
+            connection.execute("ALTER TABLE backtest_runs ADD COLUMN outcome_refreshed_at TEXT")
         migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'portfolio_holdings_to_lots_v1'"
         ).fetchone()
@@ -155,6 +190,82 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute(
                 "INSERT INTO schema_migrations (migration_key) VALUES ('portfolio_holdings_to_lots_v1')"
             )
+
+
+def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = None) -> None:
+    """Persist a reproducible point-in-time simulation and its separated outcomes."""
+    init_db(db_path)
+    fields = (
+        "ticker", "as_of_date", "coverage", "entry_score", "exit_score", "entry_signal", "exit_signal",
+        "technical_score", "valuation_score", "risk_score", "outcome_1m", "outcome_3m",
+        "outcome_6m", "outcome_12m", "inputs_json", "model_version",
+    )
+    values = [run.get(field) for field in fields]
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"""INSERT INTO backtest_runs ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})
+            ON CONFLICT(ticker, as_of_date, model_version) DO UPDATE SET
+                coverage=excluded.coverage, entry_score=excluded.entry_score, exit_score=excluded.exit_score,
+                entry_signal=excluded.entry_signal, exit_signal=excluded.exit_signal,
+                technical_score=excluded.technical_score, valuation_score=excluded.valuation_score,
+                risk_score=excluded.risk_score, outcome_1m=excluded.outcome_1m,
+                outcome_3m=excluded.outcome_3m, outcome_6m=excluded.outcome_6m,
+                outcome_12m=excluded.outcome_12m, inputs_json=excluded.inputs_json
+            """,
+            values,
+        )
+
+
+def get_backtest_runs(ticker: str | None = None, db_path: str | Path | None = None) -> list[dict[str, object]]:
+    init_db(db_path)
+    query = "SELECT * FROM backtest_runs"
+    params: tuple[object, ...] = ()
+    if ticker:
+        query += " WHERE ticker = ?"
+        params = (ticker.strip().upper(),)
+    query += " ORDER BY as_of_date DESC, ticker"
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(query, params).fetchall()]
+
+
+def update_backtest_outcomes(
+    ticker: str, as_of_date: str, outcomes: Mapping[str, object],
+    db_path: str | Path | None = None,
+) -> None:
+    """Refresh only forward outcomes; reconstructed inputs/scores remain immutable."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """UPDATE backtest_runs SET outcome_1m=?, outcome_3m=?, outcome_6m=?, outcome_12m=?,
+                outcome_refreshed_at=CURRENT_TIMESTAMP
+            WHERE ticker=? AND as_of_date=?""",
+            (outcomes.get("1M"), outcomes.get("3M"), outcomes.get("6M"), outcomes.get("12M"),
+             ticker.strip().upper(), as_of_date),
+        )
+
+
+def set_backtest_job_item(
+    as_of_date: str, ticker: str, status: str, error: str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT INTO backtest_job_items (as_of_date, ticker, status, error, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(as_of_date, ticker) DO UPDATE SET status=excluded.status,
+                error=excluded.error, updated_at=CURRENT_TIMESTAMP""",
+            (as_of_date, ticker.strip().upper(), status, error),
+        )
+
+
+def get_backtest_job_items(as_of_date: str, db_path: str | Path | None = None) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM backtest_job_items WHERE as_of_date = ? ORDER BY ticker", (as_of_date,)
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def add_ticker(ticker: str, db_path: str | Path | None = None) -> None:
@@ -209,6 +320,28 @@ def get_dashboard_order(db_path: str | Path | None = None) -> list[str]:
         return []
     value = json.loads(row["value_json"])
     return [str(ticker) for ticker in value] if isinstance(value, list) else []
+
+
+def save_active_backtest(as_of_date: str | None, db_path: str | Path | None = None) -> None:
+    """Persist the Time Machine selection across navigation and browser reloads."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT INTO ui_preferences (preference_key, value_json, updated_at)
+            VALUES ('active_backtest_date', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(preference_key) DO UPDATE SET value_json=excluded.value_json,
+                updated_at=CURRENT_TIMESTAMP""",
+            (json.dumps(as_of_date),),
+        )
+
+
+def get_active_backtest(db_path: str | Path | None = None) -> str | None:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            "SELECT value_json FROM ui_preferences WHERE preference_key='active_backtest_date'"
+        ).fetchone()
+    return json.loads(row["value_json"]) if row else None
 
 
 def set_portfolio_holding(
