@@ -24,7 +24,7 @@ Set `FMP_API_KEY` in `.env` to enable Financial Modeling Prep as the primary fun
 streamlit run app.py
 ```
 
-Add tickers in **Dashboard**, value current holdings in **Portfolio**, then use **Company** to inspect one- or three-year charts and target-price upside/downside. Use **Journal** to record, filter, edit, delete, and export thesis entries.
+Add tickers in **Decision dashboard**, value current holdings in **Portfolio**, then use **Company** to inspect one- or three-year charts and target-price upside/downside. Use **Journal** to record, filter, edit, delete, and export thesis entries.
 
 ## Tests
 
@@ -50,7 +50,7 @@ The ordered backlog for the next phase is maintained in [`docs/next-best-actions
 
 ### Implemented: Portfolio page and valuation
 
-Portfolio is an independent page between Dashboard and Company. It records shares, values each position and the total using current yfinance prices, and charts the reconstructed one-year value of today's holdings.
+Portfolio is an independent page between Decision dashboard and Company. It records shares, values each position and the total using current yfinance prices, and charts transaction-aware historical value.
 
 - A portfolio holding must also exist in the watchlist.
 - Adding a ticker from Portfolio automatically adds it to the watchlist.
@@ -58,11 +58,11 @@ Portfolio is an independent page between Dashboard and Company. It records share
 
 ### Implemented: Initial market-data refresh
 
-Force-refresh market data once when the Dashboard initially loads in a browser session.
+Force-refresh market data once when the Decision dashboard initially loads in a browser session.
 
-### Implemented: Dashboard ordering
+### Implemented: Decision dashboard ordering
 
-Switch the Dashboard between a selected-column sort and a persistent manual ticker order.
+Switch the Decision dashboard between a selected-column sort and a persistent manual ticker order. Company inherits the currently displayed order.
 
 ### Implemented: FMP fundamentals and valuation
 

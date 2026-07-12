@@ -14,15 +14,29 @@ GRID = "rgba(148, 163, 184, 0.12)"
 
 
 def inject_app_styles() -> None:
-    """Reserved for a future theme layer; intentionally uses no HTML components."""
+    """Inject a tiny global layer shared by every page."""
+    st.markdown(
+        """<style>
+div[data-testid="stElementContainer"]:has(h1) {
+     position: sticky !important; top: 2.55rem; z-index: 990; width: fit-content;
+     padding: .12rem .45rem .2rem; margin-left: -.45rem;
+     background: rgba(8, 13, 22, .94); border-radius: .4rem;
+     backdrop-filter: blur(8px); }
+@media (max-width: 700px) {
+     div[data-testid="stElementContainer"]:has(h1) { top: 2.45rem; }
+     h1 { font-size: 1.65rem !important; }
+}
+</style>""",
+        unsafe_allow_html=True,
+    )
 
 
 def page_header(eyebrow: str, title: str, description: str, pill: str) -> None:
     """Render a native Streamlit masthead that survives frontend version changes."""
     st.caption(eyebrow.upper())
-    title_col, pill_col = st.columns([5, 2], vertical_alignment="bottom")
-    with title_col:
-        st.title(title)
+    st.title(title)
+    description_col, pill_col = st.columns([5, 2], vertical_alignment="bottom")
+    with description_col:
         st.caption(description)
     with pill_col:
         st.info(pill, icon="ℹ️")

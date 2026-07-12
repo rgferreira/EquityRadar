@@ -128,6 +128,11 @@ def init_db(db_path: str | Path | None = None) -> None:
                 migration_key TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS ui_preferences (
+                preference_key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -177,6 +182,33 @@ def get_watchlist(db_path: str | Path | None = None) -> list[str]:
     init_db(db_path)
     with get_connection(db_path) as connection:
         return [row["ticker"] for row in connection.execute("SELECT ticker FROM watchlist ORDER BY ticker")]
+
+
+def save_dashboard_order(tickers: list[str], db_path: str | Path | None = None) -> None:
+    normalized = [str(ticker).strip().upper() for ticker in tickers if str(ticker).strip()]
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO ui_preferences (preference_key, value_json, updated_at)
+            VALUES ('decision_dashboard_order', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(preference_key) DO UPDATE SET
+                value_json=excluded.value_json, updated_at=CURRENT_TIMESTAMP
+            """,
+            (json.dumps(normalized),),
+        )
+
+
+def get_dashboard_order(db_path: str | Path | None = None) -> list[str]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            "SELECT value_json FROM ui_preferences WHERE preference_key = 'decision_dashboard_order'"
+        ).fetchone()
+    if not row:
+        return []
+    value = json.loads(row["value_json"])
+    return [str(ticker) for ticker in value] if isinstance(value, list) else []
 
 
 def set_portfolio_holding(

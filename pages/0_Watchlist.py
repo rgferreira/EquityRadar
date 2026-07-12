@@ -1,5 +1,6 @@
 """Dedicated watchlist administration page."""
 
+import pandas as pd
 import streamlit as st
 
 from src.data.database import add_ticker, get_watchlist, init_db, remove_ticker
@@ -18,7 +19,7 @@ page_header(
 tickers = get_watchlist()
 summary, guidance = st.columns([1, 3])
 summary.metric("Companies tracked", len(tickers))
-guidance.info("Add or remove symbols here. Dashboard and Company will reflect the updated universe immediately.")
+guidance.info("Add or remove symbols here. Decision dashboard and Company will reflect the updated universe immediately.")
 
 add_tab, remove_tab = st.tabs(["Add ticker", "Remove ticker"])
 with add_tab:
@@ -41,10 +42,13 @@ with remove_tab:
     if not tickers:
         st.info("The watchlist is empty.")
     else:
-        with st.form("watchlist_remove", border=True):
-            ticker_to_remove = st.selectbox("Ticker", tickers)
-            confirm = st.checkbox("Confirm removal from the watchlist")
-            remove = st.form_submit_button("Remove selected ticker", disabled=not confirm)
+        with st.container(border=True):
+            ticker_to_remove = st.selectbox("Ticker", tickers, key="watchlist_remove_ticker")
+            confirm = st.checkbox(
+                f"Confirm removal of {ticker_to_remove} from the watchlist",
+                key=f"confirm_watchlist_removal_{ticker_to_remove}",
+            )
+            remove = st.button("Remove selected ticker", disabled=not confirm, type="primary")
         if remove:
             try:
                 remove_ticker(ticker_to_remove)
@@ -55,6 +59,17 @@ with remove_tab:
 
 if tickers:
     st.subheader("Current research universe")
-    columns = st.columns(min(4, len(tickers)))
-    for index, symbol in enumerate(tickers):
-        columns[index % len(columns)].metric(f"Position {index + 1}", symbol)
+    grid_width = 3
+    cells = [f"{index + 1:02d} · {symbol}" for index, symbol in enumerate(tickers)]
+    cells.extend([""] * (-len(cells) % grid_width))
+    rows = [cells[index:index + grid_width] for index in range(0, len(cells), grid_width)]
+    st.dataframe(
+        pd.DataFrame(rows, columns=["1", "2", "3"]),
+        hide_index=True,
+        width="stretch",
+        height=36 + (35 * len(rows)),
+        column_config={
+            column: st.column_config.TextColumn(column, width="small")
+            for column in ("1", "2", "3")
+        },
+    )

@@ -1,5 +1,21 @@
 # Implemented features
 
+## Phase 3.3 — UI polishing
+
+- Renamed Dashboard to Decision dashboard throughout navigation and page chrome.
+- Decision table adds a single prioritized Diagnostic, clickable ticker drill-down, Dashboard-order handoff to Company, and subtle full-row highlighting for current Portfolio holdings.
+- Portfolio lot editing/deletion now sits in a collapsed workflow directly after Add purchase lot.
+- Company includes an explicit back link, respects the current Decision dashboard order, and accepts ticker deep links.
+- Entry cards now map one-to-one to the detailed tabs: Fundamentals & valuation, Market metrics, Industry & analysts, and Market positioning.
+- Exit-review now mirrors Entry visually with a centered severity-colored score and a two-column deterioration breakdown.
+- The main Company chart includes a synchronized FINRA pressure pulse: coral/teal short-interest change bars and a gold days-to-cover line beneath price and moving averages.
+- Watchlist removal now uses live controls outside a form, confirms the exact selected ticker, and retains the Portfolio ownership guard.
+- Decision dashboard drill-down uses same-tab row selection, eliminating the tab proliferation caused by link columns.
+- Diagnostics show both sides (`Entry / Exit`) consistently; their width follows the longest current value.
+- The compact two-column market snapshot now follows the decision table, reducing the phone scroll before the primary content.
+- A short-reversal lever rewards only a reported change from rising to falling short interest when technical strength confirms it; rising shorts alone remain cautionary evidence.
+- Every page keeps only its H1 title in a minimal sticky strip while scrolling.
+
 ## Market positioning MVP
 
 - Provider-neutral daily positioning snapshots persisted in SQLite with provider, reporting date, and fetched-at metadata.

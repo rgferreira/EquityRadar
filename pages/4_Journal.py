@@ -31,7 +31,7 @@ init_db()
 st.title("Investment journal")
 tickers = get_watchlist()
 if not tickers:
-    st.info("Add a ticker on the Dashboard first.")
+    st.info("Add a ticker on the Decision dashboard first.")
     st.stop()
 
 with st.form("journal_entry", clear_on_submit=True):

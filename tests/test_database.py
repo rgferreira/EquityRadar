@@ -25,7 +25,15 @@ from src.data.database import (
     delete_cash_transaction,
     set_portfolio_target,
     get_portfolio_targets,
+    get_dashboard_order,
+    save_dashboard_order,
 )
+
+
+def test_decision_dashboard_order_persists_across_sessions(tmp_path):
+    database = tmp_path / "radar.db"
+    save_dashboard_order(["NVDA", "GOOG", "AAPL"], database)
+    assert get_dashboard_order(database) == ["NVDA", "GOOG", "AAPL"]
 
 
 def test_watchlist_add_and_remove(tmp_path):

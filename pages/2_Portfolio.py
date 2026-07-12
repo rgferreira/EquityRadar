@@ -83,6 +83,61 @@ with st.expander("Add purchase lot"):
         except ValueError as exc:
             st.warning(str(exc))
 
+editable_lots = get_portfolio_lots()
+with st.expander("Edit/Delete lots"):
+    if not editable_lots:
+        st.caption("No purchase lots to edit yet.")
+    else:
+        lot_labels = {
+            f"#{lot['id']} · {lot['ticker']} · {lot['purchase_date'] or 'unknown date'} · {lot['shares']} shares": lot
+            for lot in editable_lots
+        }
+        selected_lot_label = st.selectbox("Lot to edit or delete", list(lot_labels))
+        selected_lot = lot_labels[selected_lot_label]
+        selected_lot_id = int(selected_lot["id"])
+        watchlist = get_watchlist()
+        with st.form("edit_portfolio_lot"):
+            edit_ticker = st.selectbox(
+                "Ticker", watchlist, index=watchlist.index(selected_lot["ticker"]),
+                key=f"edit_lot_ticker_{selected_lot_id}",
+            )
+            edit_date = st.date_input(
+                "Purchase date",
+                value=date.fromisoformat(selected_lot["purchase_date"]) if selected_lot["purchase_date"] else date.today(),
+                key=f"edit_lot_date_{selected_lot_id}",
+            )
+            edit_shares = st.number_input(
+                "Shares", min_value=0.0001, value=float(selected_lot["shares"]), step=1.0,
+                key=f"edit_lot_shares_{selected_lot_id}",
+            )
+            edit_price = st.number_input(
+                "Price per share", min_value=0.01, value=float(selected_lot["price_per_share"] or 0.01), step=0.01,
+                key=f"edit_lot_price_{selected_lot_id}",
+            )
+            edit_fees = st.number_input(
+                "Fees", min_value=0.0, value=float(selected_lot["fees"]), step=0.01,
+                key=f"edit_lot_fees_{selected_lot_id}",
+            )
+            edit_notes = st.text_input(
+                "Notes", value=selected_lot["notes"] or "", key=f"edit_lot_notes_{selected_lot_id}",
+            )
+            update_lot = st.form_submit_button("Update lot")
+        if update_lot:
+            update_portfolio_lot(selected_lot_id, {
+                "ticker": edit_ticker, "purchase_date": edit_date.isoformat(), "shares": edit_shares,
+                "price_per_share": edit_price, "fees": edit_fees, "notes": edit_notes,
+            })
+            st.success("Purchase lot updated.")
+            st.rerun()
+
+        confirm_delete_lot = st.checkbox(
+            "I understand this permanently deletes the selected lot", key="confirm_top_lot_delete",
+        )
+        if st.button("Delete selected lot", disabled=not confirm_delete_lot, key="delete_top_lot"):
+            delete_portfolio_lot(selected_lot_id)
+            st.success("Purchase lot deleted.")
+            st.rerun()
+
 with st.expander("Add cash or dividend transaction"):
     with st.form("cash_transaction", clear_on_submit=True):
         cash_type = st.selectbox(
@@ -249,58 +304,14 @@ if lots:
             "cost_basis": st.column_config.NumberColumn("Cost basis", format="$%.2f"),
         },
     )
-    legacy_count = sum(1 for lot in lots if lot["source"] == "legacy")
+    legacy_count = sum(
+        1 for lot in lots
+        if lot["source"] == "legacy" and (not lot.get("purchase_date") or lot.get("price_per_share") is None)
+    )
     if legacy_count:
         st.info(
-            f"{legacy_count} migrated lot(s) have unknown purchase date/price. Edit them below when those details are available."
+            f"{legacy_count} migrated lot(s) have unknown purchase date/price. Use Edit/Delete lots above when those details are available."
         )
-
-    lot_labels = {
-        f"#{lot['id']} · {lot['ticker']} · {lot['purchase_date'] or 'unknown date'} · {lot['shares']} shares": lot
-        for lot in lots
-    }
-    selected_lot_label = st.selectbox("Lot to edit or delete", list(lot_labels))
-    selected_lot = lot_labels[selected_lot_label]
-    selected_lot_id = int(selected_lot["id"])
-    with st.form("edit_portfolio_lot"):
-        edit_ticker = st.selectbox(
-            "Ticker", get_watchlist(), index=get_watchlist().index(selected_lot["ticker"]),
-            key=f"edit_lot_ticker_{selected_lot_id}",
-        )
-        edit_date = st.date_input(
-            "Purchase date",
-            value=date.fromisoformat(selected_lot["purchase_date"]) if selected_lot["purchase_date"] else date.today(),
-            key=f"edit_lot_date_{selected_lot_id}",
-        )
-        edit_shares = st.number_input(
-            "Shares", min_value=0.0001, value=float(selected_lot["shares"]), step=1.0,
-            key=f"edit_lot_shares_{selected_lot_id}",
-        )
-        edit_price = st.number_input(
-            "Price per share", min_value=0.01, value=float(selected_lot["price_per_share"] or 0.01), step=0.01,
-            key=f"edit_lot_price_{selected_lot_id}",
-        )
-        edit_fees = st.number_input(
-            "Fees", min_value=0.0, value=float(selected_lot["fees"]), step=0.01,
-            key=f"edit_lot_fees_{selected_lot_id}",
-        )
-        edit_notes = st.text_input(
-            "Notes", value=selected_lot["notes"] or "", key=f"edit_lot_notes_{selected_lot_id}",
-        )
-        update_lot = st.form_submit_button("Update lot")
-    if update_lot:
-        update_portfolio_lot(selected_lot_id, {
-            "ticker": edit_ticker, "purchase_date": edit_date.isoformat(), "shares": edit_shares,
-            "price_per_share": edit_price, "fees": edit_fees, "notes": edit_notes,
-        })
-        st.success("Purchase lot updated.")
-        st.rerun()
-
-    confirm_delete_lot = st.checkbox("I understand this permanently deletes the selected lot")
-    if st.button("Delete selected lot", disabled=not confirm_delete_lot):
-        delete_portfolio_lot(selected_lot_id)
-        st.success("Purchase lot deleted.")
-        st.rerun()
 
 if sales:
     st.subheader("Sales and realized P&L")

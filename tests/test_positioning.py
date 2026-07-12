@@ -50,6 +50,19 @@ def test_missing_positioning_never_changes_established_scores():
     assert apply_positioning_adjustment(98, 5) == 100
 
 
+def test_short_reversal_lever_requires_falling_shorts_and_technical_confirmation():
+    history = [
+        {"reporting_date": "2026-05-31", "snapshot_type": "historical_short_interest", "short": {"shares_short": 100, "short_change_pct": 8}},
+        {"reporting_date": "2026-06-15", "snapshot_type": "historical_short_interest", "short": {"shares_short": 108, "short_change_pct": 8}},
+        {"reporting_date": "2026-06-30", "snapshot_type": "historical_short_interest", "short": {"shares_short": 102, "short_change_pct": -5.6}},
+    ]
+    confirmed = positioning_score_adjustments(sample_snapshot(), history, technical_score=70)
+    unconfirmed = positioning_score_adjustments(sample_snapshot(), history, technical_score=50)
+    assert confirmed["short_reversal_confirmed"] is True
+    assert confirmed["entry_adjustment"] > unconfirmed["entry_adjustment"]
+    assert confirmed["exit_adjustment"] < unconfirmed["exit_adjustment"]
+
+
 def test_positioning_cache_round_trip(tmp_path):
     database = tmp_path / "radar.db"
     payload = sample_snapshot()

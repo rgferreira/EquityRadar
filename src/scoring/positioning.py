@@ -97,6 +97,24 @@ def positioning_score_adjustments(
         baseline = _num(baseline_row["short"].get("shares_short"))
         if latest is not None and baseline:
             trend = (latest / baseline - 1) * 100
+    latest_change = (
+        _num(ordered[-1]["short"].get("short_change_pct")) if ordered else None
+    )
+    previous_change = (
+        _num(ordered[-2]["short"].get("short_change_pct")) if len(ordered) >= 2 else None
+    )
+    reversal_confirmed = bool(
+        latest_change is not None and previous_change is not None
+        and latest_change < 0 <= previous_change and technical_score >= 60
+    )
+    if reversal_confirmed:
+        reversal_lever = "Confirmed · shorts falling with technical strength"
+    elif latest_change is not None and latest_change > 0:
+        reversal_lever = "Armed · short interest is still rising"
+    elif latest_change is not None and latest_change < 0 and technical_score < 60:
+        reversal_lever = "Watch · shorts easing without technical confirmation"
+    else:
+        reversal_lever = "Neutral · no new short-position reversal"
 
     current_confidence = float(current["confidence"]) / 100
     history_confidence = min(1.0, len(ordered) / 6)
@@ -110,6 +128,9 @@ def positioning_score_adjustments(
     )
     entry_raw = .45 * long_signal - .30 * pressure_signal - .25 * trend_signal + .10 * squeeze_confirmation
     exit_raw = .40 * pressure_signal - .25 * long_signal + .35 * trend_signal
+    if reversal_confirmed:
+        entry_raw += .25
+        exit_raw -= .20
     entry_adjustment = max(-5.0, min(5.0, 5 * entry_raw * reliability))
     exit_adjustment = max(-7.0, min(7.0, 7 * exit_raw * reliability))
     notes = [
@@ -117,11 +138,14 @@ def positioning_score_adjustments(
         "Six-report short trend unavailable" if trend is None else f"Six-report short-interest trend {trend:+.1f}%",
         f"Current positioning coverage {float(current['confidence']):.0f}/100",
         f"Modifier reliability {reliability:.0%}",
+        f"Short reversal lever: {reversal_lever}",
     ]
     return {
         "entry_adjustment": round(entry_adjustment, 1), "exit_adjustment": round(exit_adjustment, 1),
         "reliability": round(reliability * 100, 1), "short_trend_pct": trend,
         "history_points": len(ordered), "notes": notes,
+        "short_latest_change_pct": latest_change, "short_reversal_lever": reversal_lever,
+        "short_reversal_confirmed": reversal_confirmed,
     }
 
 

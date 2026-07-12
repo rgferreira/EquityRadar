@@ -1,9 +1,11 @@
 """Company detail page."""
 
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
 import streamlit as st
 
-from src.data.database import get_cached_industry_research, get_cached_positioning, get_journal_entries, get_positioning_history, get_watchlist, init_db
+from src.data.database import get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_positioning_history, get_watchlist, init_db
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -37,9 +39,28 @@ if not tickers:
     st.info("Add a ticker in Watchlist management first.")
     st.stop()
 
+dashboard_order = get_dashboard_order()
+tickers = [symbol for symbol in dashboard_order if symbol in tickers] + [
+    symbol for symbol in tickers if symbol not in dashboard_order
+]
+session_requested_ticker = str(st.session_state.pop("company_requested_ticker", "")).upper()
+requested_ticker = session_requested_ticker or str(st.query_params.get("ticker", "")).upper()
+initial_ticker = requested_ticker if requested_ticker in tickers else tickers[0]
+if requested_ticker in tickers and st.session_state.get("company_selector") != requested_ticker:
+    st.session_state.company_selector = requested_ticker
+elif st.session_state.get("company_selector") not in tickers:
+    st.session_state.company_selector = initial_ticker
+
+
+def sync_company_query() -> None:
+    st.query_params["ticker"] = st.session_state.company_selector
+
 ticker_col, history_col = st.columns([1, 1], vertical_alignment="bottom")
 with ticker_col:
-    ticker = st.selectbox("Company", tickers)
+    ticker = st.selectbox(
+        "Company", tickers, key="company_selector",
+        on_change=sync_company_query,
+    )
 with history_col:
     history_label = st.radio("Chart history", ["1 year", "3 years"], horizontal=True)
 history_period = "1y" if history_label == "1 year" else "3y"
@@ -85,6 +106,9 @@ def render_positioning_refresh_status() -> None:
 
 render_positioning_refresh_status()
 
+if st.button("← Back to Decision dashboard", type="tertiary"):
+    st.switch_page("pages/1_Dashboard.py")
+
 try:
     with st.spinner(f"Loading {ticker} market data…"):
         history = fetch_price_history(ticker, period=history_period)
@@ -108,8 +132,11 @@ try:
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
 
-    figure = go.Figure()
-    figure.add_scatter(x=history.index, y=history["Close"], name="Close")
+    figure = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=.04,
+        row_heights=[.78, .22], specs=[[{}], [{"secondary_y": True}]],
+    )
+    figure.add_scatter(x=history.index, y=history["Close"], name="Close", row=1, col=1)
     for window, label in ((50, "50-day MA"), (100, "100-day MA"), (200, "200-day MA")):
         moving_average = history["Close"].rolling(window).mean()
         if moving_average.notna().any():
@@ -118,11 +145,52 @@ try:
                 y=moving_average,
                 name=label,
                 line={"dash": "dot"},
+                row=1, col=1,
             )
+    finra_rows = []
+    history_start = history.index.min().tz_localize(None) if getattr(history.index, "tz", None) else history.index.min()
+    for observation in positioning_history:
+        if observation.get("snapshot_type") != "historical_short_interest":
+            continue
+        reported = observation.get("reporting_date") or observation.get("snapshot_date")
+        short_data = observation.get("short", {})
+        if not reported or not isinstance(short_data, dict):
+            continue
+        reported_at = pd.Timestamp(str(reported))
+        if reported_at < history_start:
+            continue
+        finra_rows.append({
+            "date": reported_at,
+            "change": short_data.get("short_change_pct"),
+            "days": short_data.get("days_to_cover"),
+            "shares": short_data.get("shares_short"),
+        })
+    if finra_rows:
+        finra_frame = pd.DataFrame(finra_rows).sort_values("date")
+        colors = ["#ff6375" if float(value or 0) > 0 else "#35d0ba" for value in finra_frame["change"]]
+        hover = [
+            f"FINRA report {row.date:%Y-%m-%d}<br>Short change {float(row.change or 0):+.2f}%"
+            f"<br>Shares short {float(row.shares or 0):,.0f}<br>Days to cover {float(row.days or 0):.2f}"
+            for row in finra_frame.itertuples()
+        ]
+        figure.add_bar(
+            x=finra_frame["date"], y=finra_frame["change"], name="FINRA short Δ",
+            marker_color=colors, customdata=hover, hovertemplate="%{customdata}<extra></extra>",
+            row=2, col=1, secondary_y=False,
+        )
+        figure.add_scatter(
+            x=finra_frame["date"], y=finra_frame["days"], name="Days to cover",
+            mode="lines+markers", line={"color": "#f5c26b", "width": 1.5},
+            marker={"size": 4}, row=2, col=1, secondary_y=True,
+        )
     st.markdown(f"**{ticker} · {history_label.lower()} price history**")
-    figure.update_layout(yaxis_title="Price")
-    style_figure(figure, height=470)
+    figure.update_yaxes(title_text="Price", row=1, col=1)
+    figure.update_yaxes(title_text="Short Δ %", row=2, col=1, secondary_y=False, zeroline=True)
+    figure.update_yaxes(title_text="Days", row=2, col=1, secondary_y=True, showgrid=False)
+    style_figure(figure, height=560)
     st.plotly_chart(figure, width="stretch")
+    if finra_rows:
+        st.caption("FINRA pressure pulse · coral = rising short interest · teal = falling · gold = days to cover")
 
     base_entry_score = float(industry_breakdown["score"])
     base_exit_score = calculate_exit_review_score(technical, risk)
@@ -146,40 +214,53 @@ try:
     )
     st.plotly_chart(entry_figure, width="stretch", config={"displayModeBar": False})
 
-    st.caption("ENTRY ATTRACTIVENESS · EXACT WEIGHTED INPUTS")
-    component_cells = [
-        "<b>Business quality · 25%</b><br>" + f"{float(industry_breakdown['business_quality']):.1f}/100",
-        "<b>Peer-relative value · 30%</b><br>" + f"{float(industry_breakdown['relative_valuation']):.1f}/100",
-        "<b>Technical timing · 20%</b><br>" + f"{float(industry_breakdown['technical_timing']):.1f}/100",
-        "<b>Risk resilience · 15%</b><br>" + f"{float(industry_breakdown['risk_resilience']):.1f}/100",
-        "<b>Analyst sentiment · 10%</b><br>" + f"{float(industry_breakdown['analyst_sentiment']):.1f}/100",
-        "<b>Positioning modifier · capped ±5</b><br>" + f"{float(positioning_modifier['entry_adjustment']):+.1f} points",
+    st.caption("ENTRY MAP · EACH CARD MATCHES A DETAIL TAB BELOW")
+    entry_card_rows = [
+        (
+            ("Fundamentals & valuation · 55%", f"Business quality {float(industry_breakdown['business_quality']):.1f} · Peer value {float(industry_breakdown['relative_valuation']):.1f}"),
+            ("Market metrics · 35%", f"Technical {float(industry_breakdown['technical_timing']):.1f} · Risk resilience {float(industry_breakdown['risk_resilience']):.1f}"),
+        ),
+        (
+            ("Industry & analysts · 10%", f"{float(industry_breakdown['analyst_sentiment']):.1f}/100"),
+            ("Market positioning modifier · capped ±5", f"{float(positioning_modifier['entry_adjustment']):+.1f} points"),
+        ),
     ]
-    component_figure = go.Figure(go.Table(
-        columnwidth=[1, 1],
-        cells={
-            "values": [component_cells[0::2], component_cells[1::2]],
-            "align": "left",
-            "height": 60,
-            "fill_color": "#0e1117",
-            "line_color": "#283142",
-            "font": {"color": "#e4e9f0", "size": 13},
+    for card_row in entry_card_rows:
+        card_columns = st.columns(2)
+        for column, (title, detail) in zip(card_columns, card_row):
+            with column:
+                with st.container(border=True):
+                    st.markdown(f"**{title}**")
+                    st.caption(detail)
+
+    exit_color = "#ff6375" if exit_score >= 70 else "#f0ad4e" if exit_score >= 50 else "#38d996"
+    exit_figure = go.Figure(go.Indicator(
+        mode="number", value=exit_score,
+        number={"suffix": "/100", "valueformat": ".1f", "font": {"size": 36, "color": exit_color}},
+        title={
+            "text": f"<b>EXIT-REVIEW SCORE</b><br><span style='font-size:0.78em;color:#9aa4b2'>{exit_review_label(exit_score)}</span>",
+            "font": {"size": 15, "color": "#d6deea"},
         },
+        domain={"x": [0, 1], "y": [0, 1]},
     ))
-    component_figure.update_layout(
-        height=190,
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+    exit_figure.update_layout(
+        height=125, margin={"l": 0, "r": 0, "t": 26, "b": 0},
         paper_bgcolor="rgba(0,0,0,0)",
     )
-    st.plotly_chart(component_figure, width="stretch", config={"displayModeBar": False})
-
-    st.caption("EXIT MONITORING · SEPARATE DETERIORATION SIGNAL")
-    exit_column, exit_context = st.columns([1, 2], vertical_alignment="center")
-    exit_column.metric("Exit-review score", f"{exit_score:.1f}/100")
-    exit_column.caption(exit_review_label(exit_score))
-    exit_context.caption(
-        f"Base {base_exit_score:.1f} · positioning {float(positioning_modifier['exit_adjustment']):+.1f}. "
-        "This remains separate from the entry score."
+    st.plotly_chart(exit_figure, width="stretch", config={"displayModeBar": False})
+    st.caption("EXIT MAP · DETERIORATION INPUTS")
+    exit_columns = st.columns(2)
+    for column, title, detail in (
+        (exit_columns[0], "Technical deterioration · 60%", f"{100 - float(technical):.1f}/100"),
+        (exit_columns[1], "Market-risk deterioration · 40%", f"{100 - float(risk):.1f}/100"),
+    ):
+        with column:
+            with st.container(border=True):
+                st.markdown(f"**{title}**")
+                st.caption(detail)
+    st.caption(
+        f"Base {base_exit_score:.1f} · Market positioning modifier {float(positioning_modifier['exit_adjustment']):+.1f} · "
+        "separate from Entry"
     )
 
     with st.expander("How these scores were calculated"):
@@ -189,8 +270,8 @@ try:
         st.write(f"**Legacy market risk ({risk}/100, used by Exit Review):** {explain_risk_score(metrics, metric_history)}")
         st.write(f"**Exit-review score:** base technical/risk deterioration {base_exit_score:.1f}; positioning adjustment {float(positioning_modifier['exit_adjustment']):+.1f}. It is not an execution instruction.")
 
-    fundamentals_tab, industry_tab, positioning_tab, metrics_tab, journal_tab = st.tabs([
-        "Fundamentals & valuation", "Industry & analysts", "Market positioning", "Market metrics", "Journal context"
+    fundamentals_tab, metrics_tab, industry_tab, positioning_tab, journal_tab = st.tabs([
+        "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Journal context"
     ])
     with fundamentals_tab:
         st.subheader("Fundamentals and valuation")
@@ -293,6 +374,10 @@ try:
             modifier_columns[0].metric("Entry adjustment", f"{float(positioning_modifier['entry_adjustment']):+.1f}")
             modifier_columns[1].metric("Exit adjustment", f"{float(positioning_modifier['exit_adjustment']):+.1f}")
             modifier_columns[2].metric("Modifier reliability", f"{float(positioning_modifier['reliability']):.0f}/100")
+            if positioning_modifier.get("short_reversal_confirmed"):
+                st.success(f"Short reversal lever: {positioning_modifier['short_reversal_lever']}")
+            else:
+                st.caption(f"Short reversal lever · {positioning_modifier['short_reversal_lever']}")
             st.caption(
                 f"Provider: {positioning.get('provider_name')} · Short-interest report: "
                 f"{positioning.get('reporting_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')}"

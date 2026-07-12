@@ -1,13 +1,13 @@
-"""Watchlist dashboard."""
+"""Decision dashboard."""
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 from datetime import datetime
 
 from src.data.database import (
     get_cached_industry_research,
     get_cached_positioning,
+    save_dashboard_order,
     get_portfolio_holdings,
     get_positioning_history,
     get_watchlist,
@@ -28,7 +28,7 @@ from src.scoring.positioning import apply_positioning_adjustment, positioning_sc
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
 
-st.set_page_config(page_title="Dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
 fundamentals_providers = []
 if FMP_API_KEY:
@@ -37,7 +37,7 @@ fundamentals_providers.append(YFinanceFundamentalsProvider())
 fundamentals_provider = FallbackFundamentalsProvider(fundamentals_providers)
 inject_app_styles()
 page_header(
-    "Market command center", "Watchlist dashboard",
+    "Market command center", "Decision dashboard",
     "Scan momentum, valuation, risk, and decision signals across every company you follow.",
     "Research only · No execution",
 )
@@ -56,61 +56,36 @@ def move_manual_ticker(offset: int) -> None:
         st.session_state.dashboard_manual_order = order
 
 
-def render_dashboard_table(frame: pd.DataFrame) -> None:
-    """Render a dense, legible scan table with controlled typography and row height."""
-    percentage_columns = {"1M %", "3M %", "6M %", "12M %", "Drawdown %"}
-    price_columns = {"Price", "52W High", "52W Low", "50D MA", "100D MA", "200D MA"}
-    score_columns = {"Technical", "Valuation", "Risk", "Entry score", "Exit-review score", "Exit score", "Positioning entry adj", "Positioning exit adj", "Positioning reliability"}
+def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str]) -> int | None:
+    """Render a compact table and return a selected row for same-tab drill-down."""
+    longest_diagnostic = max((len(str(value)) for value in frame["Diagnostic"]), default=14)
+    diagnostic_width = int(min(205, max(135, longest_diagnostic * 6.2)))
+    config: dict[str, object] = {
+        "Ticker": st.column_config.TextColumn(
+            "Ticker", width=65, help="Select a row to open this company in the same tab.",
+        ),
+        "Diagnostic": st.column_config.TextColumn("Diagnostic", width=diagnostic_width),
+        "Price": st.column_config.NumberColumn("Price", format="$%.2f", width="small"),
+        "Entry score": st.column_config.NumberColumn("Entry score", format="%.1f", width="small"),
+        "Exit score": st.column_config.NumberColumn("Exit score", format="%.1f", width="small"),
+    }
+    for column in ("1M %", "3M %", "6M %", "12M %", "Drawdown %"):
+        config[column] = st.column_config.NumberColumn(column, format="%.2f%%")
+    for column in ("Technical", "Valuation", "Risk", "Positioning entry adj", "Positioning exit adj", "Positioning reliability"):
+        config[column] = st.column_config.NumberColumn(column, format="%.1f")
+    def highlight_owned(row: pd.Series) -> list[str]:
+        ticker = str(row["Ticker"])
+        style = "background-color: #14283a;" if ticker in owned_tickers else ""
+        return [style] * len(row)
 
-    def display_value(column: str, value: object) -> str:
-        if pd.isna(value):
-            return "—"
-        if column in percentage_columns:
-            return f"{float(value):,.2f}%"
-        if column in price_columns:
-            return f"${float(value):,.2f}"
-        if column in score_columns:
-            return f"{float(value):.0f}"
-        if column in {"Price data fetched at", "Freshness"}:
-            return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
-        return str(value)
-
-    values = [
-        [display_value(column, value) for value in frame[column]]
-        for column in frame.columns
-    ]
-    widths = [
-        80 if column == "Ticker" else
-        112 if column in {"Entry signal", "Exit signal"} else
-        145 if column == "Freshness" else
-        88
-        for column in frame.columns
-    ]
-    figure = go.Figure(data=[go.Table(
-        columnwidth=widths,
-        header={
-            "values": [f"<b>{column}</b>" for column in frame.columns],
-            "align": "left",
-            "height": 34,
-            "fill_color": "#111827",
-            "line_color": "#273244",
-            "font": {"color": "#cbd5e1", "size": 12},
-        },
-        cells={
-            "values": values,
-            "align": "left",
-            "height": 30,
-            "fill_color": "#080d16",
-            "line_color": "#202938",
-            "font": {"color": "#e2e8f0", "size": 12},
-        },
-    )])
-    figure.update_layout(
-        height=34 + 30 * len(frame) + 18,
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        paper_bgcolor="rgba(0,0,0,0)",
+    styled = frame.style.apply(highlight_owned, axis=1)
+    generation = int(st.session_state.get("decision_table_generation", 0))
+    event = st.dataframe(
+        styled, hide_index=True, width="stretch", height=36 + 35 * len(frame), column_config=config,
+        on_select="rerun", selection_mode="single-row", key=f"decision_table_{generation}",
     )
-    st.plotly_chart(figure, width="stretch", config={"displayModeBar": False})
+    selected_rows = event.selection.rows if hasattr(event, "selection") else []
+    return int(selected_rows[0]) if selected_rows else None
 
 
 def non_wrapping_signal_labels(frame: pd.DataFrame) -> pd.DataFrame:
@@ -189,10 +164,12 @@ if refresh or initial_refresh:
                 "Entry score": calibrated_entry,
                 "Positioning entry adj": positioning_modifier["entry_adjustment"],
                 "Entry signal": entry_label(calibrated_entry),
+                "Diagnostic": f"{entry_label(calibrated_entry)} / {exit_review_label(calibrated_exit)}",
                 "Industry calibrated": "Yes" if industry_research else "Pending",
                 "Exit-review score": calibrated_exit,
                 "Positioning exit adj": positioning_modifier["exit_adjustment"],
                 "Positioning reliability": positioning_modifier["reliability"],
+                "Short reversal lever": positioning_modifier.get("short_reversal_lever", "Unavailable"),
                 "Exit signal": exit_review_label(calibrated_exit),
                 "Technical rationale": explain_technical_score(metrics),
                 "Risk rationale": explain_risk_score(metrics, history),
@@ -234,11 +211,13 @@ if rows:
             row["Positioning entry adj"] = modifier["entry_adjustment"]
             row["Positioning exit adj"] = modifier["exit_adjustment"]
             row["Positioning reliability"] = modifier["reliability"]
+            row["Short reversal lever"] = modifier.get("short_reversal_lever", "Unavailable")
             row["Entry score"] = apply_positioning_adjustment(float(calibrated["score"]), float(modifier["entry_adjustment"]))
             base_exit = calculate_exit_review_score(float(row["Technical"]), float(row["Risk"]))
             row["Exit-review score"] = apply_positioning_adjustment(base_exit, float(modifier["exit_adjustment"]))
             row["Entry signal"] = entry_label(float(row["Entry score"]))
             row["Exit signal"] = exit_review_label(float(row["Exit-review score"]))
+            row["Diagnostic"] = f"{row['Entry signal']} / {row['Exit signal']}"
             row["Industry rationale"] = "; ".join(
                 [*calibrated["quality_notes"], *calibrated["valuation_notes"], *calibrated["analyst_notes"]]
             )
@@ -247,11 +226,6 @@ if rows:
     above_200 = int((frame["Price"] > frame["200D MA"]).sum())
     avg_entry = frame["Entry score"].mean()
     avg_risk = frame["Risk"].mean()
-    overview = st.columns(4)
-    overview[0].metric("Companies tracked", len(frame))
-    overview[1].metric("Above 50-day MA", f"{above_50}/{len(frame)}", f"{above_50 / len(frame):.0%} breadth")
-    overview[2].metric("Above 200-day MA", f"{above_200}/{len(frame)}", f"{above_200 / len(frame):.0%} breadth")
-    overview[3].metric("Average entry / risk", f"{avg_entry:.0f} / {avg_risk:.0f}")
 
     st.subheader("Watchlist signals")
     with st.expander("Customize order and visible metrics"):
@@ -299,6 +273,9 @@ if rows:
                 _manual_order=frame["Ticker"].map({ticker: index for index, ticker in enumerate(manual_order)})
             ).sort_values("_manual_order").drop(columns="_manual_order")
 
+        st.session_state.dashboard_display_order = frame["Ticker"].tolist()
+        save_dashboard_order(st.session_state.dashboard_display_order)
+
         optional_columns = [
             "1M %", "3M %", "6M %", "12M %", "Drawdown %",
             "Technical", "Valuation", "Risk",
@@ -311,10 +288,34 @@ if rows:
             help="Keep this empty for the compact phone-friendly decision view.",
         )
     display_frame = frame[[
-        "Ticker", "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
+        "Ticker", "Diagnostic", "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
     ]].copy()
     display_frame = non_wrapping_signal_labels(display_frame)
-    render_dashboard_table(display_frame)
+    selected_row = render_dashboard_table(display_frame, set(portfolio_tickers))
+    if selected_row is not None:
+        st.session_state.company_requested_ticker = str(display_frame.iloc[selected_row]["Ticker"])
+        st.session_state.decision_table_generation = int(st.session_state.get("decision_table_generation", 0)) + 1
+        st.switch_page("pages/3_Company.py")
+    if portfolio_tickers:
+        st.caption("Highlighted rows · currently held in Portfolio")
+    st.caption("MARKET SNAPSHOT")
+    summary_frame = pd.DataFrame({
+        "Breadth": [
+            f"Above 50-day MA · {above_50}/{len(frame)} ({above_50 / len(frame):.0%})",
+            f"Above 200-day MA · {above_200}/{len(frame)} ({above_200 / len(frame):.0%})",
+        ],
+        "Decision overview": [
+            f"Companies tracked · {len(frame)}",
+            f"Average entry / risk · {avg_entry:.0f} / {avg_risk:.0f}",
+        ],
+    })
+    st.dataframe(
+        summary_frame, hide_index=True, width="stretch", height=106,
+        column_config={
+            "Breadth": st.column_config.TextColumn(width="medium"),
+            "Decision overview": st.column_config.TextColumn(width="medium"),
+        },
+    )
     refreshed_at = st.session_state.get("last_refreshed_at")
     if refreshed_at:
         st.caption(f"Last refreshed: {refreshed_at}. Refresh again to retrieve new provider data.")
@@ -357,6 +358,7 @@ if rows:
                 f"Exit {float(row['Positioning exit adj']):+.1f}; "
                 f"reliability {float(row['Positioning reliability']):.0f}/100."
             )
+            st.caption(f"Short reversal lever · {row['Short reversal lever']}")
 if errors:
     st.error("Some data could not be fetched:")
     for error in errors:
