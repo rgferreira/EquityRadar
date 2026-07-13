@@ -42,6 +42,8 @@
 - Saved runs automatically refresh incomplete forward outcomes once per calendar day. Immature 3M/12M horizons are labelled with their required trading-session count instead of displaying an ambiguous null value.
 - Intelligent cutoff discovery ranks up to six non-redundant historical dates from broad-market regimes, watchlist momentum/MA events and FINRA short-interest changes. Suggestions refresh automatically each day or after watchlist changes, persist their evidence and rationale, and visibly track Not run, Running and Completed states alongside a custom-date option.
 - Suggested and custom dates are staged without side effects; the user must explicitly confirm every historical simulation.
+- The Score overlap audit deduplicates model versions by ticker/cutoff, measures component rank correlations, estimates leave-one-component-out incremental R² against normalized forward outcomes, and identifies architectural reuse of drawdown, analyst actions, technical gates and learned feedback.
+- Audit findings remain advisory: component definitions and production weights are unchanged until an explicit model revision is accepted and tested against saved simulations.
 - Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.
 
 ## Phase 3.5 · Position-Aware Decisions

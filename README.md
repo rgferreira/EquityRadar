@@ -50,6 +50,8 @@ Phase 3.7 adds a learning-value gate. Each saved run shows its weighted outcome,
 
 Time Machine can use either a custom cutoff or an automatically ranked interesting date. Suggestions are persisted and refreshed in the background each day or when watchlist membership changes. Every recommendation identifies its market-regime, watchlist-price, moving-average or FINRA positioning trigger, exposes a learning-value rank, and shows whether it is not run, running or completed. Selecting any date only stages it; simulation always requires explicit confirmation.
 
+The saved-simulation panel includes a score-overlap audit. It maps known shared raw inputs, measures pairwise rank correlation across distinct point-in-time simulations, and estimates each component's incremental outcome information relative to the other available components. The audit produces review recommendations but never changes production weights automatically.
+
 Price history remains provided by yfinance. Fundamentals use a provider-neutral interface with FMP first and a separate Yahoo Finance fallback adapter, and are cached in SQLite at most once per calendar day unless explicitly refreshed. Provider failures and missing fields are isolated per ticker and do not block prices.
 
 Official FINRA short-interest history is backfilled automatically for newly added equities and missing-coverage watchlist members. It contributes bounded modifiers to current scores. Historical simulations use only FINRA reports available by their cutoff and are versioned/rebuilt after new history arrives; crypto and instruments without FINRA equity coverage remain neutral.

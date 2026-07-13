@@ -32,6 +32,7 @@ from src.scoring.valuation import calculate_valuation_score, explain_valuation_s
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.scoring.position_action import initiation_diagnostic, position_action
+from src.scoring.orthogonality import score_orthogonality_audit
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
 from src.backtesting import decision_outcome, learned_score_adjustments, lesson_summary
@@ -655,7 +656,9 @@ if rows:
         if not saved_runs:
             st.info("No persisted simulations yet.")
         else:
-            archive_tab, learning_tab = st.tabs(["Simulation archive", "Learning by ticker"])
+            archive_tab, learning_tab, audit_tab = st.tabs([
+                "Simulation archive", "Learning by ticker", "Score overlap audit",
+            ])
             with archive_tab:
                 archive = pd.DataFrame(saved_runs)
                 archive_summary = (
@@ -689,6 +692,29 @@ if rows:
                                    "verdict": "Decision conclusion", "learning_priority": "Learning value",
                                    "should_learn": "Used for learning", "learning_reason": "Why"})
                 st.dataframe(learning_history, hide_index=True, width="stretch")
+            with audit_tab:
+                audit = score_orthogonality_audit(saved_runs)
+                audit_metrics = st.columns(3)
+                audit_metrics[0].metric("Distinct simulations", int(audit["sample_size"]))
+                audit_metrics[1].metric("Matured outcomes", int(audit["matured_outcomes"]))
+                audit_metrics[2].metric(
+                    "Empirical overlap flags",
+                    sum(row["Overlap level"] != "Distinct" for row in audit["pairwise"]),
+                )
+                st.caption("Correlation identifies components moving together; incremental R² estimates whether each adds outcome information beyond the others. It is diagnostic evidence, not an automatic weight change.")
+                st.markdown("**Empirical component overlap**")
+                if audit["pairwise"]:
+                    st.dataframe(pd.DataFrame(audit["pairwise"]), hide_index=True, width="stretch")
+                else:
+                    st.info("More varied simulations are required for empirical pair analysis.")
+                st.markdown("**Incremental outcome information**")
+                if audit["components"]:
+                    st.dataframe(pd.DataFrame(audit["components"]), hide_index=True, width="stretch")
+                st.markdown("**Architectural overlap map**")
+                st.dataframe(pd.DataFrame(audit["semantic"]), hide_index=True, width="stretch")
+                st.markdown("**Recommended review sequence**")
+                for recommendation in audit["recommendations"]:
+                    st.write(f"- {recommendation}")
 
     with st.expander("Customize order and visible metrics"):
         st.radio("Ordering mode", ["Sort by column", "Manual order"], horizontal=True,
