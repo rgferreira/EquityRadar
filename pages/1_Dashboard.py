@@ -35,7 +35,7 @@ from src.scoring.position_action import initiation_diagnostic, position_action
 from src.scoring.orthogonality import score_orthogonality_audit
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
-from src.backtesting import decision_outcome, learned_score_adjustments, lesson_summary
+from src.backtesting import decision_outcome, latest_model_runs, learned_score_adjustments, lesson_summary
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
@@ -271,7 +271,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
     st.session_state.dashboard_rows_mode = "present"
 
 if historical_mode:
-    runs = [run for run in get_backtest_runs() if run["as_of_date"] == simulation_key]
+    runs = [run for run in latest_model_runs(get_backtest_runs()) if run["as_of_date"] == simulation_key]
     rows, errors = [], []
     for run in runs:
         inputs = json.loads(str(run["inputs_json"]))
@@ -509,7 +509,7 @@ if rows:
     if historical_mode:
         st.subheader("Backtested learning")
         st.caption(f"Cutoff date · {simulation_key} · Outcomes are judged against the old decision, never used to calculate it. Composite = 50% 1M + 30% 3M + 20% 6M after monthly normalization.")
-        analyses = {str(run["ticker"]): decision_outcome(run) for run in get_backtest_runs()
+        analyses = {str(run["ticker"]): decision_outcome(run) for run in latest_model_runs(get_backtest_runs())
                     if run["as_of_date"] == simulation_key}
         outcome_view = frame[["Ticker", "Cutoff date", "Entry signal", "Entry score", "Outcome 1M %", "Outcome 3M %", "Outcome 6M %"]].copy()
         for horizon, sessions in (("1M", 21), ("3M", 63), ("6M", 126)):
@@ -652,7 +652,7 @@ if rows:
             st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
 
     with st.expander("Saved simulations & learning history"):
-        saved_runs = get_backtest_runs()
+        saved_runs = latest_model_runs(get_backtest_runs())
         if not saved_runs:
             st.info("No persisted simulations yet.")
         else:

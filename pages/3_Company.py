@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_watchlist, init_db
-from src.backtesting import decision_outcome, learned_score_adjustments
+from src.backtesting import decision_outcome, latest_model_runs, learned_score_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -139,7 +139,7 @@ try:
     positioning_breakdown = positioning_scores(positioning)
     positioning_history = get_positioning_history(ticker)
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
-    backtest_runs = get_backtest_runs(ticker)
+    backtest_runs = latest_model_runs(get_backtest_runs(ticker))
     learning_modifier = learned_score_adjustments(backtest_runs)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
 

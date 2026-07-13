@@ -4,7 +4,7 @@ import pandas as pd
 
 from src.backtesting import (
     decision_outcome, evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
-    lesson_summary, reconstruct_signal, select_learning_observations,
+    latest_model_runs, lesson_summary, reconstruct_signal, select_learning_observations,
 )
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, init_db, save_backtest_run, set_backtest_job_item,
@@ -89,6 +89,17 @@ def test_learning_gate_skips_immature_noise_and_near_duplicates():
     selected = select_learning_observations(runs)
     assert len(selected) == 1
     assert selected[0]["as_of_date"] == "2025-02-01"
+
+
+def test_latest_model_runs_prevents_duplicate_rows_after_recalculation():
+    rows = [
+        {"ticker": "TEST", "as_of_date": "2025-01-01", "model_version": "v3"},
+        {"ticker": "TEST", "as_of_date": "2025-01-01", "model_version": "v4"},
+        {"ticker": "OTHER", "as_of_date": "2025-01-01", "model_version": "v4"},
+    ]
+    latest = latest_model_runs(rows)
+    assert len(latest) == 2
+    assert next(row for row in latest if row["ticker"] == "TEST")["model_version"] == "v4"
 
 
 def test_backtest_persistence_and_lessons(tmp_path):

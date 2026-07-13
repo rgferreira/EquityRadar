@@ -29,6 +29,15 @@ def test_positioning_scores_are_transparent_and_confidence_adjusted():
     assert any("Short float" in note for note in scores["notes"])
 
 
+def test_positioning_no_longer_reuses_analyst_actions():
+    snapshot = sample_snapshot()
+    bullish = positioning_scores(snapshot)
+    snapshot["analyst_actions"] = {"upgrades_90d": 0, "downgrades_90d": 20}
+    bearish = positioning_scores(snapshot)
+    assert bullish == bearish
+    assert not any("Analyst" in note for note in bullish["notes"])
+
+
 def test_historical_short_trend_produces_small_capped_decision_modifiers():
     history = [{
         "reporting_date": f"2026-0{month}-15", "snapshot_type": "historical_short_interest",

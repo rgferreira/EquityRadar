@@ -16,10 +16,8 @@ def positioning_scores(snapshot: Mapping[str, object] | None) -> dict[str, objec
         return {"long_positioning": 50.0, "short_pressure": 50.0, "squeeze_potential": 50.0, "confidence": 0.0, "notes": ["No positioning snapshot"], "decision_implication": "Insufficient evidence"}
     short = snapshot.get("short", {}); options = snapshot.get("options", {})
     ownership = snapshot.get("ownership", {}); insiders = snapshot.get("insiders", {})
-    analysts = snapshot.get("analyst_actions", {})
     short = short if isinstance(short, Mapping) else {}; options = options if isinstance(options, Mapping) else {}
     ownership = ownership if isinstance(ownership, Mapping) else {}; insiders = insiders if isinstance(insiders, Mapping) else {}
-    analysts = analysts if isinstance(analysts, Mapping) else {}
     evidence, available = [], 0
 
     short_float = _num(short.get("short_percent_float"))
@@ -28,7 +26,6 @@ def positioning_scores(snapshot: Mapping[str, object] | None) -> dict[str, objec
     pc_oi = _num(options.get("put_call_oi_ratio")); pc_volume = _num(options.get("put_call_volume_ratio"))
     institutional = _num(ownership.get("institutional_percent"))
     buys, sells = _num(insiders.get("purchase_rows")), _num(insiders.get("sale_rows"))
-    upgrades, downgrades = _num(analysts.get("upgrades_90d")), _num(analysts.get("downgrades_90d"))
 
     long_parts = []
     if pc_oi is not None:
@@ -37,8 +34,6 @@ def positioning_scores(snapshot: Mapping[str, object] | None) -> dict[str, objec
         long_parts.append(_bounded(35 + institutional * 50)); available += 1; evidence.append(f"Institutional ownership {institutional:.1%}")
     if buys is not None and sells is not None and buys + sells:
         long_parts.append(50 + 50 * (buys - sells) / (buys + sells)); available += 1; evidence.append(f"Insider rows {buys:.0f} buy / {sells:.0f} sell")
-    if upgrades is not None and downgrades is not None and upgrades + downgrades:
-        long_parts.append(50 + 50 * (upgrades - downgrades) / (upgrades + downgrades)); available += 1; evidence.append(f"Analyst actions {upgrades:.0f} up / {downgrades:.0f} down")
 
     pressure_parts = []
     if short_float is not None:
@@ -52,7 +47,7 @@ def positioning_scores(snapshot: Mapping[str, object] | None) -> dict[str, objec
 
     long_raw = sum(long_parts) / len(long_parts) if long_parts else 50
     pressure_raw = sum(pressure_parts) / len(pressure_parts) if pressure_parts else 50
-    confidence = min(100.0, available / 8 * 100)
+    confidence = min(100.0, available / 7 * 100)
     long_score = 50 + (long_raw - 50) * confidence / 100
     pressure = 50 + (pressure_raw - 50) * confidence / 100
     squeeze_parts = [pressure]

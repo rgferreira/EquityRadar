@@ -14,7 +14,7 @@ from src.scoring.valuation import calculate_valuation_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.data.market_data import calculate_metrics
 
-MODEL_VERSION = "backtested-learning-v3-decision-aware"
+MODEL_VERSION = "backtested-learning-v4-orthogonal"
 OUTCOME_HORIZONS = {"1M": 21, "3M": 63, "6M": 126, "12M": 252}
 LEARNING_WEIGHTS = {"1M": .50, "3M": .30, "6M": .20}
 
@@ -181,6 +181,17 @@ def _latest_runs_by_cutoff(runs: list[Mapping[str, object]]) -> list[Mapping[str
         if existing is None or str(run.get("model_version") or "") > str(existing.get("model_version") or ""):
             latest[cutoff] = run
     return list(latest.values())
+
+
+def latest_model_runs(runs: list[Mapping[str, object]]) -> list[Mapping[str, object]]:
+    """Return one newest-model run per ticker/cutoff for display and analysis."""
+    latest: dict[tuple[str, str], Mapping[str, object]] = {}
+    for run in runs:
+        key = (str(run.get("ticker") or ""), str(run.get("as_of_date") or ""))
+        existing = latest.get(key)
+        if existing is None or str(run.get("model_version") or "") > str(existing.get("model_version") or ""):
+            latest[key] = run
+    return sorted(latest.values(), key=lambda row: (str(row.get("as_of_date") or ""), str(row.get("ticker") or "")), reverse=True)
 
 
 def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:

@@ -14,6 +14,14 @@ def test_technical_score_for_strong_momentum():
     assert calculate_technical_score(metrics) == 100
 
 
+def test_technical_score_no_longer_reuses_risk_drawdown():
+    base = {"latest_price": 110, "ma_50": 100, "ma_100": 120, "ma_200": 120,
+            "return_1m": 2, "return_3m": -3, "return_6m": -4, "return_12m": -5}
+    near_high = calculate_technical_score({**base, "drawdown_from_52w_high": -2})
+    deep_drawdown = calculate_technical_score({**base, "drawdown_from_52w_high": -35})
+    assert near_high == deep_drawdown == 30
+
+
 def test_placeholder_and_total_scores():
     assert calculate_valuation_score() == 50
     assert calculate_total_score(80, 50, 70) == 69.0

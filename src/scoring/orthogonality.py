@@ -18,14 +18,14 @@ SEMANTIC_OVERLAPS = [
     {
         "Components": "Technical ↔ Risk resilience",
         "Shared evidence": "Drawdown from the 52-week high",
-        "Assessment": "Direct overlap",
-        "Action": "Remove the technical near-high bonus or replace risk drawdown with downside volatility before reweighting.",
+        "Assessment": "Resolved in v4",
+        "Action": "Drawdown now belongs only to Risk resilience; Technical trend weights were rescaled to retain a 0–100 range.",
     },
     {
         "Components": "Industry & analysts ↔ Market positioning",
         "Shared evidence": "Analyst upgrades/downgrades",
-        "Assessment": "Direct overlap",
-        "Action": "Keep analyst actions in Industry & analysts; positioning should use ownership, options and short-interest evidence only.",
+        "Assessment": "Resolved in v4",
+        "Action": "Analyst actions now belong only to Industry & analysts; positioning uses ownership, options and short-interest evidence.",
     },
     {
         "Components": "Technical ↔ Market positioning",
