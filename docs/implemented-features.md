@@ -40,6 +40,8 @@
 - Dashboard provides a saved-simulation archive and per-ticker history showing decision conclusions, weighted outcomes, learning value, inclusion/exclusion and rationale; Company detail presents the same decision-aware evidence beside its current score impact.
 - Active simulations expose live persisted progress and remain visible after returning to Dashboard; completed jobs distinguish unavailable tickers from work still running and never retry permanent provider failures in a loop.
 - Saved runs automatically refresh incomplete forward outcomes once per calendar day. Immature 3M/12M horizons are labelled with their required trading-session count instead of displaying an ambiguous null value.
+- Intelligent cutoff discovery ranks up to six non-redundant historical dates from broad-market regimes, watchlist momentum/MA events and FINRA short-interest changes. Suggestions refresh automatically each day or after watchlist changes, persist their evidence and rationale, and visibly track Not run, Running and Completed states alongside a custom-date option.
+- Suggested and custom dates are staged without side effects; the user must explicitly confirm every historical simulation.
 - Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.
 
 ## Phase 3.5 · Position-Aware Decisions

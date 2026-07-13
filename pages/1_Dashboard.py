@@ -14,6 +14,7 @@ from src.data.database import (
     get_positioning_history,
     get_backtest_runs,
     get_active_backtest,
+    get_simulation_suggestions,
     save_active_backtest,
     get_watchlist,
     init_db,
@@ -37,6 +38,7 @@ from src.backtesting import decision_outcome, learned_score_adjustments, lesson_
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
+from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -68,6 +70,19 @@ def move_manual_ticker(offset: int) -> None:
 
 def request_dashboard_refresh() -> None:
     st.session_state.dashboard_refresh_requested = True
+
+
+def suggestion_run_status(as_of_date: str) -> str:
+    status = backtest_status(as_of_date)
+    expected = len(get_watchlist())
+    if status["busy"]:
+        return f"Running · {status['completed']}/{max(expected, int(status['total']))}"
+    if expected and status["completed"] + status["failed"] >= expected:
+        return "Completed" if not status["failed"] else "Completed with exclusions"
+    completed_runs = {run["ticker"] for run in get_backtest_runs() if run["as_of_date"] == as_of_date}
+    if completed_runs:
+        return f"Partial · {len(completed_runs)}/{expected}"
+    return "Not run"
 
 
 def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str], key_suffix: str = "all") -> int | None:
@@ -110,6 +125,9 @@ def non_wrapping_signal_labels(frame: pd.DataFrame) -> pd.DataFrame:
         "Price data fetched at": "Freshness",
     })
 
+tickers = get_watchlist()
+schedule_cutoff_suggestions(tickers)
+suggestions = get_simulation_suggestions()
 persisted_backtest_date = get_active_backtest()
 schedule_outcome_refresh()
 default_backtest_date = (
@@ -118,8 +136,13 @@ default_backtest_date = (
 )
 if "dashboard_time_mode" not in st.session_state:
     st.session_state.dashboard_time_mode = "Past date" if persisted_backtest_date else "Present date"
-if "dashboard_cutoff_date" not in st.session_state:
-    st.session_state.dashboard_cutoff_date = default_backtest_date
+if "dashboard_cutoff_source" not in st.session_state:
+    st.session_state.dashboard_cutoff_source = "Suggested dates" if suggestions else "Custom date"
+if "dashboard_custom_cutoff_date" not in st.session_state:
+    st.session_state.dashboard_custom_cutoff_date = default_backtest_date
+suggested_dates = [str(item["suggested_date"]) for item in suggestions]
+if "dashboard_suggested_cutoff" not in st.session_state or st.session_state.dashboard_suggested_cutoff not in suggested_dates:
+    st.session_state.dashboard_suggested_cutoff = suggested_dates[0] if suggested_dates else None
 if "dashboard_order_mode" not in st.session_state:
     st.session_state.dashboard_order_mode = "Sort by column"
 if "dashboard_sort_column" not in st.session_state:
@@ -129,7 +152,12 @@ if "dashboard_sort_descending" not in st.session_state:
 if "dashboard_selected_metrics" not in st.session_state:
     st.session_state.dashboard_selected_metrics = []
 time_mode = st.session_state.dashboard_time_mode
-as_of_date = st.session_state.dashboard_cutoff_date
+using_suggestion = st.session_state.dashboard_cutoff_source == "Suggested dates" and bool(suggested_dates)
+selected_suggestion = st.session_state.dashboard_suggested_cutoff if using_suggestion else None
+as_of_date = (
+    pd.Timestamp(selected_suggestion).date() if selected_suggestion
+    else st.session_state.dashboard_custom_cutoff_date
+)
 refresh = bool(st.session_state.pop("dashboard_refresh_requested", False))
 
 requested_historical_mode = time_mode == "Past date"
@@ -144,7 +172,6 @@ if refresh and requested_historical_mode:
 # explicit Run, or when reopening the already-confirmed active simulation.
 historical_mode = requested_historical_mode and persisted_backtest_date == selected_backtest_date
 
-tickers = get_watchlist()
 if not tickers:
     st.info("Add one or more tickers from Watchlist management to begin.")
     st.stop()
@@ -566,18 +593,56 @@ if rows:
     st.caption("Time Machine, saved learning and table preferences are kept below the decision content to preserve mobile focus.")
     with st.container(border=True):
         st.markdown("#### ⏳ Time Machine")
-        mode_col, date_col = st.columns([1, 1])
-        with mode_col:
+        st.radio(
+            "Decision date", ["Present date", "Past date"], horizontal=True,
+            key="dashboard_time_mode",
+        )
+        if st.session_state.dashboard_time_mode == "Past date":
             st.radio(
-                "Decision date", ["Present date", "Past date"], horizontal=True,
-                key="dashboard_time_mode",
+                "Choose cutoff from", ["Suggested dates", "Custom date"], horizontal=True,
+                disabled=not suggestions, key="dashboard_cutoff_source",
+                help="Suggested dates are ranked automatically from market-regime and watchlist events.",
             )
-        with date_col:
-            st.date_input(
-                "Historical cutoff", max_value=date.today() - timedelta(days=1),
-                disabled=st.session_state.dashboard_time_mode == "Present date",
-                key="dashboard_cutoff_date",
-            )
+            if st.session_state.dashboard_cutoff_source == "Suggested dates" and suggestions:
+                suggestion_by_date = {str(item["suggested_date"]): item for item in suggestions}
+                suggestion_labels = {
+                    cutoff: f"{cutoff} · {suggestion_run_status(cutoff)} · {suggestion_by_date[cutoff]['trigger_type']}"
+                    for cutoff in suggested_dates
+                }
+                st.selectbox(
+                    "Interesting simulation date", suggested_dates,
+                    format_func=lambda value: suggestion_labels[str(value)],
+                    key="dashboard_suggested_cutoff",
+                )
+                selected_recommendation = suggestion_by_date.get(str(st.session_state.dashboard_suggested_cutoff))
+                if selected_recommendation:
+                    st.info(str(selected_recommendation["rationale"]))
+                    st.caption(
+                        f"Learning value · {float(selected_recommendation['priority']):.0f}/100 · "
+                        f"Generated {str(selected_recommendation['generated_at'])[:16]}"
+                    )
+                suggestion_overview = pd.DataFrame([{
+                    "Date": item["suggested_date"], "Status": suggestion_run_status(str(item["suggested_date"])),
+                    "Cause": item["trigger_type"], "Learning value": round(float(item["priority"])),
+                    "Why suggested": item["rationale"],
+                } for item in suggestions])
+                st.dataframe(suggestion_overview, hide_index=True, width="stretch")
+            else:
+                st.date_input(
+                    "Custom historical cutoff", max_value=date.today() - timedelta(days=1),
+                    key="dashboard_custom_cutoff_date",
+                )
+            @st.fragment(run_every=5)
+            def render_suggestion_discovery() -> None:
+                schedule_cutoff_suggestions(tickers)
+                current = get_simulation_suggestions()
+                signature = tuple((item["suggested_date"], item["generated_at"]) for item in current)
+                previous = st.session_state.get("cutoff_suggestion_signature")
+                st.session_state.cutoff_suggestion_signature = signature
+                st.caption(cutoff_suggestion_status())
+                if previous is not None and previous != signature:
+                    st.rerun()
+            render_suggestion_discovery()
         if requested_historical_mode and historical_mode:
             st.warning(f"Historical simulation · only evidence available by {as_of_date:%Y-%m-%d} is eligible.")
         elif requested_historical_mode:

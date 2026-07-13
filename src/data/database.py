@@ -163,6 +163,15 @@ def init_db(db_path: str | Path | None = None) -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(as_of_date, ticker)
             );
+            CREATE TABLE IF NOT EXISTS simulation_suggestions (
+                suggested_date TEXT PRIMARY KEY,
+                trigger_type TEXT NOT NULL,
+                rationale TEXT NOT NULL,
+                priority REAL NOT NULL,
+                evidence_json TEXT NOT NULL,
+                source_signature TEXT NOT NULL,
+                generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -342,6 +351,40 @@ def get_active_backtest(db_path: str | Path | None = None) -> str | None:
             "SELECT value_json FROM ui_preferences WHERE preference_key='active_backtest_date'"
         ).fetchone()
     return json.loads(row["value_json"]) if row else None
+
+
+def replace_simulation_suggestions(
+    suggestions: list[Mapping[str, object]], source_signature: str,
+    db_path: str | Path | None = None,
+) -> None:
+    """Atomically replace the system's ranked cutoff recommendations."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute("DELETE FROM simulation_suggestions")
+        connection.executemany(
+            """INSERT INTO simulation_suggestions
+            (suggested_date, trigger_type, rationale, priority, evidence_json, source_signature)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            [(
+                str(item["suggested_date"]), str(item["trigger_type"]), str(item["rationale"]),
+                float(item["priority"]), json.dumps(item.get("evidence", {})), source_signature,
+            ) for item in suggestions],
+        )
+
+
+def get_simulation_suggestions(db_path: str | Path | None = None) -> list[dict[str, object]]:
+    """Return ranked suggestions with stored evidence decoded."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM simulation_suggestions ORDER BY priority DESC, suggested_date DESC"
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["evidence"] = json.loads(str(item.pop("evidence_json")))
+        result.append(item)
+    return result
 
 
 def set_portfolio_holding(
