@@ -191,6 +191,21 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute("ALTER TABLE backtest_runs ADD COLUMN simulation_source TEXT NOT NULL DEFAULT 'manual'")
         if "suggestion_rationale" not in backtest_columns:
             connection.execute("ALTER TABLE backtest_runs ADD COLUMN suggestion_rationale TEXT")
+        provenance_migrated = connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
+        ).fetchone()
+        if not provenance_migrated:
+            connection.execute(
+                """UPDATE backtest_runs
+                SET simulation_source='suggested', suggestion_rationale=(
+                    SELECT rationale FROM simulation_suggestions
+                    WHERE simulation_suggestions.suggested_date=backtest_runs.as_of_date
+                )
+                WHERE as_of_date IN (SELECT suggested_date FROM simulation_suggestions)"""
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (migration_key) VALUES ('simulation_provenance_v1')"
+            )
         migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'portfolio_holdings_to_lots_v1'"
         ).fetchone()
