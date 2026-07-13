@@ -1,10 +1,14 @@
 # Next best actions
 
-Last reviewed: 2026-07-14. Current internal phase: **3.7 - Decision-aware learning**.
+Last reviewed: 2026-07-14. Current internal phase: **3.8 - Scientific hardening (audit intake complete; implementation not started)**.
 
 This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
 
-## Before Phase 4 - remaining Phase 3.7 closure
+## Phase 3.8 - active priority
+
+The forensic audit supersedes the former improvised implementation queue. Execute the five ordered, PR-sized slices in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md), using [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) as the reconciliation with current HEAD. Do not treat the evidence pack as evidence of alpha.
+
+## Deferred operational work from Phase 3.7
 
 1. **Automated end-to-end UI regression tests - pending.** Cover the critical Dashboard, Portfolio, Company, Journal, Watchlist, deep-link, simulation and mobile-width flows. The Python suite is extensive, but it does not yet replace browser-level regression coverage.
 2. **Provider-health diagnostics - pending.** Add a compact operational view for price, fundamentals, peer/analyst, FINRA, positioning and extended-hours providers: last success, stale age, active cooldown and most recent isolated error.
@@ -52,6 +56,7 @@ The original Phase 4 list has largely been delivered early through Portfolio and
 - **3.4 - Backtested learning:** Time Machine, persisted point-in-time simulations, outcomes and ticker lessons.
 - **3.5 - Position-aware decisions:** separate portfolio actions and watchlist opportunities.
 - **3.6 - FINRA refinement:** watchlist-wide historical coverage and point-in-time score rebuilds.
-- **3.7 - Decision-aware learning (active):** confirmed episodes, intelligent cutoffs, model-v4 orthogonality, diagnostic accuracy, learning curves, simulation markers and extended-hours awareness.
+- **3.7 - Decision-aware learning (completed product checkpoint; scientifically quarantined in Phase 3.8):** confirmed episodes, intelligent cutoffs, model-v4 orthogonality, diagnostic accuracy, learning curves, simulation markers and extended-hours awareness.
+- **3.8 - Scientific hardening (active):** forensic-audit intake, learning quarantine, point-in-time semantics, model registry/snapshots, relative outcomes and purged evaluation.
 
 See [`implemented-features.md`](implemented-features.md) for the detailed implementation record and [`internal-changelog.md`](internal-changelog.md) for the compact release narrative.

@@ -1,0 +1,54 @@
+{
+  "all_evaluable": {
+    "n": 357,
+    "current": {
+      "positive_utility_pct": 45.9,
+      "mean_utility": -2.92,
+      "median_utility": -1.69
+    },
+    "always_buy": {
+      "positive_utility_pct": 65.0,
+      "mean_utility": 7.76,
+      "median_utility": 4.48
+    },
+    "always_wait": {
+      "positive_utility_pct": 35.0,
+      "mean_utility": -7.76,
+      "median_utility": -4.48
+    },
+    "always_watch": {
+      "positive_utility_pct": 43.4,
+      "mean_utility": -5.81,
+      "median_utility": -1.48
+    }
+  },
+  "confirmed_3m": {
+    "n": 303,
+    "current": {
+      "positive_utility_pct": 44.2,
+      "mean_utility": -3.47,
+      "median_utility": -2.13
+    },
+    "always_buy": {
+      "positive_utility_pct": 68.0,
+      "mean_utility": 8.68,
+      "median_utility": 5.28
+    },
+    "always_wait": {
+      "positive_utility_pct": 32.0,
+      "mean_utility": -8.68,
+      "median_utility": -5.28
+    },
+    "always_watch": {
+      "positive_utility_pct": 41.6,
+      "mean_utility": -6.64,
+      "median_utility": -2.28
+    }
+  },
+  "current_vs_core_without_positioning": {
+    "label_differences": 13,
+    "n": 380,
+    "mean_abs_score_difference": 0.233,
+    "max_abs_score_difference": 0.8
+  }
+}

@@ -4,7 +4,10 @@ The documents in this folder have distinct roles so planning, implementation his
 
 | Document | Purpose | Status |
 |---|---|---|
-| [`next-best-actions.md`](next-best-actions.md) | Live ordered backlog, Phase 3.7 closure and saved Phase 4 candidates | Current |
+| [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) | Phase 3.8 audit findings reconciled against current HEAD | Current |
+| [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md) | Ordered scientific-hardening slices and delivery gates | Current |
+| [`audit/2026-07-13/FORENSIC_REVIEW_ES.md`](audit/2026-07-13/FORENSIC_REVIEW_ES.md) | Independent forensic review and scientific risk register | Authoritative audit |
+| [`next-best-actions.md`](next-best-actions.md) | Phase 3.8 pointer, deferred Phase 3.7 operations, and saved Phase 4 candidates | Current |
 | [`implemented-features.md`](implemented-features.md) | Detailed record of behavior already present in the application | Current |
 | [`internal-changelog.md`](internal-changelog.md) | Compact internal phase/checkpoint and scoring-model narrative | Current |
 | [`industry-feature.md`](industry-feature.md) | Industry cohort architecture, calibration and refresh rules | Reference |
@@ -13,7 +16,7 @@ The documents in this folder have distinct roles so planning, implementation his
 
 Rules:
 
-- New planned work goes only into `next-best-actions.md`.
+- Phase 3.8 implementation work follows the reconciled audit roadmap and its PR specifications; other planned work goes into `next-best-actions.md`.
 - Completed behavior moves to `implemented-features.md`.
 - Architectural/source investigations stay in dedicated reference documents and are linked rather than copied.
 - Internal phase names and model checkpoints are summarized in `internal-changelog.md`.

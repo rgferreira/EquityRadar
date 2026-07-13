@@ -1,0 +1,1467 @@
+{
+  "files_total_extracted": 155,
+  "files_source_no_caches": 66,
+  "suffix_counts": {
+    ".example": 1,
+    "<none>": 1,
+    ".md": 7,
+    ".py": 54,
+    ".db": 1,
+    ".txt": 1,
+    ".toml": 1
+  },
+  "line_counts": {
+    ".env.example": 8,
+    "AUDIT_BUNDLE_README.md": 25,
+    "README.md": 90,
+    "app.py": 18,
+    "requirements.txt": 7,
+    ".streamlit/config.toml": 12,
+    "docs/implemented-features.md": 95,
+    "docs/industry-feature.md": 25,
+    "docs/market-positioning-source-audit.md": 43,
+    "docs/next-best-actions.md": 52,
+    "docs/revolut-fix-assessment.md": 30,
+    "pages/0_Watchlist.py": 107,
+    "pages/1_Dashboard.py": 949,
+    "pages/2_Portfolio.py": 492,
+    "pages/3_Company.py": 709,
+    "pages/4_Journal.py": 119,
+    "scripts/compare_accuracy_models.py": 36,
+    "src/__init__.py": 1,
+    "src/accuracy_audit.py": 110,
+    "src/backtesting.py": 319,
+    "src/downloads.py": 10,
+    "src/import_export.py": 45,
+    "src/portfolio.py": 230,
+    "src/ui.py": 139,
+    "tests/test_accuracy_audit.py": 31,
+    "tests/test_backtesting.py": 208,
+    "tests/test_cutoff_suggestions.py": 45,
+    "tests/test_database.py": 222,
+    "tests/test_downloads.py": 8,
+    "tests/test_finra_short_interest.py": 21,
+    "tests/test_fundamentals.py": 91,
+    "tests/test_import_export.py": 26,
+    "tests/test_industry.py": 104,
+    "tests/test_market_data.py": 81,
+    "tests/test_orthogonality.py": 38,
+    "tests/test_portfolio.py": 141,
+    "tests/test_position_action.py": 28,
+    "tests/test_positioning.py": 118,
+    "tests/test_scoring.py": 62,
+    "src/data/__init__.py": 1,
+    "src/data/backtest_refresh.py": 206,
+    "src/data/cutoff_suggestions.py": 191,
+    "src/data/database.py": 984,
+    "src/data/finra_short_interest.py": 64,
+    "src/data/fmp.py": 89,
+    "src/data/fundamentals.py": 71,
+    "src/data/industry.py": 245,
+    "src/data/industry_refresh.py": 129,
+    "src/data/market_data.py": 133,
+    "src/data/positioning.py": 120,
+    "src/data/positioning_refresh.py": 158,
+    "src/data/yfinance_fundamentals.py": 52,
+    "src/scoring/__init__.py": 1,
+    "src/scoring/decision.py": 29,
+    "src/scoring/industry.py": 132,
+    "src/scoring/orthogonality.py": 138,
+    "src/scoring/position_action.py": 62,
+    "src/scoring/positioning.py": 148,
+    "src/scoring/risk.py": 41,
+    "src/scoring/technical.py": 23,
+    "src/scoring/total.py": 4,
+    "src/scoring/valuation.py": 59,
+    "src/utils/__init__.py": 1,
+    "src/utils/config.py": 13
+  },
+  "largest_files": [
+    [
+      "src/data/database.py",
+      984
+    ],
+    [
+      "pages/1_Dashboard.py",
+      949
+    ],
+    [
+      "pages/3_Company.py",
+      709
+    ],
+    [
+      "pages/2_Portfolio.py",
+      492
+    ],
+    [
+      "src/backtesting.py",
+      319
+    ],
+    [
+      "src/data/industry.py",
+      245
+    ],
+    [
+      "src/portfolio.py",
+      230
+    ],
+    [
+      "tests/test_database.py",
+      222
+    ],
+    [
+      "tests/test_backtesting.py",
+      208
+    ],
+    [
+      "src/data/backtest_refresh.py",
+      206
+    ],
+    [
+      "src/data/cutoff_suggestions.py",
+      191
+    ],
+    [
+      "src/data/positioning_refresh.py",
+      158
+    ],
+    [
+      "src/scoring/positioning.py",
+      148
+    ],
+    [
+      "tests/test_portfolio.py",
+      141
+    ],
+    [
+      "src/ui.py",
+      139
+    ],
+    [
+      "src/scoring/orthogonality.py",
+      138
+    ],
+    [
+      "src/data/market_data.py",
+      133
+    ],
+    [
+      "src/scoring/industry.py",
+      132
+    ],
+    [
+      "src/data/industry_refresh.py",
+      129
+    ],
+    [
+      "src/data/positioning.py",
+      120
+    ],
+    [
+      "pages/4_Journal.py",
+      119
+    ],
+    [
+      "tests/test_positioning.py",
+      118
+    ],
+    [
+      "src/accuracy_audit.py",
+      110
+    ],
+    [
+      "pages/0_Watchlist.py",
+      107
+    ],
+    [
+      "tests/test_industry.py",
+      104
+    ],
+    [
+      "docs/implemented-features.md",
+      95
+    ],
+    [
+      "tests/test_fundamentals.py",
+      91
+    ],
+    [
+      "README.md",
+      90
+    ],
+    [
+      "src/data/fmp.py",
+      89
+    ],
+    [
+      "tests/test_market_data.py",
+      81
+    ]
+  ],
+  "db_size_bytes": 2768896,
+  "db_pragmas": {
+    "journal_mode": "delete",
+    "foreign_keys": 0,
+    "user_version": 0,
+    "synchronous": 2,
+    "busy_timeout": 5000,
+    "integrity_check": "ok"
+  },
+  "tables": [
+    {
+      "name": "backtest_job_items",
+      "rows": 418,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "as_of_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 2
+        },
+        {
+          "cid": 2,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "error",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_backtest_job_items_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "backtest_runs",
+      "rows": 560,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "as_of_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "coverage",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "entry_score",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "exit_score",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "entry_signal",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "exit_signal",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "technical_score",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "valuation_score",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "risk_score",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "outcome_1m",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "outcome_3m",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "outcome_6m",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "outcome_12m",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "inputs_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "model_version",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        },
+        {
+          "cid": 18,
+          "name": "outcome_refreshed_at",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 19,
+          "name": "simulation_source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'manual'",
+          "pk": 0
+        },
+        {
+          "cid": 20,
+          "name": "suggestion_rationale",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_backtest_runs_1",
+          "unique": 1,
+          "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "cash_transactions",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "transaction_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "transaction_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "amount",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "currency",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "fundamentals_cache",
+      "rows": 20,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "trailing_pe",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "forward_pe",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "price_to_sales_ttm",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "revenue_growth",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "eps_growth",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "reporting_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "provider_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "fetched_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_fundamentals_cache_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "industry_research_cache",
+      "rows": 23,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "payload_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "provider_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "fetched_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_industry_research_cache_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "journal_entries",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "entry_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "action",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "thesis",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "catalyst",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "main_risk",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "invalidation_condition",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "target_price",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "time_horizon",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "conviction",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "portfolio_holdings",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "shares",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_portfolio_holdings_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "portfolio_lots",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "purchase_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "shares",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "price_per_share",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "fees",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'manual'",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "portfolio_sales",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "sale_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "shares",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "price_per_share",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "fees",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "cost_basis",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "realized_pl",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "notes",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "portfolio_snapshots",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "snapshot_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "total_value",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "priced_positions",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "total_positions",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "captured_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "base_currency",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'USD'",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_portfolio_snapshots_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "portfolio_targets",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "target_weight_pct",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_portfolio_targets_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "positioning_cache",
+      "rows": 23,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "payload_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "provider_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "reporting_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "fetched_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_positioning_cache_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "positioning_history",
+      "rows": 3629,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "snapshot_date",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 2
+        },
+        {
+          "cid": 2,
+          "name": "payload_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "provider_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "reporting_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "fetched_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_positioning_history_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "schema_migrations",
+      "rows": 2,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "migration_key",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "applied_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_schema_migrations_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "simulation_suggestions",
+      "rows": 10,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "suggested_date",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "trigger_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "rationale",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "priority",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "evidence_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "source_signature",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "generated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_simulation_suggestions_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "ui_preferences",
+      "rows": 0,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "preference_key",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "value_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "updated_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_ui_preferences_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    {
+      "name": "watchlist",
+      "rows": 22,
+      "columns": [
+        {
+          "cid": 0,
+          "name": "ticker",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "created_at",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "CURRENT_TIMESTAMP",
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_watchlist_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    }
+  ],
+  "objects": [
+    {
+      "type": "table",
+      "name": "backtest_job_items",
+      "tbl_name": "backtest_job_items",
+      "sql": "CREATE TABLE backtest_job_items (\n                as_of_date TEXT NOT NULL,\n                ticker TEXT NOT NULL,\n                status TEXT NOT NULL CHECK(status IN ('queued','running','completed','failed')),\n                error TEXT,\n                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n                PRIMARY KEY(as_of_date, ticker)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "backtest_runs",
+      "tbl_name": "backtest_runs",
+      "sql": "CREATE TABLE backtest_runs (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ticker TEXT NOT NULL,\n                as_of_date TEXT NOT NULL,\n                coverage TEXT NOT NULL,\n                entry_score REAL NOT NULL,\n                exit_score REAL NOT NULL,\n                entry_signal TEXT NOT NULL,\n                exit_signal TEXT NOT NULL,\n                technical_score REAL NOT NULL,\n                valuation_score REAL NOT NULL,\n                risk_score REAL NOT NULL,\n                outcome_1m REAL,\n                outcome_3m REAL,\n                outcome_6m REAL,\n                outcome_12m REAL,\n                inputs_json TEXT NOT NULL,\n                model_version TEXT NOT NULL,\n                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, outcome_refreshed_at TEXT, simulation_source TEXT NOT NULL DEFAULT 'manual', suggestion_rationale TEXT,\n                UNIQUE(ticker, as_of_date, model_version)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "cash_transactions",
+      "tbl_name": "cash_transactions",
+      "sql": "CREATE TABLE cash_transactions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                transaction_date TEXT NOT NULL,\n                transaction_type TEXT NOT NULL CHECK(transaction_type IN ('deposit','withdrawal','dividend','withholding_tax','fee','adjustment')),\n                amount REAL NOT NULL,\n                currency TEXT NOT NULL,\n                ticker TEXT,\n                notes TEXT,\n                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+    },
+    {
+      "type": "table",
+      "name": "fundamentals_cache",
+      "tbl_name": "fundamentals_cache",
+      "sql": "CREATE TABLE fundamentals_cache (\n                ticker TEXT PRIMARY KEY,\n                trailing_pe REAL,\n                forward_pe REAL,\n                price_to_sales_ttm REAL,\n                revenue_growth REAL,\n                eps_growth REAL,\n                reporting_date TEXT,\n                provider_name TEXT NOT NULL,\n                fetched_at TEXT NOT NULL\n            )"
+    },
+    {
+      "type": "table",
+      "name": "industry_research_cache",
+      "tbl_name": "industry_research_cache",
+      "sql": "CREATE TABLE industry_research_cache (\n                ticker TEXT PRIMARY KEY,\n                payload_json TEXT NOT NULL,\n                provider_name TEXT NOT NULL,\n                fetched_at TEXT NOT NULL\n            )"
+    },
+    {
+      "type": "table",
+      "name": "journal_entries",
+      "tbl_name": "journal_entries",
+      "sql": "CREATE TABLE journal_entries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ticker TEXT NOT NULL,\n                entry_date TEXT NOT NULL,\n                action TEXT NOT NULL CHECK(action IN ('watch', 'buy_candidate', 'reject', 'sell_review')),\n                thesis TEXT,\n                catalyst TEXT,\n                main_risk TEXT,\n                invalidation_condition TEXT,\n                target_price REAL,\n                time_horizon TEXT,\n                conviction INTEGER NOT NULL CHECK(conviction BETWEEN 1 AND 5),\n                notes TEXT,\n                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+    },
+    {
+      "type": "table",
+      "name": "portfolio_holdings",
+      "tbl_name": "portfolio_holdings",
+      "sql": "CREATE TABLE portfolio_holdings (\n                ticker TEXT PRIMARY KEY,\n                shares REAL NOT NULL CHECK(shares >= 0),\n                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n                FOREIGN KEY (ticker) REFERENCES watchlist(ticker)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "portfolio_lots",
+      "tbl_name": "portfolio_lots",
+      "sql": "CREATE TABLE portfolio_lots (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ticker TEXT NOT NULL,\n                purchase_date TEXT,\n                shares REAL NOT NULL CHECK(shares > 0),\n                price_per_share REAL CHECK(price_per_share > 0),\n                fees REAL NOT NULL DEFAULT 0 CHECK(fees >= 0),\n                source TEXT NOT NULL DEFAULT 'manual',\n                notes TEXT,\n                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n                FOREIGN KEY (ticker) REFERENCES watchlist(ticker)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "portfolio_sales",
+      "tbl_name": "portfolio_sales",
+      "sql": "CREATE TABLE portfolio_sales (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ticker TEXT NOT NULL,\n                sale_date TEXT NOT NULL,\n                shares REAL NOT NULL CHECK(shares > 0),\n                price_per_share REAL NOT NULL CHECK(price_per_share > 0),\n                fees REAL NOT NULL DEFAULT 0 CHECK(fees >= 0),\n                cost_basis REAL,\n                realized_pl REAL,\n                notes TEXT,\n                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n                FOREIGN KEY (ticker) REFERENCES watchlist(ticker)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "portfolio_snapshots",
+      "tbl_name": "portfolio_snapshots",
+      "sql": "CREATE TABLE portfolio_snapshots (\n                snapshot_date TEXT PRIMARY KEY,\n                total_value REAL NOT NULL CHECK(total_value >= 0),\n                priced_positions INTEGER NOT NULL CHECK(priced_positions >= 0),\n                total_positions INTEGER NOT NULL CHECK(total_positions >= 0),\n                captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            , base_currency TEXT NOT NULL DEFAULT 'USD')"
+    },
+    {
+      "type": "table",
+      "name": "portfolio_targets",
+      "tbl_name": "portfolio_targets",
+      "sql": "CREATE TABLE portfolio_targets (\n                ticker TEXT PRIMARY KEY,\n                target_weight_pct REAL NOT NULL CHECK(target_weight_pct >= 0 AND target_weight_pct <= 100),\n                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n                FOREIGN KEY (ticker) REFERENCES watchlist(ticker)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "positioning_cache",
+      "tbl_name": "positioning_cache",
+      "sql": "CREATE TABLE positioning_cache (\n                ticker TEXT PRIMARY KEY,\n                payload_json TEXT NOT NULL,\n                provider_name TEXT NOT NULL,\n                reporting_date TEXT,\n                fetched_at TEXT NOT NULL\n            )"
+    },
+    {
+      "type": "table",
+      "name": "positioning_history",
+      "tbl_name": "positioning_history",
+      "sql": "CREATE TABLE positioning_history (\n                ticker TEXT NOT NULL,\n                snapshot_date TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                provider_name TEXT NOT NULL,\n                reporting_date TEXT,\n                fetched_at TEXT NOT NULL,\n                PRIMARY KEY (ticker, snapshot_date)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "schema_migrations",
+      "tbl_name": "schema_migrations",
+      "sql": "CREATE TABLE schema_migrations (\n                migration_key TEXT PRIMARY KEY,\n                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+    },
+    {
+      "type": "table",
+      "name": "simulation_suggestions",
+      "tbl_name": "simulation_suggestions",
+      "sql": "CREATE TABLE simulation_suggestions (\n                suggested_date TEXT PRIMARY KEY,\n                trigger_type TEXT NOT NULL,\n                rationale TEXT NOT NULL,\n                priority REAL NOT NULL,\n                evidence_json TEXT NOT NULL,\n                source_signature TEXT NOT NULL,\n                generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+    },
+    {
+      "type": "table",
+      "name": "ui_preferences",
+      "tbl_name": "ui_preferences",
+      "sql": "CREATE TABLE ui_preferences (\n                preference_key TEXT PRIMARY KEY,\n                value_json TEXT NOT NULL,\n                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+    },
+    {
+      "type": "table",
+      "name": "watchlist",
+      "tbl_name": "watchlist",
+      "sql": "CREATE TABLE watchlist (\n                ticker TEXT PRIMARY KEY,\n                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+    }
+  ]
+}
