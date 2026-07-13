@@ -66,6 +66,10 @@ def move_manual_ticker(offset: int) -> None:
         st.session_state.dashboard_manual_order = order
 
 
+def request_dashboard_refresh() -> None:
+    st.session_state.dashboard_refresh_requested = True
+
+
 def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str], key_suffix: str = "all") -> int | None:
     """Render a compact table and return a selected row for same-tab drill-down."""
     longest_diagnostic = max((len(str(value)) for value in frame["Diagnostic"]), default=14)
@@ -112,87 +116,27 @@ default_backtest_date = (
     pd.Timestamp(persisted_backtest_date).date() if persisted_backtest_date
     else date.today() - timedelta(days=365)
 )
-with st.container(border=True):
-    st.markdown("#### ⏳ Time Machine")
-    mode_col, date_col = st.columns([1, 1])
-    with mode_col:
-        time_mode = st.radio(
-            "Decision date", ["Present date", "Past date"], horizontal=True,
-            index=1 if persisted_backtest_date else 0,
-        )
-    with date_col:
-        as_of_date = st.date_input(
-            "Historical cutoff", value=default_backtest_date,
-            max_value=date.today() - timedelta(days=1), disabled=time_mode == "Present date",
-        )
-    if time_mode == "Past date":
-        st.warning(f"Historical simulation · only evidence available by {as_of_date:%Y-%m-%d} is eligible.")
-    else:
-        st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
+if "dashboard_time_mode" not in st.session_state:
+    st.session_state.dashboard_time_mode = "Past date" if persisted_backtest_date else "Present date"
+if "dashboard_cutoff_date" not in st.session_state:
+    st.session_state.dashboard_cutoff_date = default_backtest_date
+if "dashboard_order_mode" not in st.session_state:
+    st.session_state.dashboard_order_mode = "Sort by column"
+if "dashboard_sort_column" not in st.session_state:
+    st.session_state.dashboard_sort_column = "Entry score"
+if "dashboard_sort_descending" not in st.session_state:
+    st.session_state.dashboard_sort_descending = True
+if "dashboard_selected_metrics" not in st.session_state:
+    st.session_state.dashboard_selected_metrics = []
+time_mode = st.session_state.dashboard_time_mode
+as_of_date = st.session_state.dashboard_cutoff_date
+refresh = bool(st.session_state.pop("dashboard_refresh_requested", False))
 
 historical_mode = time_mode == "Past date"
 selected_backtest_date = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
 if selected_backtest_date != persisted_backtest_date:
     save_active_backtest(selected_backtest_date)
 
-with st.expander("Saved simulations & learning history"):
-    saved_runs = get_backtest_runs()
-    if not saved_runs:
-        st.info("No persisted simulations yet.")
-    else:
-        archive_tab, learning_tab = st.tabs(["Simulation archive", "Learning by ticker"])
-        with archive_tab:
-            archive = pd.DataFrame(saved_runs)
-            archive_summary = (
-                archive.groupby("as_of_date", as_index=False)
-                .agg(
-                    Tickers=("ticker", "nunique"),
-                    Completed_3M=("outcome_3m", "count"),
-                    Average_entry=("entry_score", "mean"),
-                    Saved_at=("created_at", "max"),
-                )
-                .sort_values("as_of_date", ascending=False)
-                .rename(columns={"as_of_date": "Cutoff date", "Completed_3M": "3M outcomes",
-                                 "Average_entry": "Average entry", "Saved_at": "Last saved"})
-            )
-            st.dataframe(archive_summary, hide_index=True, width="stretch")
-            if outcome_refresh_in_flight():
-                st.caption("Refreshing matured forward outcomes automatically…")
-        with learning_tab:
-            learned_ticker = st.selectbox(
-                "Ticker learning history", sorted({str(run["ticker"]) for run in saved_runs}),
-                key="learning_history_ticker",
-            )
-            ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
-            learned = learned_score_adjustments(ticker_runs)
-            metric_cols = st.columns(4)
-            metric_cols[0].metric("Learned / saved", f"{learned['sample_size']}/{learned['total_runs']}")
-            metric_cols[1].metric("Decision accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
-            metric_cols[2].metric("Entry modifier", f"{learned['entry_adjustment']:+.1f}")
-            metric_cols[3].metric("Exit modifier", f"{learned['exit_adjustment']:+.1f}")
-            st.caption(str(learned["reason"]))
-            learning_history = pd.DataFrame([
-                {**run, **decision_outcome(run)} for run in ticker_runs
-            ])[[
-                "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
-                "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
-            ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
-                               "verdict": "Decision conclusion", "learning_priority": "Learning value",
-                               "should_learn": "Used for learning", "learning_reason": "Why"})
-            st.dataframe(learning_history, hide_index=True, width="stretch")
-
-refresh_col, status_col = st.columns([1, 4], vertical_alignment="center")
-with refresh_col:
-    refresh = st.button(
-        "Run historical simulation" if historical_mode else "Refresh market data",
-        type="primary", width="stretch",
-    )
-with status_col:
-    st.caption(
-        "The simulation retrieves sufficient history automatically and persists reproducible outcomes."
-        if historical_mode else
-        "Prices refresh automatically on first load. Use refresh to request fresh provider data."
-    )
 tickers = get_watchlist()
 if not tickers:
     st.info("Add one or more tickers from Watchlist management to begin.")
@@ -444,66 +388,39 @@ if rows:
     avg_risk = frame["Risk"].mean()
 
     st.subheader("Watchlist signals")
-    with st.expander("Customize order and visible metrics"):
-        order_mode = st.radio(
-            "Ordering mode",
-            ["Sort by column", "Manual order"],
-            horizontal=True,
-        )
-        if order_mode == "Sort by column":
-            sort_col, sort_direction = st.columns([2, 1])
-            with sort_col:
-                sort_column = st.selectbox(
-                    "Sort column",
-                    frame.columns,
-                    index=list(frame.columns).index("Entry score"),
-                )
-            with sort_direction:
-                descending = st.checkbox("Descending", value=True)
-            frame = frame.sort_values(sort_column, ascending=not descending, na_position="last")
-        else:
-            current_tickers = frame["Ticker"].tolist()
-            saved_order = st.session_state.get("dashboard_manual_order", [])
-            manual_order = [ticker for ticker in saved_order if ticker in current_tickers]
-            manual_order.extend(ticker for ticker in current_tickers if ticker not in manual_order)
-            st.session_state.dashboard_manual_order = manual_order
+    order_mode = st.session_state.get("dashboard_order_mode", "Sort by column")
+    if order_mode == "Sort by column":
+        sort_column = st.session_state.get("dashboard_sort_column", "Entry score")
+        if sort_column not in frame.columns:
+            sort_column = "Entry score"
+            st.session_state.dashboard_sort_column = sort_column
+        descending = bool(st.session_state.get("dashboard_sort_descending", True))
+        frame = frame.sort_values(sort_column, ascending=not descending, na_position="last")
+    else:
+        current_tickers = frame["Ticker"].tolist()
+        saved_order = st.session_state.get("dashboard_manual_order", [])
+        manual_order = [ticker for ticker in saved_order if ticker in current_tickers]
+        manual_order.extend(ticker for ticker in current_tickers if ticker not in manual_order)
+        st.session_state.dashboard_manual_order = manual_order
+        frame = frame.assign(
+            _manual_order=frame["Ticker"].map({ticker: index for index, ticker in enumerate(manual_order)})
+        ).sort_values("_manual_order").drop(columns="_manual_order")
 
-            selected_ticker = st.selectbox("Ticker to move", manual_order, key="manual_order_ticker")
-            move_up, move_down, _ = st.columns([1, 1, 4])
-            selected_index = manual_order.index(selected_ticker)
-            with move_up:
-                st.button(
-                    "Move up",
-                    disabled=selected_index == 0,
-                    on_click=move_manual_ticker,
-                    args=(-1,),
-                )
-            with move_down:
-                st.button(
-                    "Move down",
-                    disabled=selected_index == len(manual_order) - 1,
-                    on_click=move_manual_ticker,
-                    args=(1,),
-                )
-            frame = frame.assign(
-                _manual_order=frame["Ticker"].map({ticker: index for index, ticker in enumerate(manual_order)})
-            ).sort_values("_manual_order").drop(columns="_manual_order")
+    st.session_state.dashboard_display_order = frame["Ticker"].tolist()
+    save_dashboard_order(st.session_state.dashboard_display_order)
 
-        st.session_state.dashboard_display_order = frame["Ticker"].tolist()
-        save_dashboard_order(st.session_state.dashboard_display_order)
-
-        optional_columns = [
-            "1M %", "3M %", "6M %", "12M %", "Drawdown %",
-            "Technical", "Valuation", "Risk",
-            "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
-            "Ownership", "Add score", "Trim score", "Company diagnostic",
-        ]
-        selected_metrics = st.multiselect(
-            "Additional table columns",
-            [column for column in optional_columns if column in frame.columns],
-            default=[],
-            help="Keep this empty for the compact phone-friendly decision view.",
-        )
+    optional_columns = [
+        "1M %", "3M %", "6M %", "12M %", "Drawdown %",
+        "Technical", "Valuation", "Risk",
+        "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
+        "Ownership", "Add score", "Trim score", "Company diagnostic",
+    ]
+    available_optional_columns = [column for column in optional_columns if column in frame.columns]
+    selected_metrics = [
+        column for column in st.session_state.get("dashboard_selected_metrics", [])
+        if column in available_optional_columns
+    ]
+    st.session_state.dashboard_selected_metrics = selected_metrics
     identity_columns = ["Ticker", *(["Cutoff date"] if historical_mode else []), "Diagnostic"]
     display_frame = frame[[
         *identity_columns, "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
@@ -639,6 +556,108 @@ if rows:
                     f"**Backtested learning:** Entry {float(row.get('Learning entry adj', 0)):+.1f}; "
                     f"Exit {float(row.get('Learning exit adj', 0)):+.1f}. {row.get('Learning rationale', 'No completed simulations yet.')}"
                 )
+
+    st.divider()
+    st.subheader("Dashboard controls")
+    st.caption("Time Machine, saved learning and table preferences are kept below the decision content to preserve mobile focus.")
+    with st.container(border=True):
+        st.markdown("#### ⏳ Time Machine")
+        mode_col, date_col = st.columns([1, 1])
+        with mode_col:
+            st.radio(
+                "Decision date", ["Present date", "Past date"], horizontal=True,
+                key="dashboard_time_mode",
+            )
+        with date_col:
+            st.date_input(
+                "Historical cutoff", max_value=date.today() - timedelta(days=1),
+                disabled=st.session_state.dashboard_time_mode == "Present date",
+                key="dashboard_cutoff_date",
+            )
+        if historical_mode:
+            st.warning(f"Historical simulation · only evidence available by {as_of_date:%Y-%m-%d} is eligible.")
+        else:
+            st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
+
+    with st.expander("Saved simulations & learning history"):
+        saved_runs = get_backtest_runs()
+        if not saved_runs:
+            st.info("No persisted simulations yet.")
+        else:
+            archive_tab, learning_tab = st.tabs(["Simulation archive", "Learning by ticker"])
+            with archive_tab:
+                archive = pd.DataFrame(saved_runs)
+                archive_summary = (
+                    archive.groupby("as_of_date", as_index=False)
+                    .agg(Tickers=("ticker", "nunique"), Completed_3M=("outcome_3m", "count"),
+                         Average_entry=("entry_score", "mean"), Saved_at=("created_at", "max"))
+                    .sort_values("as_of_date", ascending=False)
+                    .rename(columns={"as_of_date": "Cutoff date", "Completed_3M": "3M outcomes",
+                                     "Average_entry": "Average entry", "Saved_at": "Last saved"})
+                )
+                st.dataframe(archive_summary, hide_index=True, width="stretch")
+                if outcome_refresh_in_flight():
+                    st.caption("Refreshing matured forward outcomes automatically…")
+            with learning_tab:
+                learned_ticker = st.selectbox(
+                    "Ticker learning history", sorted({str(run["ticker"]) for run in saved_runs}),
+                    key="learning_history_ticker",
+                )
+                ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
+                learned = learned_score_adjustments(ticker_runs)
+                metric_cols = st.columns(4)
+                metric_cols[0].metric("Learned / saved", f"{learned['sample_size']}/{learned['total_runs']}")
+                metric_cols[1].metric("Decision accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
+                metric_cols[2].metric("Entry modifier", f"{learned['entry_adjustment']:+.1f}")
+                metric_cols[3].metric("Exit modifier", f"{learned['exit_adjustment']:+.1f}")
+                st.caption(str(learned["reason"]))
+                learning_history = pd.DataFrame([{**run, **decision_outcome(run)} for run in ticker_runs])[[
+                    "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
+                    "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
+                ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
+                                   "verdict": "Decision conclusion", "learning_priority": "Learning value",
+                                   "should_learn": "Used for learning", "learning_reason": "Why"})
+                st.dataframe(learning_history, hide_index=True, width="stretch")
+
+    with st.expander("Customize order and visible metrics"):
+        st.radio("Ordering mode", ["Sort by column", "Manual order"], horizontal=True,
+                 key="dashboard_order_mode")
+        if st.session_state.dashboard_order_mode == "Sort by column":
+            sort_col, sort_direction = st.columns([2, 1])
+            with sort_col:
+                st.selectbox("Sort column", list(frame.columns), key="dashboard_sort_column")
+            with sort_direction:
+                st.checkbox("Descending", key="dashboard_sort_descending")
+        else:
+            manual_order = list(st.session_state.dashboard_manual_order)
+            if manual_order:
+                selected_ticker = st.selectbox("Ticker to move", manual_order, key="manual_order_ticker")
+                selected_index = manual_order.index(selected_ticker)
+                move_up, move_down, _ = st.columns([1, 1, 4])
+                with move_up:
+                    st.button("Move up", disabled=selected_index == 0,
+                              on_click=move_manual_ticker, args=(-1,))
+                with move_down:
+                    st.button("Move down", disabled=selected_index == len(manual_order) - 1,
+                              on_click=move_manual_ticker, args=(1,))
+        st.multiselect(
+            "Additional columns for both decision tables", available_optional_columns,
+            key="dashboard_selected_metrics",
+            help="The same columns are applied to Portfolio actions and Watchlist opportunities.",
+        )
+
+    refresh_col, status_col = st.columns([1, 4], vertical_alignment="center")
+    with refresh_col:
+        st.button(
+            "Run historical simulation" if historical_mode else "Refresh market data",
+            type="primary", width="stretch", on_click=request_dashboard_refresh,
+        )
+    with status_col:
+        st.caption(
+            "The simulation retrieves sufficient history automatically and persists reproducible outcomes."
+            if historical_mode else
+            "Prices refresh automatically on first load. Use refresh to request fresh provider data."
+        )
 if errors:
     st.error("Some data could not be fetched:")
     for error in errors:
