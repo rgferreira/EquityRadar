@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 from src.downloads import download_link
+from src.ui import zebra_table
 
 from src.data.database import (
     add_journal_entry,
@@ -70,7 +71,7 @@ entries = get_journal_entries(
 )
 if entries:
     st.dataframe(
-        entries,
+        zebra_table(entries),
         hide_index=True,
         use_container_width=True,
         column_config={"target_price": st.column_config.NumberColumn("Target price", format="$%.2f")},

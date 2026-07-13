@@ -7,7 +7,7 @@ from src.data.database import add_ticker, get_watchlist, init_db, remove_ticker
 from src.data.industry_refresh import schedule_industry_refresh
 from src.data.positioning_refresh import finra_backfill_status, schedule_finra_backfill
 from src.data.backtest_refresh import schedule_ticker_backfill, ticker_backfill_status
-from src.ui import inject_app_styles, page_header
+from src.ui import inject_app_styles, page_header, zebra_table
 
 st.set_page_config(page_title="Watchlist | Personal Equity Radar", page_icon="⚙️", layout="wide")
 init_db()
@@ -96,10 +96,10 @@ if tickers:
     cells.extend([""] * (-len(cells) % grid_width))
     rows = [cells[index:index + grid_width] for index in range(0, len(cells), grid_width)]
     st.dataframe(
-        pd.DataFrame(rows, columns=["1", "2", "3"]),
+        zebra_table(pd.DataFrame(rows, columns=["1", "2", "3"])),
         hide_index=True,
         width="stretch",
-        height=36 + (35 * len(rows)),
+        height="content",
         column_config={
             column: st.column_config.TextColumn(column, width="small")
             for column in ("1", "2", "3")

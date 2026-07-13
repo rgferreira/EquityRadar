@@ -39,6 +39,7 @@ def test_generator_ranks_distinct_market_and_watchlist_events(monkeypatch, tmp_p
     suggestions = generate_cutoff_suggestions(["NVDA"], tmp_path / "suggestions.db")
     assert suggestions
     assert len({item["suggested_date"] for item in suggestions}) == len(suggestions)
-    assert any(item["trigger_type"] == "Market regime" for item in suggestions)
+    assert any(item["trigger_type"].startswith("Market") for item in suggestions)
+    assert len({item["trigger_type"] for item in suggestions}) >= 3
     assert any("NVDA" in item["rationale"] for item in suggestions)
     assert all(item["rationale"] and item["evidence"] for item in suggestions)

@@ -33,7 +33,7 @@ from src.portfolio import (
 from src.import_export import CSV_TEMPLATE, import_transactions_csv
 from src.downloads import download_link
 from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
-from src.ui import inject_app_styles, page_header
+from src.ui import inject_app_styles, page_header, zebra_table
 
 st.set_page_config(page_title="Portfolio | Personal Equity Radar", page_icon="💼", layout="wide")
 init_db()
@@ -266,7 +266,7 @@ coverage_columns[1].metric("Priced positions", f"{len(known_values)}/{len(holdin
 coverage_columns[2].metric("Known realized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_realized):,.2f}" if known_realized else "—")
 
 st.dataframe(
-    holdings_frame,
+    zebra_table(holdings_frame),
     hide_index=True,
     width="stretch",
     column_config={
@@ -295,7 +295,7 @@ if lots:
         lots_frame["shares"] * lots_frame["price_per_share"] + lots_frame["fees"]
     )
     st.dataframe(
-        lots_frame,
+        zebra_table(lots_frame),
         hide_index=True,
         width="stretch",
         column_config={
@@ -320,7 +320,7 @@ if sales:
     sales_frame = pd.DataFrame(normalized_sales)
     sales_frame["sale_date"] = pd.to_datetime(sales_frame["sale_date"])
     st.dataframe(
-        sales_frame,
+        zebra_table(sales_frame),
         hide_index=True,
         width="stretch",
         column_config={
@@ -345,7 +345,7 @@ if cash_transactions:
         for item in cash_transactions
     ]
     st.dataframe(
-        cash_frame, hide_index=True, width="stretch",
+        zebra_table(cash_frame), hide_index=True, width="stretch",
         column_config={
             "transaction_date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
             "amount": st.column_config.NumberColumn("Amount", format="%.2f"),
@@ -389,7 +389,7 @@ if not portfolio_history.empty:
     if contributions:
         contribution_frame = pd.DataFrame({"Ticker": list(contributions), "Risk contribution %": list(contributions.values())})
         st.dataframe(
-            contribution_frame.sort_values("Risk contribution %", ascending=False), hide_index=True,
+            zebra_table(contribution_frame.sort_values("Risk contribution %", ascending=False)), hide_index=True,
             width="stretch", column_config={"Risk contribution %": st.column_config.NumberColumn(format="%.2f%%")},
         )
 
@@ -472,7 +472,7 @@ if target_rows:
         st.warning(f"Target weights sum to {target_total:.2f}%, not 100%. Trade amounts are provisional.")
     rebalance_frame = pd.DataFrame(calculate_rebalance(valued_holdings, target_map, total_value))
     st.dataframe(
-        rebalance_frame, hide_index=True, width="stretch",
+        zebra_table(rebalance_frame), hide_index=True, width="stretch",
         column_config={
             "current_value": st.column_config.NumberColumn(f"Current ({PORTFOLIO_BASE_CURRENCY})", format="%.2f"),
             "current_weight_pct": st.column_config.NumberColumn("Current weight", format="%.2f%%"),

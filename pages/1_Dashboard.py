@@ -1,9 +1,11 @@
 """Decision dashboard."""
 
 import json
+import html
 import pandas as pd
 import streamlit as st
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 from src.data.database import (
     get_cached_industry_research,
@@ -34,7 +36,7 @@ from src.scoring.positioning import apply_positioning_adjustment, positioning_sc
 from src.scoring.position_action import initiation_diagnostic, position_action
 from src.scoring.orthogonality import score_orthogonality_audit
 from src.utils.config import FMP_API_KEY
-from src.ui import inject_app_styles, page_header
+from src.ui import inject_app_styles, page_header, zebra_table
 from src.backtesting import decision_outcome, latest_model_runs, learned_score_adjustments, lesson_summary
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
@@ -86,36 +88,95 @@ def suggestion_run_status(as_of_date: str) -> str:
     return "Not run"
 
 
-def render_dashboard_table(frame: pd.DataFrame, owned_tickers: set[str], key_suffix: str = "all") -> int | None:
-    """Render a compact table and return a selected row for same-tab drill-down."""
-    longest_diagnostic = max((len(str(value)) for value in frame["Diagnostic"]), default=14)
-    diagnostic_width = int(min(205, max(135, longest_diagnostic * 6.2)))
-    config: dict[str, object] = {
-        "Ticker": st.column_config.TextColumn(
-            "Ticker", width=65, help="Select a row to open this company in the same tab.",
-        ),
-        "Diagnostic": st.column_config.TextColumn("Diagnostic", width=diagnostic_width),
-        "Price": st.column_config.NumberColumn("Price", format="$%.2f", width="small"),
-        "Entry score": st.column_config.NumberColumn("Entry score", format="%.1f", width="small"),
-        "Exit score": st.column_config.NumberColumn("Exit score", format="%.1f", width="small"),
+def render_dashboard_table(
+    frame: pd.DataFrame, owned_tickers: set[str], key_suffix: str = "all",
+    price_freshness: dict[str, str] | None = None,
+) -> None:
+    """Render a responsive decision table with deterministic same-tab links."""
+    labels = {
+        "Overall decision accuracy": "Decision<br>accuracy",
+        "Entry score": "Entry<br>score",
+        "Exit score": "Exit<br>score",
+        "Industry calibrated": "Industry<br>calibrated",
     }
-    for column in ("1M %", "3M %", "6M %", "12M %", "Drawdown %"):
-        config[column] = st.column_config.NumberColumn(column, format="%.2f%%")
-    for column in ("Technical", "Valuation", "Risk", "Positioning entry adj", "Positioning exit adj", "Positioning reliability"):
-        config[column] = st.column_config.NumberColumn(column, format="%.1f")
-    def highlight_owned(row: pd.Series) -> list[str]:
-        ticker = str(row["Ticker"])
-        style = "background-color: #14283a;" if ticker in owned_tickers else ""
-        return [style] * len(row)
+    widths = {
+        "Ticker": 68, "Diagnostic": 160, "Overall decision accuracy": 105,
+        "Price": 96, "Entry score": 76, "Exit score": 76, "Industry calibrated": 108,
+    }
+    percentages = {"1M %", "3M %", "6M %", "12M %", "Drawdown %"}
+    scores = {
+        "Entry score", "Exit score", "Technical", "Valuation", "Risk",
+        "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
+    }
 
-    styled = frame.style.apply(highlight_owned, axis=1)
-    generation = int(st.session_state.get("decision_table_generation", 0))
-    event = st.dataframe(
-        styled, hide_index=True, width="stretch", height=36 + 35 * len(frame), column_config=config,
-        on_select="rerun", selection_mode="single-row", key=f"decision_table_{key_suffix}_{generation}",
+    def display(column: str, value: object) -> str:
+        if pd.isna(value):
+            return "—"
+        if column == "Price":
+            return f"${float(value):,.2f}"
+        if column == "Overall decision accuracy":
+            return f"{float(value):.0f}%"
+        if column in percentages:
+            return f"{float(value):.2f}%"
+        if column in scores:
+            return f"{float(value):.1f}"
+        return html.escape(str(value))
+
+    header = "".join(
+        f"<th style='min-width:{widths.get(column, 96)}px'>{labels.get(column, html.escape(column))}</th>"
+        for column in frame.columns
     )
-    selected_rows = event.selection.rows if hasattr(event, "selection") else []
-    return int(selected_rows[0]) if selected_rows else None
+    body_rows = []
+    for position, (_, row) in enumerate(frame.iterrows()):
+        ticker = str(row["Ticker"])
+        if ticker in owned_tickers:
+            color = "#14283a" if position % 2 == 0 else "#182f45"
+        else:
+            color = "#0f1723" if position % 2 == 0 else "#121c2a"
+        cells = []
+        for column in frame.columns:
+            if column == "Ticker":
+                value = (
+                    f"<a href='/Company?ticker={quote(ticker)}' target='_top' "
+                    f"aria-label='Open {html.escape(ticker)} company detail'>{html.escape(ticker)}</a>"
+                )
+            elif column == "Price":
+                timestamp = (price_freshness or {}).get(ticker, "Timestamp unavailable")
+                value = (
+                    f"<span class='price-freshness' tabindex='0' "
+                    f"data-freshness='{html.escape(timestamp, quote=True)}'>{display(column, row[column])}</span>"
+                )
+            else:
+                value = display(column, row[column])
+            cells.append(f"<td>{value}</td>")
+        body_rows.append(f"<tr style='background:{color}'>{''.join(cells)}</tr>")
+
+    st.html(
+        f"""<style>
+        .decision-table-scroll {{ overflow-x:auto; border:1px solid #263246; border-radius:.55rem; }}
+        .decision-table {{ width:100%; min-width:max-content; border-collapse:collapse; font-size:.88rem; }}
+        .decision-table th {{ background:#111827; color:#cbd5e1; text-align:left; line-height:1.05;
+          padding:.55rem .58rem; border-right:1px solid #2a3547; white-space:normal; }}
+        .decision-table td {{ color:#e2e8f0; padding:.48rem .58rem; border-right:1px solid #273244;
+          border-top:1px solid #273244; white-space:nowrap; }}
+        .decision-table a {{ color:#70a5ff; font-weight:700; text-decoration:underline;
+          text-underline-offset:2px; }}
+        .decision-table a:hover {{ color:#9bc0ff; }}
+        .price-freshness {{ position:relative; cursor:help; border-bottom:1px dotted #64748b; }}
+        .price-freshness:hover::after,.price-freshness:focus::after {{
+          content:"Data timestamp · " attr(data-freshness); position:absolute; z-index:30;
+          left:50%; bottom:calc(100% + 8px); transform:translateX(-50%); width:max-content;
+          max-width:260px; padding:.42rem .58rem; border:1px solid #39506a; border-radius:.4rem;
+          background:#102238; color:#e8eef7; font-size:.78rem; font-weight:600;
+          box-shadow:0 8px 24px rgba(0,0,0,.38); pointer-events:none;
+        }}
+        @media(max-width:700px) {{
+          .decision-table {{ font-size:.82rem; }}
+          .decision-table th,.decision-table td {{ padding:.48rem .5rem; }}
+        }}
+        </style><div class='decision-table-scroll'><table class='decision-table'>
+        <thead><tr>{header}</tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>"""
+    )
 
 
 def non_wrapping_signal_labels(frame: pd.DataFrame) -> pd.DataFrame:
@@ -141,7 +202,11 @@ if "dashboard_cutoff_source" not in st.session_state:
     st.session_state.dashboard_cutoff_source = "Suggested dates" if suggestions else "Custom date"
 if "dashboard_custom_cutoff_date" not in st.session_state:
     st.session_state.dashboard_custom_cutoff_date = default_backtest_date
-suggested_dates = [str(item["suggested_date"]) for item in suggestions]
+suggested_dates = sorted(
+    (str(item["suggested_date"]) for item in suggestions),
+    key=pd.Timestamp,
+    reverse=True,
+)
 if "dashboard_suggested_cutoff" not in st.session_state or st.session_state.dashboard_suggested_cutoff not in suggested_dates:
     st.session_state.dashboard_suggested_cutoff = suggested_dates[0] if suggested_dates else None
 if "dashboard_order_mode" not in st.session_state:
@@ -423,6 +488,9 @@ if rows:
                     float(row["Entry score"]), str(row["Entry signal"]), str(row["Exit signal"]),
                 )
         frame = pd.DataFrame(rows)
+    frame["Overall decision accuracy"] = frame["Ticker"].map(
+        lambda ticker: lesson_summary(get_backtest_runs(str(ticker))).get("decision_accuracy")
+    )
     above_50 = int((frame["Price"] > frame["50D MA"]).sum())
     above_200 = int((frame["Price"] > frame["200D MA"]).sum())
     avg_entry = frame["Entry score"].mean()
@@ -462,35 +530,31 @@ if rows:
         if column in available_optional_columns
     ]
     st.session_state.dashboard_selected_metrics = selected_metrics
-    identity_columns = ["Ticker", *(["Cutoff date"] if historical_mode else []), "Diagnostic"]
+    identity_columns = [
+        "Ticker", *(["Cutoff date"] if historical_mode else []),
+        "Diagnostic", "Overall decision accuracy",
+    ]
     display_frame = frame[[
         *identity_columns, "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
     ]].copy()
     display_frame = non_wrapping_signal_labels(display_frame)
-    selected_ticker_from_table = None
+    price_freshness = {
+        str(row["Ticker"]): pd.Timestamp(row["Price data fetched at"]).strftime("%Y-%m-%d %H:%M:%S")
+        for _, row in frame.iterrows() if row.get("Price data fetched at")
+    }
     if not historical_mode and portfolio_tickers:
         owned_frame = display_frame[display_frame["Ticker"].isin(portfolio_tickers)].copy()
         watchlist_frame = display_frame[~display_frame["Ticker"].isin(portfolio_tickers)].copy()
         if not owned_frame.empty:
             st.markdown("#### Portfolio actions")
             st.caption("Owned positions · sizing-aware Add / Hold / Monitor / Trim / Exit decisions")
-            owned_selection = render_dashboard_table(owned_frame, set(portfolio_tickers), "portfolio")
-            if owned_selection is not None:
-                selected_ticker_from_table = str(owned_frame.iloc[owned_selection]["Ticker"])
+            render_dashboard_table(owned_frame, set(portfolio_tickers), "portfolio", price_freshness)
         if not watchlist_frame.empty:
             st.markdown("#### Watchlist opportunities")
             st.caption("Unowned securities · potential position-initiation decisions")
-            watchlist_selection = render_dashboard_table(watchlist_frame, set(), "watchlist")
-            if watchlist_selection is not None:
-                selected_ticker_from_table = str(watchlist_frame.iloc[watchlist_selection]["Ticker"])
+            render_dashboard_table(watchlist_frame, set(), "watchlist", price_freshness)
     else:
-        selected_row = render_dashboard_table(display_frame, set(portfolio_tickers), "historical")
-        if selected_row is not None:
-            selected_ticker_from_table = str(display_frame.iloc[selected_row]["Ticker"])
-    if selected_ticker_from_table:
-        st.session_state.company_requested_ticker = selected_ticker_from_table
-        st.session_state.decision_table_generation = int(st.session_state.get("decision_table_generation", 0)) + 1
-        st.switch_page("pages/3_Company.py")
+        render_dashboard_table(display_frame, set(portfolio_tickers), "historical", price_freshness)
     st.caption("MARKET SNAPSHOT")
     summary_frame = pd.DataFrame({
         "Breadth": [
@@ -503,7 +567,7 @@ if rows:
         ],
     })
     st.dataframe(
-        summary_frame, hide_index=True, width="stretch", height=106,
+        zebra_table(summary_frame), hide_index=True, width="stretch", height="content",
         column_config={
             "Breadth": st.column_config.TextColumn(width="medium"),
             "Decision overview": st.column_config.TextColumn(width="medium"),
@@ -532,14 +596,14 @@ if rows:
         outcome_view["Learning value"] = outcome_view["Ticker"].map(lambda ticker: analyses.get(str(ticker), {}).get("learning_priority", 0))
         outcome_view["Learn?"] = outcome_view["Ticker"].map(lambda ticker: "Yes" if analyses.get(str(ticker), {}).get("should_learn") else "No")
         outcome_view = outcome_view.drop(columns=["Outcome 1M %", "Outcome 3M %", "Outcome 6M %"])
-        st.dataframe(outcome_view, hide_index=True, width="stretch")
+        st.dataframe(zebra_table(outcome_view), hide_index=True, width="stretch")
         lesson_rows = []
         for ticker in frame["Ticker"]:
             lesson = lesson_summary(get_backtest_runs(str(ticker)))
             lesson_rows.append({"Ticker": ticker, "Learned / saved": f"{lesson['sample_size']}/{lesson['total_runs']}",
                                 "Decision accuracy": lesson["decision_accuracy"],
                                 "Weighted monthly %": lesson["average_composite"], "Confidence": lesson["confidence"]})
-        st.dataframe(pd.DataFrame(lesson_rows), hide_index=True, width="stretch")
+        st.dataframe(zebra_table(pd.DataFrame(lesson_rows)), hide_index=True, width="stretch")
 
     @st.fragment(run_every=5)
     def render_cohort_refresh_status() -> None:
@@ -607,11 +671,30 @@ if rows:
             "Decision date", ["Present date", "Past date"], horizontal=True,
             key="dashboard_time_mode",
         )
+        discovery_action, discovery_status = st.columns([1, 2], vertical_alignment="center")
+        with discovery_action:
+            discover_more = st.button(
+                "Look for more suggested dates", width="stretch",
+                help="Re-scan market, trend, volatility, drawdown and positioning events now.",
+            )
+        with discovery_status:
+            st.caption(cutoff_suggestion_status())
+        if discover_more:
+            if schedule_cutoff_suggestions(tickers, force=True):
+                st.session_state.cutoff_search_notice = "Searching for additional high-information dates…"
+                st.rerun()
+            else:
+                st.toast("A date search is already running.")
+        if notice := st.session_state.pop("cutoff_search_notice", None):
+            st.toast(notice)
         if st.session_state.dashboard_time_mode == "Past date":
             st.radio(
                 "Choose cutoff from", ["Suggested dates", "Custom date"], horizontal=True,
                 disabled=not suggestions, key="dashboard_cutoff_source",
-                help="Suggested dates are ranked automatically from market-regime and watchlist events.",
+                help=(
+                    "Suggested dates are ranked from market momentum, trend, volatility and drawdown regimes; "
+                    "single-stock momentum, trend and drawdown events; and FINRA short-interest shocks."
+                ),
             )
             if st.session_state.dashboard_cutoff_source == "Suggested dates" and suggestions:
                 suggestion_by_date = {str(item["suggested_date"]): item for item in suggestions}
@@ -635,8 +718,10 @@ if rows:
                     "Date": item["suggested_date"], "Status": suggestion_run_status(str(item["suggested_date"])),
                     "Cause": item["trigger_type"], "Learning value": round(float(item["priority"])),
                     "Why suggested": item["rationale"],
-                } for item in suggestions])
-                st.dataframe(suggestion_overview, hide_index=True, width="stretch")
+                } for item in sorted(
+                    suggestions, key=lambda candidate: pd.Timestamp(str(candidate["suggested_date"])), reverse=True,
+                )])
+                st.dataframe(zebra_table(suggestion_overview), hide_index=True, width="stretch")
             else:
                 st.date_input(
                     "Custom historical cutoff", max_value=date.today() - timedelta(days=1),
@@ -649,7 +734,6 @@ if rows:
                 signature = tuple((item["suggested_date"], item["generated_at"]) for item in current)
                 previous = st.session_state.get("cutoff_suggestion_signature")
                 st.session_state.cutoff_suggestion_signature = signature
-                st.caption(cutoff_suggestion_status())
                 if previous is not None and previous != signature:
                     st.rerun()
             render_suggestion_discovery()
@@ -678,7 +762,7 @@ if rows:
                     .rename(columns={"as_of_date": "Cutoff date", "Completed_3M": "3M outcomes",
                                      "Average_entry": "Average entry", "Saved_at": "Last saved"})
                 )
-                st.dataframe(archive_summary, hide_index=True, width="stretch")
+                st.dataframe(zebra_table(archive_summary), hide_index=True, width="stretch")
                 if outcome_refresh_in_flight():
                     st.caption("Refreshing matured forward outcomes automatically…")
             with learning_tab:
@@ -700,7 +784,7 @@ if rows:
                 ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
                                    "verdict": "Decision conclusion", "learning_priority": "Learning value",
                                    "should_learn": "Used for learning", "learning_reason": "Why"})
-                st.dataframe(learning_history, hide_index=True, width="stretch")
+                st.dataframe(zebra_table(learning_history), hide_index=True, width="stretch")
             with audit_tab:
                 audit = score_orthogonality_audit(saved_runs)
                 audit_metrics = st.columns(3)
@@ -713,14 +797,14 @@ if rows:
                 st.caption("Correlation identifies components moving together; incremental R² estimates whether each adds outcome information beyond the others. It is diagnostic evidence, not an automatic weight change.")
                 st.markdown("**Empirical component overlap**")
                 if audit["pairwise"]:
-                    st.dataframe(pd.DataFrame(audit["pairwise"]), hide_index=True, width="stretch")
+                    st.dataframe(zebra_table(pd.DataFrame(audit["pairwise"])), hide_index=True, width="stretch")
                 else:
                     st.info("More varied simulations are required for empirical pair analysis.")
                 st.markdown("**Incremental outcome information**")
                 if audit["components"]:
-                    st.dataframe(pd.DataFrame(audit["components"]), hide_index=True, width="stretch")
+                    st.dataframe(zebra_table(pd.DataFrame(audit["components"])), hide_index=True, width="stretch")
                 st.markdown("**Architectural overlap map**")
-                st.dataframe(pd.DataFrame(audit["semantic"]), hide_index=True, width="stretch")
+                st.dataframe(zebra_table(pd.DataFrame(audit["semantic"])), hide_index=True, width="stretch")
                 st.markdown("**Recommended review sequence**")
                 for recommendation in audit["recommendations"]:
                     st.write(f"- {recommendation}")

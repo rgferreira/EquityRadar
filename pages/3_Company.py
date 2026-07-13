@@ -21,7 +21,7 @@ from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
 from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
-from src.ui import inject_app_styles, page_header, style_figure
+from src.ui import inject_app_styles, page_header, style_figure, zebra_table
 
 st.set_page_config(page_title="Company | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -461,14 +461,14 @@ try:
                 "Fetched at": fundamentals.get("fetched_at"),
             }
             st.dataframe(
-                {"Input": list(inputs), "Value": ["—" if value is None else str(value) for value in inputs.values()]},
+                zebra_table({"Input": list(inputs), "Value": ["—" if value is None else str(value) for value in inputs.values()]}),
                 hide_index=True,
                 width="stretch",
             )
             breakdown = valuation_score_breakdown(fundamentals)
             if breakdown:
                 st.dataframe(
-                    {"Component": [key.replace("_", " ").title() for key in breakdown], "Score": list(breakdown.values())},
+                    zebra_table({"Component": [key.replace("_", " ").title() for key in breakdown], "Score": list(breakdown.values())}),
                     hide_index=True,
                     width="stretch",
                 )
@@ -490,7 +490,7 @@ try:
                 {"Dimension": "Risk resilience", "Score": industry_breakdown["risk_resilience"], "Weight": "15%", "Confidence": "100%"},
                 {"Dimension": "Analyst sentiment", "Score": industry_breakdown["analyst_sentiment"], "Weight": "10%", "Confidence": f"{float(industry_breakdown['analyst_confidence']):.0%}"},
             ]
-            st.dataframe(feature_rows, hide_index=True, width="stretch")
+            st.dataframe(zebra_table(feature_rows), hide_index=True, width="stretch")
             peers = industry_research.get("peer_profiles", [])
             if peers:
                 st.markdown("**Peer group used**")
@@ -507,7 +507,7 @@ try:
                     "Operating margin": None if peer.get("operating_margin") is None else float(peer["operating_margin"]) * 100,
                     "FCF margin": None if peer.get("free_cash_flow_margin") is None else float(peer["free_cash_flow_margin"]) * 100,
                 } for peer in peers]
-                st.dataframe(peer_rows, hide_index=True, width="stretch", column_config={
+                st.dataframe(zebra_table(peer_rows), hide_index=True, width="stretch", column_config={
                     "Similarity": st.column_config.NumberColumn(format="%.1f/100"),
                     "Forward P/E": st.column_config.NumberColumn(format="%.2fx"),
                     "Price/sales": st.column_config.NumberColumn(format="%.2fx"),
@@ -568,7 +568,7 @@ try:
                 {"Signal": "Institutional ownership", "Value": "—" if ownership.get("institutional_percent") is None else f"{float(ownership['institutional_percent']):.2%}"},
                 {"Signal": "FMP float validation", "Value": "—" if ownership.get("public_float_shares_fmp") is None else f"{float(ownership['public_float_shares_fmp']):,.0f} shares"},
             ]
-            st.dataframe(rows, hide_index=True, width="stretch")
+            st.dataframe(zebra_table(rows), hide_index=True, width="stretch")
             with st.expander("Positioning evidence and interpretation"):
                 for note in positioning_breakdown["notes"]:
                     st.write(f"- {note}")
@@ -606,7 +606,7 @@ try:
             ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
                                "verdict": "Decision conclusion", "learning_priority": "Learning value",
                                "should_learn": "Used for learning", "learning_reason": "Why"})
-            st.dataframe(history_rows, hide_index=True, width="stretch")
+            st.dataframe(zebra_table(history_rows), hide_index=True, width="stretch")
         else:
             st.info("No saved simulations exist for this ticker yet.")
 
@@ -622,7 +622,7 @@ try:
             else:
                 formatted_value = f"${value:.2f}"
             metric_rows.append({"Metric": key.replace("_", " ").title(), "Value": formatted_value})
-        st.dataframe(metric_rows, hide_index=True, width="stretch")
+        st.dataframe(zebra_table(metric_rows), hide_index=True, width="stretch")
 
     with journal_tab:
         st.subheader("Latest journal entries")
@@ -638,7 +638,7 @@ try:
                 )
                 enriched_entries.append(enriched)
             st.dataframe(
-                enriched_entries,
+                zebra_table(enriched_entries),
                 hide_index=True,
                 width="stretch",
                 column_config={

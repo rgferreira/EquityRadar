@@ -53,6 +53,7 @@
 
 - Company Entry and Exit-review remain common research evidence so owned and unowned securities stay analytically comparable.
 - Decision dashboard separates owned positions into **Portfolio actions** and unowned securities into **Watchlist opportunities** instead of relying on row highlighting.
+- Time Machine can explicitly re-scan for more suggested cutoffs; suggestions distinguish market momentum, trend, volatility and drawdown regimes, single-stock shocks and transitions, and FINRA short-interest build-ups or unwind events.
 - Unowned diagnostics use initiation vocabulary: Initiate / Buy candidate / Watch / Wait.
 - Owned positions receive a transparent Add score, Trim pressure and final Add / Hold / Monitor closely / Trim review / Exit review action.
 - Position actions incorporate current portfolio weight, optional target-weight gap and concentration; company deterioration still independently drives Exit review.
