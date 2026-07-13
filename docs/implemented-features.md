@@ -47,6 +47,7 @@
 - Every distinct saved ticker/cutoff was recalculated under v4 with its original point-in-time restrictions. Older model rows remain in SQLite as rollback evidence, while Dashboard, Company and learning calculations select only the newest model per ticker/cutoff.
 - Entry and Exit-review headers show exact-diagnostic historical success with an explicit numerator/denominator and a three-comparable-observation minimum; Entry also shows aggregate ticker decision accuracy.
 - Company detail ends with a responsive cumulative confirmed-accuracy timeline whose auditable points share the same independent-episode selection used by live score modifiers.
+- Extended-hours awareness retrieves pre-market and after-hours quotes through a replaceable yfinance adapter, caches them for five minutes in SQLite, refreshes the watchlist non-blockingly and exposes timestamps in Dashboard and Company. Exchange-provided trading periods drive session classification; official closing prices remain the sole scoring input.
 - Historical simulation provenance is persisted as manual or system-suggested, including the suggestion rationale. Company charts render fine dotted cutoff markers in blue (manual), purple (completed suggestion), and gold (suggested but pending).
 - Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.
 

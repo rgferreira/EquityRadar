@@ -66,6 +66,13 @@ def init_db(db_path: str | Path | None = None) -> None:
                 reporting_date TEXT,
                 fetched_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS extended_hours_cache (
+                ticker TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                provider_name TEXT NOT NULL,
+                quote_date TEXT,
+                fetched_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS positioning_history (
                 ticker TEXT NOT NULL,
                 snapshot_date TEXT NOT NULL,
@@ -835,6 +842,45 @@ def get_cached_industry_research(
     payload = json.loads(row["payload_json"])
     payload["provider_name"] = row["provider_name"]
     payload["fetched_at"] = row["fetched_at"]
+    return payload
+
+
+def save_extended_hours_quote(
+    ticker: str, payload: Mapping[str, object], provider_name: str,
+    quote_date: str | None, fetched_at: str, db_path: str | Path | None = None,
+) -> None:
+    """Persist the latest extended-hours quote snapshot."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT INTO extended_hours_cache
+                (ticker, payload_json, provider_name, quote_date, fetched_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(ticker) DO UPDATE SET payload_json=excluded.payload_json,
+                   provider_name=excluded.provider_name, quote_date=excluded.quote_date,
+                   fetched_at=excluded.fetched_at""",
+            (ticker.strip().upper(), json.dumps(payload), provider_name, quote_date, fetched_at),
+        )
+
+
+def get_cached_extended_hours_quote(
+    ticker: str, db_path: str | Path | None = None,
+) -> dict[str, object] | None:
+    """Return the latest cached extended-hours quote, if present."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            """SELECT payload_json, provider_name, quote_date, fetched_at
+               FROM extended_hours_cache WHERE ticker = ?""",
+            (ticker.strip().upper(),),
+        ).fetchone()
+    if not row:
+        return None
+    payload = json.loads(row["payload_json"])
+    payload.update({
+        "provider_name": row["provider_name"], "quote_date": row["quote_date"],
+        "fetched_at": row["fetched_at"],
+    })
     return payload
 
 

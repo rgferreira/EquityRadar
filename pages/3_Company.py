@@ -10,6 +10,7 @@ from src.backtesting import decision_accuracy_history, diagnostic_success_rate, 
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
+from src.data.extended_hours import get_extended_hours_quote
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
 from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
@@ -147,6 +148,33 @@ try:
     backtest_runs = latest_model_runs(get_backtest_runs(ticker))
     learning_modifier = learned_score_adjustments(backtest_runs)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
+    extended_quote = get_extended_hours_quote(ticker)
+
+    if extended_quote:
+        def extended_value(price_field: str, change_field: str) -> str:
+            price = extended_quote.get(price_field)
+            change = extended_quote.get(change_field)
+            if price is None:
+                return "—"
+            suffix = "" if change is None else f" · {float(change):+.2f}%"
+            return f"${float(price):,.2f}{suffix}"
+
+        st.caption("EXTENDED-HOURS AWARENESS · advisory only · excluded from Entry/Exit scores")
+        quote_columns = st.columns(3)
+        quote_columns[0].metric("Regular close", f"${float(metrics['latest_price']):,.2f}")
+        quote_columns[1].metric(
+            "Pre-market", extended_value("premarket_price", "premarket_change_pct"),
+            help=str(extended_quote.get("premarket_timestamp") or "No pre-market quote timestamp"),
+        )
+        quote_columns[2].metric(
+            "After-hours", extended_value("afterhours_price", "afterhours_change_pct"),
+            help=str(extended_quote.get("afterhours_timestamp") or "No after-hours quote timestamp"),
+        )
+        state = str(extended_quote.get("market_state") or "closed")
+        st.caption(
+            f"Market state · {state} · Provider: {extended_quote.get('provider_name')} · "
+            f"Fetched: {extended_quote.get('fetched_at')}"
+        )
 
     figure = make_subplots(
         rows=2, cols=1, shared_xaxes=True, vertical_spacing=.04,

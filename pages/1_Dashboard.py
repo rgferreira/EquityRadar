@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from src.data.database import (
     get_cached_industry_research,
+    get_cached_extended_hours_quote,
     get_cached_positioning,
     save_dashboard_order,
     get_portfolio_holdings,
@@ -27,6 +28,7 @@ from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
 from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
+from src.data.extended_hours_refresh import extended_hours_refresh_status, schedule_extended_hours_refresh
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
@@ -93,6 +95,7 @@ def render_dashboard_table(
     price_freshness: dict[str, str] | None = None,
     company_names: dict[str, str] | None = None,
     daily_changes: dict[str, float | None] | None = None,
+    extended_quotes: dict[str, dict[str, object] | None] | None = None,
 ) -> None:
     """Render a responsive decision table with deterministic same-tab links."""
     labels = {
@@ -126,13 +129,15 @@ def render_dashboard_table(
         "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
     }
 
-    def move_badge(value: object) -> str:
+    def move_badge(value: object, label: str = "") -> str:
         if value is None or pd.isna(value):
-            return "<span class='quote-move quote-flat'>—</span>"
+            text = f"{label} —" if label else "—"
+            return f"<span class='quote-move quote-flat'>{text}</span>"
         numeric = float(value)
         direction = "quote-up" if numeric > 0 else "quote-down" if numeric < 0 else "quote-flat"
         sign = "+" if numeric > 0 else ""
-        return f"<span class='quote-move {direction}'>{sign}{numeric:.2f}%</span>"
+        prefix = f"{label} " if label else ""
+        return f"<span class='quote-move {direction}'>{prefix}{sign}{numeric:.2f}%</span>"
 
     def display(column: str, value: object) -> str:
         if pd.isna(value):
@@ -170,10 +175,19 @@ def render_dashboard_table(
             elif column == "Price":
                 timestamp = (price_freshness or {}).get(ticker, "Timestamp unavailable")
                 daily_change = (daily_changes or {}).get(ticker)
-                move = move_badge(daily_change)
+                displayed_price = row[column]
+                extended_quote = (extended_quotes or {}).get(ticker) or {}
+                state = str(extended_quote.get("active_session") or "")
+                if state in {"pre-market", "after-hours", "24/7"} and extended_quote.get("active_price") is not None:
+                    displayed_price = extended_quote["active_price"]
+                    timestamp = str(extended_quote.get("active_timestamp") or extended_quote.get("fetched_at") or timestamp)
+                    label = "PRE" if state == "pre-market" else "POST" if state == "after-hours" else "24/7"
+                    move = move_badge(extended_quote.get("active_change_pct"), label)
+                else:
+                    move = move_badge(daily_change)
                 value = (
                     f"<span class='quote-line'><span class='price-freshness' tabindex='0' "
-                    f"data-freshness='{html.escape(timestamp, quote=True)}'>{display(column, row[column])}</span>{move}</span>"
+                    f"data-freshness='{html.escape(timestamp, quote=True)}'>{display(column, displayed_price)}</span>{move}</span>"
                 )
             elif column in {"+1M", "+3M"}:
                 value = move_badge(row[column])
@@ -495,6 +509,7 @@ if rows:
         schedule_industry_refresh(refresh_priority, max_new=2)
         schedule_positioning_refresh(refresh_priority, max_new=2)
         schedule_finra_backfill(refresh_priority, max_new=2)
+        schedule_extended_hours_refresh(refresh_priority, max_new=2)
     for row in rows if not historical_mode else []:
         research = get_cached_industry_research(str(row["Ticker"]))
         status = industry_refresh_status(str(row["Ticker"]))
@@ -626,6 +641,9 @@ if rows:
         name = profile.get("company_name")
         if name:
             company_names[symbol] = str(name)
+    extended_quotes = {
+        symbol: get_cached_extended_hours_quote(symbol) for symbol in frame["Ticker"].astype(str)
+    } if not historical_mode else {}
     if not historical_mode and portfolio_tickers:
         owned_frame = display_frame[display_frame["Ticker"].isin(portfolio_tickers)].copy()
         watchlist_frame = display_frame[~display_frame["Ticker"].isin(portfolio_tickers)].copy()
@@ -633,15 +651,20 @@ if rows:
             st.markdown("#### Portfolio actions")
             st.caption("Owned positions · sizing-aware Add / Hold / Monitor / Trim / Exit decisions")
             render_dashboard_table(
-                owned_frame, set(portfolio_tickers), "portfolio", price_freshness, company_names, daily_changes,
+                owned_frame, set(portfolio_tickers), "portfolio", price_freshness, company_names,
+                daily_changes, extended_quotes,
             )
         if not watchlist_frame.empty:
             st.markdown("#### Watchlist opportunities")
             st.caption("Unowned securities · potential position-initiation decisions")
-            render_dashboard_table(watchlist_frame, set(), "watchlist", price_freshness, company_names, daily_changes)
+            render_dashboard_table(
+                watchlist_frame, set(), "watchlist", price_freshness, company_names,
+                daily_changes, extended_quotes,
+            )
     else:
         render_dashboard_table(
-            display_frame, set(portfolio_tickers), "historical", price_freshness, company_names, daily_changes,
+            display_frame, set(portfolio_tickers), "historical", price_freshness, company_names,
+            daily_changes, extended_quotes,
         )
     st.html(
         "<div class='industry-legend' style='display:flex;flex-wrap:wrap;gap:.35rem 1rem;"
@@ -705,9 +728,11 @@ if rows:
         schedule_industry_refresh(refresh_priority, max_new=2)
         schedule_positioning_refresh(refresh_priority, max_new=2)
         schedule_finra_backfill(refresh_priority, max_new=2)
+        schedule_extended_hours_refresh(refresh_priority, max_new=2)
         statuses = tuple((ticker, industry_refresh_status(ticker)) for ticker in tickers)
         positioning_statuses = tuple((ticker, positioning_refresh_status(ticker)) for ticker in tickers)
         finra_statuses = tuple((ticker, finra_backfill_status(ticker)) for ticker in tickers)
+        extended_statuses = tuple((ticker, extended_hours_refresh_status(ticker)) for ticker in tickers)
         ready = sum(status in {"Ready", "Limited coverage", "Not applicable"} for _, status in statuses)
         updating = [ticker for ticker, status in statuses if status in {"Updating", "Discovering peers"}]
         st.caption(
@@ -718,7 +743,10 @@ if rows:
         finra_updating = [ticker for ticker, status in finra_statuses if status == "Backfilling"]
         if finra_updating:
             st.caption(f"FINRA history updating · {', '.join(finra_updating)}")
-        signature = (statuses, positioning_statuses, finra_statuses)
+        extended_updating = [ticker for ticker, status in extended_statuses if status == "Updating"]
+        if extended_updating:
+            st.caption(f"Extended-hours quotes updating · {', '.join(extended_updating)}")
+        signature = (statuses, positioning_statuses, finra_statuses, extended_statuses)
         st.session_state.cohort_status_signature = signature
         if previous is not None and previous != signature:
             st.rerun()
