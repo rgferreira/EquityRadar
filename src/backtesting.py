@@ -275,6 +275,27 @@ def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
     }
 
 
+def decision_accuracy_history(runs: list[Mapping[str, object]]) -> list[dict[str, object]]:
+    """Return the cumulative confirmed accuracy after each independent episode."""
+    correct = 0
+    history: list[dict[str, object]] = []
+    for index, row in enumerate(select_learning_observations(runs), start=1):
+        successful = float(row["decision_utility"]) > 0
+        correct += int(successful)
+        history.append({
+            "as_of_date": str(row.get("as_of_date") or ""),
+            "accuracy": round(correct / index * 100, 1),
+            "correct_decisions": correct,
+            "episodes": index,
+            "successful": successful,
+            "entry_signal": str(row.get("entry_signal") or ""),
+            "verdict": str(row.get("verdict") or ""),
+            "composite": row.get("composite"),
+            "decision_utility": row.get("decision_utility"),
+        })
+    return history
+
+
 def learned_score_adjustments(runs: list[Mapping[str, object]], minimum_samples: int = 3) -> dict[str, object]:
     """Translate ticker outcomes into bounded, auditable Entry/Exit modifiers."""
     lesson = lesson_summary(runs)

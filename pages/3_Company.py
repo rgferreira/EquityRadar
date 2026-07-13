@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
-from src.backtesting import diagnostic_success_rate, decision_outcome, latest_model_runs, learned_score_adjustments
+from src.backtesting import decision_accuracy_history, diagnostic_success_rate, decision_outcome, latest_model_runs, learned_score_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -655,5 +655,55 @@ try:
             )
         else:
             st.caption("No journal entries for this ticker yet.")
+
+    st.divider()
+    st.subheader("Decision accuracy over time")
+    accuracy_history = decision_accuracy_history(backtest_runs)
+    st.caption(
+        "Cumulative confirmed accuracy after each independent decision episode. "
+        "Provisional, noisy and same-episode simulations are excluded."
+    )
+    if accuracy_history:
+        accuracy_frame = pd.DataFrame(accuracy_history)
+        marker_colors = ["#38d996" if value else "#ff6375" for value in accuracy_frame["successful"]]
+        custom_data = accuracy_frame[[
+            "entry_signal", "verdict", "correct_decisions", "episodes", "composite", "decision_utility",
+        ]].to_numpy()
+        accuracy_figure = go.Figure()
+        accuracy_figure.add_trace(go.Scatter(
+            x=pd.to_datetime(accuracy_frame["as_of_date"]),
+            y=accuracy_frame["accuracy"],
+            mode="lines+markers",
+            name="Confirmed accuracy",
+            line={"color": "#70a5ff", "width": 3},
+            marker={"color": marker_colors, "size": 10, "line": {"color": "#dbe7f5", "width": 1}},
+            customdata=custom_data,
+            hovertemplate=(
+                "<b>%{x|%Y-%m-%d}</b><br>Confirmed accuracy %{y:.1f}%"
+                "<br>Signal %{customdata[0]}<br>%{customdata[1]}"
+                "<br>Record %{customdata[2]}/%{customdata[3]}"
+                "<br>Weighted monthly %{customdata[4]:+.2f}%"
+                "<br>Decision utility %{customdata[5]:+.2f}<extra></extra>"
+            ),
+        ))
+        accuracy_figure.add_hline(
+            y=50, line={"color": "#7f8b99", "width": 1, "dash": "dot"},
+            annotation_text="50% reference", annotation_position="bottom right",
+        )
+        accuracy_figure.update_yaxes(title="Confirmed accuracy", range=[0, 105], ticksuffix="%")
+        accuracy_figure.update_xaxes(title=None)
+        accuracy_figure.update_layout(
+            height=350, margin={"l": 20, "r": 20, "t": 24, "b": 20},
+            hovermode="x unified", showlegend=False,
+        )
+        style_figure(accuracy_figure)
+        st.plotly_chart(accuracy_figure, width="stretch", config={"displayModeBar": False})
+        latest_accuracy = accuracy_history[-1]
+        st.caption(
+            f"Latest confirmed record · {latest_accuracy['correct_decisions']}/{latest_accuracy['episodes']} "
+            f"correct decisions · {float(latest_accuracy['accuracy']):.1f}%"
+        )
+    else:
+        st.info("No confirmed independent decision episodes are available yet.")
 except Exception as exc:
     st.error(f"Could not fetch data for {ticker}: {exc}")

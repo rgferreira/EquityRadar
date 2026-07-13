@@ -54,6 +54,8 @@ The saved-simulation panel includes a score-overlap audit. It maps known shared 
 
 Company score headers add sample-aware context: the exact current Entry and Exit-review diagnostic reports its historical success only after three comparable informative simulations, always with the success fraction, while Entry also shows the ticker's aggregate decision accuracy. Company charts mark simulation cutoffs with fine dotted lines: blue for manual runs, purple for completed system suggestions, and gold for current suggested dates still pending. Simulation provenance and the original suggestion rationale are persisted with each run.
 
+The bottom of Company detail charts cumulative confirmed decision accuracy through time. Each point is one independent matured episode, colored by whether its original decision proved successful; hover details expose the original signal, verdict, weighted outcome, utility and cumulative record. Provisional and same-episode simulations are excluded by the canonical learning evaluator.
+
 Price history remains provided by yfinance. Fundamentals use a provider-neutral interface with FMP first and a separate Yahoo Finance fallback adapter, and are cached in SQLite at most once per calendar day unless explicitly refreshed. Provider failures and missing fields are isolated per ticker and do not block prices.
 
 Official FINRA short-interest history is backfilled automatically for newly added equities and missing-coverage watchlist members. It contributes bounded modifiers to current scores. Historical simulations use only FINRA reports available by their cutoff and are versioned/rebuilt after new history arrives; crypto and instruments without FINRA equity coverage remain neutral.

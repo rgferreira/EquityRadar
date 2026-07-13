@@ -96,20 +96,43 @@ def render_dashboard_table(
 ) -> None:
     """Render a responsive decision table with deterministic same-tab links."""
     labels = {
-        "Overall decision accuracy": "Confirmed<br>accuracy",
+        "Diagnostic": (
+            "Diagnostic - position" if key_suffix == "portfolio" else
+            "Diagnostic - initiate" if key_suffix == "watchlist" else "Diagnostic"
+        ),
+        "Overall decision accuracy": "Accuracy",
         "Entry score": "Entry<br>score",
         "Exit score": "Exit<br>score",
-        "Industry calibrated": "Industry<br>calibrated",
+        "Industry calibrated": "Industry",
     }
     widths = {
-        "Ticker": 68, "Diagnostic": 160, "Overall decision accuracy": 105,
-        "Price": 152, "Entry score": 76, "Exit score": 76, "Industry calibrated": 108,
+        "Ticker": 68, "Diagnostic": 160, "Overall decision accuracy": 72,
+        "Price": 152, "+1M": 70, "+3M": 70,
+        "Entry score": 76, "Exit score": 76, "Industry calibrated": 66,
     }
-    percentages = {"1M %", "3M %", "6M %", "12M %", "Drawdown %"}
+    industry_icons = {
+        "Ready": "✅",
+        "Limited coverage": "🟡",
+        "Updating": "🔄",
+        "Discovering peers": "🔎",
+        "Not applicable": "➖",
+        "Provider unavailable": "⚠️",
+        "Stale": "🕒",
+        "Pending": "⏳",
+    }
+    percentages = {"+1M", "+3M", "1M %", "3M %", "6M %", "12M %", "Drawdown %"}
     scores = {
         "Entry score", "Exit score", "Technical", "Valuation", "Risk",
         "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
     }
+
+    def move_badge(value: object) -> str:
+        if value is None or pd.isna(value):
+            return "<span class='quote-move quote-flat'>—</span>"
+        numeric = float(value)
+        direction = "quote-up" if numeric > 0 else "quote-down" if numeric < 0 else "quote-flat"
+        sign = "+" if numeric > 0 else ""
+        return f"<span class='quote-move {direction}'>{sign}{numeric:.2f}%</span>"
 
     def display(column: str, value: object) -> str:
         if pd.isna(value):
@@ -147,15 +170,26 @@ def render_dashboard_table(
             elif column == "Price":
                 timestamp = (price_freshness or {}).get(ticker, "Timestamp unavailable")
                 daily_change = (daily_changes or {}).get(ticker)
-                if daily_change is None or pd.isna(daily_change):
-                    move = "<span class='quote-move quote-flat'>—</span>"
-                else:
-                    direction = "quote-up" if float(daily_change) > 0 else "quote-down" if float(daily_change) < 0 else "quote-flat"
-                    sign = "+" if float(daily_change) > 0 else ""
-                    move = f"<span class='quote-move {direction}'>{sign}{float(daily_change):.2f}%</span>"
+                move = move_badge(daily_change)
                 value = (
                     f"<span class='quote-line'><span class='price-freshness' tabindex='0' "
                     f"data-freshness='{html.escape(timestamp, quote=True)}'>{display(column, row[column])}</span>{move}</span>"
+                )
+            elif column in {"+1M", "+3M"}:
+                value = move_badge(row[column])
+            elif column == "Diagnostic":
+                diagnostic = str(row[column])
+                if key_suffix == "portfolio":
+                    diagnostic = diagnostic.removeprefix("Position · ").removeprefix("Position - ")
+                elif key_suffix == "watchlist":
+                    diagnostic = diagnostic.removeprefix("Initiate · ").removeprefix("Initiate - ")
+                value = html.escape(diagnostic)
+            elif column == "Industry calibrated":
+                status = str(row[column])
+                icon = industry_icons.get(status, "❔")
+                value = (
+                    f"<span class='industry-status' title='{html.escape(status, quote=True)}' "
+                    f"aria-label='Industry calibration: {html.escape(status, quote=True)}'>{icon}</span>"
                 )
             else:
                 value = display(column, row[column])
@@ -198,6 +232,8 @@ def render_dashboard_table(
         .quote-up {{ background:#16845b; }}
         .quote-down {{ background:#d33f49; }}
         .quote-flat {{ background:#526071; }}
+        .industry-status {{ display:inline-block; min-width:1.5rem; font-size:1rem;
+          line-height:1; text-align:center; cursor:help; }}
         .price-freshness:hover::after,.price-freshness:focus::after {{
           content:"Data timestamp · " attr(data-freshness); position:absolute; z-index:30;
           left:50%; bottom:calc(100% + 8px); transform:translateX(-50%); width:max-content;
@@ -556,7 +592,7 @@ if rows:
     save_dashboard_order(st.session_state.dashboard_display_order)
 
     optional_columns = [
-        "1M %", "3M %", "6M %", "12M %", "Drawdown %",
+        "6M %", "12M %", "Drawdown %",
         "Technical", "Valuation", "Risk",
         "Positioning entry adj", "Positioning exit adj", "Positioning reliability",
         "Ownership", "Add score", "Trim score", "Company diagnostic",
@@ -572,8 +608,9 @@ if rows:
         "Diagnostic", "Overall decision accuracy",
     ]
     display_frame = frame[[
-        *identity_columns, "Price", "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
-    ]].copy()
+        *identity_columns, "Price", "1M %", "3M %",
+        "Entry score", "Exit-review score", "Industry calibrated", *selected_metrics,
+    ]].copy().rename(columns={"1M %": "+1M", "3M %": "+3M"})
     display_frame = non_wrapping_signal_labels(display_frame)
     price_freshness = {
         str(row["Ticker"]): pd.Timestamp(row["Price data fetched at"]).strftime("%Y-%m-%d %H:%M:%S")
@@ -606,6 +643,13 @@ if rows:
         render_dashboard_table(
             display_frame, set(portfolio_tickers), "historical", price_freshness, company_names, daily_changes,
         )
+    st.html(
+        "<div class='industry-legend' style='display:flex;flex-wrap:wrap;gap:.35rem 1rem;"
+        "margin:.45rem 0 .8rem;color:#9aa4b2;font-size:.78rem'>"
+        "<span><b>Industry:</b></span><span>✅ Ready</span><span>🟡 Limited coverage</span>"
+        "<span>🔄 Updating</span><span>🔎 Discovering peers</span><span>➖ Not applicable</span>"
+        "<span>⚠️ Provider unavailable</span><span>🕒 Stale</span><span>⏳ Pending</span></div>"
+    )
     st.caption("MARKET SNAPSHOT")
     summary_frame = pd.DataFrame({
         "Breadth": [

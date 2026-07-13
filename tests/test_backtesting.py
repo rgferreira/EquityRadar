@@ -3,7 +3,7 @@ from datetime import date
 import pandas as pd
 
 from src.backtesting import (
-    decision_outcome, diagnostic_success_rate, evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
+    decision_accuracy_history, decision_outcome, diagnostic_success_rate, evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
     latest_model_runs, lesson_summary, reconstruct_signal, select_learning_observations,
 )
 from src.data.database import (
@@ -116,6 +116,21 @@ def test_learning_collapses_nearby_same_signal_into_one_episode():
             for day, score in (("2025-01-01", 35), ("2025-01-08", 45), ("2025-02-01", 45))]
     selected = select_learning_observations(runs)
     assert [row["as_of_date"] for row in selected] == ["2025-01-01", "2025-02-01"]
+
+
+def test_accuracy_history_is_cumulative_and_uses_confirmed_episodes_only():
+    runs = [
+        {"as_of_date": "2025-01-01", "entry_signal": "Buy candidate", "entry_score": 75,
+         "outcome_1m": 2, "outcome_3m": 6, "outcome_6m": 12},
+        {"as_of_date": "2025-02-01", "entry_signal": "Wait", "entry_score": 45,
+         "outcome_1m": 3, "outcome_3m": 9, "outcome_6m": 18},
+        {"as_of_date": "2025-03-01", "entry_signal": "Buy candidate", "entry_score": 75,
+         "outcome_1m": -5, "outcome_3m": None, "outcome_6m": None},
+    ]
+    history = decision_accuracy_history(runs)
+    assert [row["accuracy"] for row in history] == [100.0, 50.0]
+    assert history[-1]["correct_decisions"] == 1
+    assert history[-1]["episodes"] == 2
 
 
 def test_latest_model_runs_prevents_duplicate_rows_after_recalculation():
