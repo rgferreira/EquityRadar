@@ -132,10 +132,17 @@ time_mode = st.session_state.dashboard_time_mode
 as_of_date = st.session_state.dashboard_cutoff_date
 refresh = bool(st.session_state.pop("dashboard_refresh_requested", False))
 
-historical_mode = time_mode == "Past date"
-selected_backtest_date = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
-if selected_backtest_date != persisted_backtest_date:
+requested_historical_mode = time_mode == "Past date"
+selected_backtest_date = f"{as_of_date:%Y-%m-%d}" if requested_historical_mode else None
+if not requested_historical_mode and persisted_backtest_date is not None:
+    save_active_backtest(None)
+    persisted_backtest_date = None
+if refresh and requested_historical_mode:
     save_active_backtest(selected_backtest_date)
+    persisted_backtest_date = selected_backtest_date
+# Selecting a date only stages it. Historical mode becomes active after an
+# explicit Run, or when reopening the already-confirmed active simulation.
+historical_mode = requested_historical_mode and persisted_backtest_date == selected_backtest_date
 
 tickers = get_watchlist()
 if not tickers:
@@ -144,10 +151,7 @@ if not tickers:
 
 initial_refresh = not st.session_state.get("dashboard_initial_refresh_done", False)
 simulation_key = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
-simulation_changed = historical_mode and st.session_state.get("backtest_active_date") != simulation_key
-current_job = backtest_status(simulation_key) if historical_mode else None
-job_missing = historical_mode and int(current_job["total"]) == 0
-if historical_mode and (refresh or simulation_changed or job_missing):
+if historical_mode and refresh:
     schedule_backtest(simulation_key, tickers)
     st.session_state.backtest_active_date = simulation_key
     st.session_state.dashboard_rows_mode = "historical"
@@ -574,8 +578,10 @@ if rows:
                 disabled=st.session_state.dashboard_time_mode == "Present date",
                 key="dashboard_cutoff_date",
             )
-        if historical_mode:
+        if requested_historical_mode and historical_mode:
             st.warning(f"Historical simulation · only evidence available by {as_of_date:%Y-%m-%d} is eligible.")
+        elif requested_historical_mode:
+            st.info(f"Cutoff {as_of_date:%Y-%m-%d} selected · press Run historical simulation to confirm.")
         else:
             st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
 
@@ -649,13 +655,13 @@ if rows:
     refresh_col, status_col = st.columns([1, 4], vertical_alignment="center")
     with refresh_col:
         st.button(
-            "Run historical simulation" if historical_mode else "Refresh market data",
+            "Run historical simulation" if requested_historical_mode else "Refresh market data",
             type="primary", width="stretch", on_click=request_dashboard_refresh,
         )
     with status_col:
         st.caption(
             "The simulation retrieves sufficient history automatically and persists reproducible outcomes."
-            if historical_mode else
+            if requested_historical_mode else
             "Prices refresh automatically on first load. Use refresh to request fresh provider data."
         )
 if errors:
