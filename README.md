@@ -66,7 +66,7 @@ Entry scores can be calibrated by the Industry Feature after Company detail buil
 
 ## Product queue
 
-The ordered backlog for the next phase is maintained in [`docs/next-best-actions.md`](docs/next-best-actions.md).
+Planning and documentation are indexed in [`docs/README.md`](docs/README.md). The live ordered backlog is maintained in [`docs/next-best-actions.md`](docs/next-best-actions.md); completed behavior is recorded separately in [`docs/implemented-features.md`](docs/implemented-features.md).
 
 ### Implemented: Portfolio page and valuation
 

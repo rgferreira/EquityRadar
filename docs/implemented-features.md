@@ -1,5 +1,7 @@
 # Implemented features
 
+This is the detailed implementation record. For the live backlog and phase boundary, see [`next-best-actions.md`](next-best-actions.md); for the compact phase/model narrative, see [`internal-changelog.md`](internal-changelog.md); for all document roles, see [`README.md`](README.md).
+
 ## Phase 3.3 — UI polishing
 
 - Renamed Dashboard to Decision dashboard throughout navigation and page chrome.

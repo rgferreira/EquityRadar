@@ -1,52 +1,57 @@
 # Next best actions
 
-This ordered development-phase backlog is now complete and retained as an implementation record.
+Last reviewed: 2026-07-14. Current internal phase: **3.7 - Decision-aware learning**.
 
-1. **Purchase lots, dates, and prices — implemented** — supports multiple purchases per ticker, including trade date, shares, price, commissions, notes, editing/deletion, and migration of existing aggregate positions as legacy lots.
-2. **Cost basis and real P&L — implemented** — calculates average cost, unrealized return/P&L, and FIFO realized P&L after sales; unknown legacy costs remain explicitly unavailable.
-3. **Daily portfolio snapshots — implemented** — persists one updatable valuation per calendar day and charts the recorded portfolio history separately from the reconstructed current-holdings history.
-4. **Currencies and base-currency conversion — implemented** — detects trading currency through yfinance, retrieves FX rates, and normalizes market value, cost, P&L, snapshots, and reconstructed history to `PORTFOLIO_BASE_CURRENCY`.
-5. **Dividends and cash — implemented** — records dividends, withholding tax, fees, deposits, withdrawals, adjustments, related ticker, currency, and normalized cash balance.
-6. **Benchmark comparison — implemented** — compares one-year growth of 100 against S&P 500, Nasdaq Composite, or URTH/MSCI World ETF.
-7. **Allocation and concentration — implemented** — visualizes exposure by position, sector, country, and currency, with warnings above a 35% position weight.
-8. **Portfolio return and risk analytics — implemented** — adds flow-adjusted TWR from recorded snapshots, reconstructed return, volatility, drawdown, Sharpe, and position risk contribution.
-9. **Targets and rebalancing — implemented** — stores per-ticker target weights and calculates theoretical buy/sell values, with a warning when targets do not total 100%.
-10. **Import, export, and backups — implemented** — imports purchase/sale/cash CSV rows with per-row errors and exports holdings, lots, sales, cash, journal data, templates, and SQLite backups.
-11. **Investigate Revolut Exchange FIX API — completed** — assessment in [`revolut-fix-assessment.md`](revolut-fix-assessment.md). Conclusion: crypto-only, manually credentialed FIX 4.4 gateway; not suitable for the current equity/no-execution product boundary.
+This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
 
-## Features — Phase 4 (saved for later)
+## Before Phase 4 - remaining Phase 3.7 closure
 
-1. Add purchase dates and cost basis to portfolio positions.
-2. Show realized and unrealized gains, including return percentages.
-3. Support portfolio transactions: buys, sells, dividends, fees, and cash.
-4. Replace assumed historical holdings with transaction-aware performance history.
-5. Add portfolio performance benchmarks and time-weighted returns.
-6. Add sector, country, currency, and position concentration limits with alerts.
-7. Add dividend tracking: yield, projected income, payment calendar, and growth.
-8. Add target allocations and actionable rebalancing suggestions.
-9. Add scheduled background refreshes and visible provider-health diagnostics.
-10. Add automated end-to-end UI regression tests for Dashboard, Portfolio, Company, and Journal.
+1. **Automated end-to-end UI regression tests - pending.** Cover the critical Dashboard, Portfolio, Company, Journal, Watchlist, deep-link, simulation and mobile-width flows. The Python suite is extensive, but it does not yet replace browser-level regression coverage.
+2. **Provider-health diagnostics - pending.** Add a compact operational view for price, fundamentals, peer/analyst, FINRA, positioning and extended-hours providers: last success, stale age, active cooldown and most recent isolated error.
+3. **True scheduled refresh - pending design.** Current bounded background jobs are triggered by page loads and watchlist changes. Decide whether a local scheduler should refresh due data while no browser session is active, without turning normal usage into a manual-refresh workflow.
+4. **Options-history calibration gate - accumulating evidence.** Continue storing dated option-chain snapshots. Do not add an options-change score until continuity and overlap tests show it contributes independent information.
+5. **Phase 3.7 acceptance pass - pending.** Run a final desktop/mobile walkthrough, verify current and historical score consistency, confirm background recovery after restart, and close the phase with a named checkpoint.
 
-## UI — Phase 3
+## Phase 4 - saved, not started
 
-Redesign Dashboard, Portfolio, and Company without changing their page identities or underlying behavior. Introduce a cohesive premium visual system, clearer information hierarchy, compact executive summaries, consistent chart styling, and progressive disclosure for detailed research data.
+The original Phase 4 list has largely been delivered early through Portfolio and Phase 3 work. The remaining product-level candidates are reordered below; implementation requires an explicit decision to enter Phase 4.
 
-## Market factoring-in — Phase 3.2 (implemented)
+1. **Dividend intelligence.** Build projected income, payment calendar, trailing/forward yield and dividend-growth history on top of the already implemented dividend/cash ledger.
+2. **Portfolio policy and alerts.** Turn existing concentration and target-weight analytics into configurable portfolio rules with visible, non-executing alerts and snooze/acknowledgement history.
+3. **Research alerting.** Notify on meaningful diagnostic changes, score-boundary crossings, FINRA reversals, provider recovery and matured backtest lessons; avoid alerts for ordinary price noise.
+4. **Scenario and allocation laboratory.** Explore proposed buys/sells, cash additions and target-weight changes before recording a transaction; show concentration, risk and decision impact without execution.
+5. **Decision review workflow.** Connect Journal theses and conviction to subsequent score changes, simulations and portfolio actions, producing an auditable pre/post decision review.
+6. **Cross-ticker opportunity ranking.** Add confidence-aware capital-allocation comparisons that respect ownership, target weights, evidence coverage and model uncertainty rather than ranking Entry scores alone.
+7. **Historical model comparison.** Productize the existing accuracy-audit utilities so approved model versions can be compared across tickers, cohorts and rolling learning curves before promotion.
+8. **Data portability and recovery hardening.** Add scheduled local backups, restore verification, schema/version manifests and a documented clean-machine recovery test.
+9. **Multi-user / remote deployment assessment.** Evaluate authentication, secrets, database concurrency and privacy only if the app moves beyond its current local single-user boundary.
+10. **Broker connectivity boundary review.** Keep execution out of scope by default. Reassess read-only account import separately from order placement; the Revolut Exchange FIX API remains unsuitable for the equity product (see [`revolut-fix-assessment.md`](revolut-fix-assessment.md)).
 
-Use accumulated positioning history to add a small, capped, transparent adjustment to Entry and Exit-review scores. Official FINRA backfill supplied the short-interest history needed to implement the first calibrated version without waiting for new short reports.
+## Original Phase 4 list - reconciled
 
-Readiness gate:
+| Original item | Current status |
+|---|---|
+| Purchase dates and cost basis | Implemented before Phase 4 |
+| Realized/unrealized gains and returns | Implemented before Phase 4 |
+| Buys, sells, dividends, fees and cash | Implemented before Phase 4 |
+| Transaction-aware portfolio history | Implemented before Phase 4 |
+| Benchmarks and time-weighted returns | Implemented before Phase 4 |
+| Sector/country/currency/position concentration | Implemented before Phase 4; configurable policy alerts remain future work |
+| Dividend tracking | Ledger implemented; forecasting/calendar/growth remain Phase 4 |
+| Target allocations and rebalancing | Implemented before Phase 4 |
+| Scheduled refresh and provider health | Page-triggered background refresh implemented; independent scheduling/health view remain pending |
+| Automated end-to-end UI tests | Pending as Phase 3.7 closure |
 
-- Add a bounded daily cohort collector so every watchlist equity accumulates snapshots without requiring manual Company-page visits.
-- At least 30 valid daily positioning snapshots for most watchlist equities, with 60 preferred for calibration.
-- At least two distinct short-interest reporting dates per ticker so a repeated provider value is not mistaken for a daily observation.
-- Sufficient option-chain continuity to calculate changes rather than only absolute put/call readings.
-- Separate data-coverage confidence from directional-signal reliability.
-- Measure overlap with technical, analyst, and risk inputs before selecting weights.
-- Backtest a capped initial adjustment (proposed maximum: ±5 Entry points and ±7 Exit-review points) and display the exact contribution.
+## Completed internal phases
 
-The initial gate is met for short-interest history. Options history continues accumulating and affects confidence through current coverage; future calibration can add options-change signals once sufficient dated chains exist. Phase 4 remains on hold.
+- **1.0 - Before Industry Feature:** MVP watchlist, prices, fundamentals, Company research, Journal and transparent absolute scores.
+- **2.0 - Before Trading:** portfolio lots, P&L, cash/dividends, FX, benchmarks, allocation, targets, imports/exports and backups.
+- **3 / 3.1 - Industry and UI foundations:** direct-peer calibration, analyst context, self-completing cohorts and responsive page redesign.
+- **3.2 - Market factoring-in:** reliability-gated FINRA/positioning modifiers.
+- **3.3 - UI polishing:** mobile-first decision tables, score maps, navigation and FINRA visualization.
+- **3.4 - Backtested learning:** Time Machine, persisted point-in-time simulations, outcomes and ticker lessons.
+- **3.5 - Position-aware decisions:** separate portfolio actions and watchlist opportunities.
+- **3.6 - FINRA refinement:** watchlist-wide historical coverage and point-in-time score rebuilds.
+- **3.7 - Decision-aware learning (active):** confirmed episodes, intelligent cutoffs, model-v4 orthogonality, diagnostic accuracy, learning curves, simulation markers and extended-hours awareness.
 
-## Backtested Learning — Phase 3.4 backlog
-
-1. **Automatically backfill every newly added watchlist ticker across all saved simulation cutoff dates — implemented.** Adding a ticker enqueues point-in-time reconstruction and outcome retrieval for each persisted simulation without requiring manual reruns. Work continues in the background with per-date progress and isolated errors, respects the original cutoff, and includes a recovery trigger for tickers added before this automation existed.
+See [`implemented-features.md`](implemented-features.md) for the detailed implementation record and [`internal-changelog.md`](internal-changelog.md) for the compact release narrative.
