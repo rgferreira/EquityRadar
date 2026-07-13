@@ -173,6 +173,36 @@ def select_learning_observations(runs: list[Mapping[str, object]]) -> list[dict[
     return selected
 
 
+def diagnostic_success_rate(
+    runs: list[Mapping[str, object]], signal: str, side: str = "entry",
+    minimum_samples: int = 3,
+) -> dict[str, object]:
+    """Measure success for the exact displayed diagnostic using comparable evidence."""
+    if side not in {"entry", "exit"}:
+        raise ValueError("side must be 'entry' or 'exit'")
+    signal_field = "entry_signal" if side == "entry" else "exit_signal"
+    comparable = [
+        row for row in select_learning_observations(runs)
+        if str(row.get(signal_field)) == signal
+    ]
+    successes = 0
+    for row in comparable:
+        if side == "entry":
+            successful = float(row["decision_utility"]) > 0
+        else:
+            forward = float(row["composite"])
+            successful = forward < 0 if signal in {"Sell review", "Reassess"} else forward > 0
+        successes += int(successful)
+    sample_size = len(comparable)
+    rate = round(successes / sample_size * 100, 1) if sample_size >= minimum_samples else None
+    return {
+        "signal": signal, "side": side, "sample_size": sample_size,
+        "successes": successes, "success_rate": rate,
+        "minimum_samples": minimum_samples,
+        "available": rate is not None,
+    }
+
+
 def _latest_runs_by_cutoff(runs: list[Mapping[str, object]]) -> list[Mapping[str, object]]:
     latest: dict[str, Mapping[str, object]] = {}
     for index, run in enumerate(runs):
@@ -201,7 +231,7 @@ def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
     if not selected:
         return {"sample_size": 0, "eligible_runs": 0, "total_runs": len(latest), "win_rate": None,
                 "average_3m_return": None, "average_composite": None, "decision_accuracy": None,
-                "confidence": "Insufficient"}
+                "correct_decisions": 0, "confidence": "Insufficient"}
     composites = [float(row["composite"]) for row in selected]
     utilities = [float(row["decision_utility"]) for row in selected]
     three_month = [float(row["outcome_3m"]) for row in selected if row.get("outcome_3m") is not None]
@@ -212,6 +242,7 @@ def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
         "average_3m_return": round(sum(three_month) / len(three_month), 2) if three_month else None,
         "average_composite": round(sum(composites) / size, 2),
         "decision_accuracy": round(sum(value > 0 for value in utilities) / size * 100, 1),
+        "correct_decisions": sum(value > 0 for value in utilities),
         "confidence": "Developing" if size < 5 else "Moderate" if size < 15 else "Established",
     }
 

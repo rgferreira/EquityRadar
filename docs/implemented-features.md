@@ -45,6 +45,8 @@
 - The Score overlap audit deduplicates model versions by ticker/cutoff, measures component rank correlations, estimates leave-one-component-out incremental R² against normalized forward outcomes, and identifies architectural reuse of drawdown, analyst actions, technical gates and learned feedback.
 - Model v4 applies the accepted orthogonality revision: Technical no longer scores proximity to the 52-week high because Risk already owns drawdown, and Market positioning no longer scores analyst upgrades/downgrades because Industry & analysts owns that evidence. Technical MA weights were rescaled to keep a transparent 0–100 range; top-level component weights remain unchanged.
 - Every distinct saved ticker/cutoff was recalculated under v4 with its original point-in-time restrictions. Older model rows remain in SQLite as rollback evidence, while Dashboard, Company and learning calculations select only the newest model per ticker/cutoff.
+- Entry and Exit-review headers show exact-diagnostic historical success with an explicit numerator/denominator and a three-comparable-observation minimum; Entry also shows aggregate ticker decision accuracy.
+- Historical simulation provenance is persisted as manual or system-suggested, including the suggestion rationale. Company charts render fine dotted cutoff markers in blue (manual), purple (completed suggestion), and gold (suggested but pending).
 - Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.
 
 ## Phase 3.5 · Position-Aware Decisions

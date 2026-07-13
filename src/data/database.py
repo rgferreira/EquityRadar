@@ -151,6 +151,8 @@ def init_db(db_path: str | Path | None = None) -> None:
                 outcome_12m REAL,
                 inputs_json TEXT NOT NULL,
                 model_version TEXT NOT NULL,
+                simulation_source TEXT NOT NULL DEFAULT 'manual',
+                suggestion_rationale TEXT,
                 outcome_refreshed_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(ticker, as_of_date, model_version)
@@ -185,6 +187,10 @@ def init_db(db_path: str | Path | None = None) -> None:
         }
         if "outcome_refreshed_at" not in backtest_columns:
             connection.execute("ALTER TABLE backtest_runs ADD COLUMN outcome_refreshed_at TEXT")
+        if "simulation_source" not in backtest_columns:
+            connection.execute("ALTER TABLE backtest_runs ADD COLUMN simulation_source TEXT NOT NULL DEFAULT 'manual'")
+        if "suggestion_rationale" not in backtest_columns:
+            connection.execute("ALTER TABLE backtest_runs ADD COLUMN suggestion_rationale TEXT")
         migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'portfolio_holdings_to_lots_v1'"
         ).fetchone()
@@ -208,8 +214,12 @@ def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = No
         "ticker", "as_of_date", "coverage", "entry_score", "exit_score", "entry_signal", "exit_signal",
         "technical_score", "valuation_score", "risk_score", "outcome_1m", "outcome_3m",
         "outcome_6m", "outcome_12m", "inputs_json", "model_version",
+        "simulation_source", "suggestion_rationale",
     )
-    values = [run.get(field) for field in fields]
+    values = [
+        (run.get(field) or "manual") if field == "simulation_source" else run.get(field)
+        for field in fields
+    ]
     with get_connection(db_path) as connection:
         connection.execute(
             f"""INSERT INTO backtest_runs ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})
@@ -219,7 +229,9 @@ def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = No
                 technical_score=excluded.technical_score, valuation_score=excluded.valuation_score,
                 risk_score=excluded.risk_score, outcome_1m=excluded.outcome_1m,
                 outcome_3m=excluded.outcome_3m, outcome_6m=excluded.outcome_6m,
-                outcome_12m=excluded.outcome_12m, inputs_json=excluded.inputs_json
+                outcome_12m=excluded.outcome_12m, inputs_json=excluded.inputs_json,
+                simulation_source=excluded.simulation_source,
+                suggestion_rationale=excluded.suggestion_rationale
             """,
             values,
         )

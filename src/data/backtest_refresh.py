@@ -19,7 +19,10 @@ _futures: dict[str, Future[None]] = {}
 _outcome_future: Future[None] | None = None
 
 
-def _run(as_of_date: str, tickers: list[str], db_path: str | Path | None) -> None:
+def _run(
+    as_of_date: str, tickers: list[str], db_path: str | Path | None,
+    simulation_source: str = "manual", suggestion_rationale: str | None = None,
+) -> None:
     for ticker in tickers:
         set_backtest_job_item(as_of_date, ticker, "running", db_path=db_path)
         try:
@@ -42,6 +45,8 @@ def _run(as_of_date: str, tickers: list[str], db_path: str | Path | None) -> Non
                                              "finra_observations_used": result["finra_observations_used"],
                                              "positioning_modifier": result["positioning_modifier"]}),
                 "model_version": result["model_version"],
+                "simulation_source": simulation_source,
+                "suggestion_rationale": suggestion_rationale,
             }, db_path)
             set_backtest_job_item(as_of_date, ticker, "completed", db_path=db_path)
         except Exception as exc:
@@ -53,7 +58,10 @@ def _finished(key: str, _future: Future[None]) -> None:
         _futures.pop(key, None)
 
 
-def schedule_backtest(as_of_date: str, tickers: list[str], db_path: str | Path | None = None) -> bool:
+def schedule_backtest(
+    as_of_date: str, tickers: list[str], db_path: str | Path | None = None,
+    simulation_source: str = "manual", suggestion_rationale: str | None = None,
+) -> bool:
     """Queue unfinished tickers; the worker survives Streamlit page navigation."""
     normalized = [ticker.strip().upper() for ticker in tickers]
     existing = {item["ticker"]: item for item in get_backtest_job_items(as_of_date, db_path)}
@@ -72,7 +80,9 @@ def schedule_backtest(as_of_date: str, tickers: list[str], db_path: str | Path |
             return False
         for ticker in pending:
             set_backtest_job_item(as_of_date, ticker, "queued", db_path=db_path)
-        future = _executor.submit(_run, as_of_date, pending, db_path)
+        future = _executor.submit(
+            _run, as_of_date, pending, db_path, simulation_source, suggestion_rationale,
+        )
         _futures[key] = future
         future.add_done_callback(lambda completed: _finished(key, completed))
     return True
@@ -142,7 +152,13 @@ def schedule_ticker_backfill(ticker: str, db_path: str | Path | None = None) -> 
             if key in _futures:
                 continue
             set_backtest_job_item(as_of_date, normalized, "queued", db_path=db_path)
-            future = _executor.submit(_run, as_of_date, [normalized], db_path)
+            date_runs = [run for run in runs if str(run["as_of_date"]) == as_of_date]
+            provenance = max(date_runs, key=lambda run: str(run.get("model_version") or "")) if date_runs else {}
+            future = _executor.submit(
+                _run, as_of_date, [normalized], db_path,
+                str(provenance.get("simulation_source") or "manual"),
+                provenance.get("suggestion_rationale"),
+            )
             _futures[key] = future
             future.add_done_callback(lambda completed, job_key=key: _finished(job_key, completed))
             scheduled.append(as_of_date)
@@ -159,7 +175,13 @@ def schedule_ticker_recalculation(ticker: str, db_path: str | Path | None = None
             key = f"finra-recalc:{normalized}:{as_of_date}"
             if key in _futures:
                 continue
-            future = _executor.submit(_run, as_of_date, [normalized], db_path)
+            date_runs = [run for run in get_backtest_runs(normalized, db_path) if str(run["as_of_date"]) == as_of_date]
+            provenance = max(date_runs, key=lambda run: str(run.get("model_version") or "")) if date_runs else {}
+            future = _executor.submit(
+                _run, as_of_date, [normalized], db_path,
+                str(provenance.get("simulation_source") or "manual"),
+                provenance.get("suggestion_rationale"),
+            )
             _futures[key] = future
             future.add_done_callback(lambda completed, job_key=key: _finished(job_key, completed))
             scheduled.append(as_of_date)

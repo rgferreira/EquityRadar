@@ -3,7 +3,7 @@ from datetime import date
 import pandas as pd
 
 from src.backtesting import (
-    decision_outcome, evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
+    decision_outcome, diagnostic_success_rate, evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
     latest_model_runs, lesson_summary, reconstruct_signal, select_learning_observations,
 )
 from src.data.database import (
@@ -102,6 +102,19 @@ def test_latest_model_runs_prevents_duplicate_rows_after_recalculation():
     assert next(row for row in latest if row["ticker"] == "TEST")["model_version"] == "v4"
 
 
+def test_exact_diagnostic_success_is_sample_aware_for_entry_and_exit():
+    runs = [{
+        "as_of_date": f"2025-0{index + 1}-01", "entry_signal": "Buy candidate",
+        "exit_signal": "Sell review", "entry_score": 75 + index,
+        "outcome_1m": value, "outcome_3m": value * 3, "outcome_6m": value * 6,
+    } for index, value in enumerate((2.0, 1.5, -1.0))]
+    entry = diagnostic_success_rate(runs, "Buy candidate", "entry")
+    exit_review = diagnostic_success_rate(runs, "Sell review", "exit")
+    assert entry["success_rate"] == 66.7
+    assert exit_review["success_rate"] == 33.3
+    assert diagnostic_success_rate(runs[:2], "Buy candidate")["success_rate"] is None
+
+
 def test_backtest_persistence_and_lessons(tmp_path):
     db = tmp_path / "test.db"
     init_db(db)
@@ -118,6 +131,12 @@ def test_backtest_persistence_and_lessons(tmp_path):
     refreshed = get_backtest_runs("TEST", db)[0]
     assert refreshed["outcome_3m"] == 9
     assert refreshed["outcome_refreshed_at"] is not None
+    assert refreshed["simulation_source"] == "manual"
+    save_backtest_run({**run, "as_of_date": "2023-02-01", "simulation_source": "suggested",
+                       "suggestion_rationale": "Market regime transition"}, db)
+    suggested = next(row for row in get_backtest_runs("TEST", db) if row["as_of_date"] == "2023-02-01")
+    assert suggested["simulation_source"] == "suggested"
+    assert suggested["suggestion_rationale"] == "Market regime transition"
 
 
 def test_backtest_job_state_is_persisted(tmp_path):

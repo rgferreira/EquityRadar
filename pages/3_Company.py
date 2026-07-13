@@ -5,8 +5,8 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import streamlit as st
 
-from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_watchlist, init_db
-from src.backtesting import decision_outcome, latest_model_runs, learned_score_adjustments
+from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
+from src.backtesting import diagnostic_success_rate, decision_outcome, latest_model_runs, learned_score_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -194,6 +194,32 @@ try:
             mode="lines+markers", line={"color": "#f5c26b", "width": 1.5},
             marker={"size": 4}, row=2, col=1, secondary_y=True,
         )
+    chart_start = pd.Timestamp(history.index.min()).tz_localize(None) if getattr(history.index, "tz", None) else pd.Timestamp(history.index.min())
+    chart_end = pd.Timestamp(history.index.max()).tz_localize(None) if getattr(history.index, "tz", None) else pd.Timestamp(history.index.max())
+    completed_dates = {str(run["as_of_date"]): run for run in backtest_runs}
+    simulation_markers: list[tuple[pd.Timestamp, str, str]] = []
+    for cutoff, run in completed_dates.items():
+        marker_type = "Suggested simulation" if run.get("simulation_source") == "suggested" else "Manual simulation"
+        marker_color = "#c792ea" if marker_type == "Suggested simulation" else "#7aa2f7"
+        simulation_markers.append((pd.Timestamp(cutoff), marker_type, marker_color))
+    for suggestion in get_simulation_suggestions():
+        cutoff = str(suggestion["suggested_date"])
+        if cutoff not in completed_dates:
+            simulation_markers.append((pd.Timestamp(cutoff), "Suggested · pending", "#f5c26b"))
+    visible_marker_types: dict[str, str] = {}
+    for marker_date, marker_type, marker_color in simulation_markers:
+        if not chart_start <= marker_date <= chart_end:
+            continue
+        figure.add_vline(
+            x=marker_date, line_width=1, line_dash="dot", line_color=marker_color,
+            opacity=.72, row="all", col=1,
+        )
+        visible_marker_types[marker_type] = marker_color
+    for marker_type, marker_color in visible_marker_types.items():
+        figure.add_scatter(
+            x=[None], y=[None], mode="lines", name=marker_type,
+            line={"color": marker_color, "width": 1, "dash": "dot"}, row=1, col=1,
+        )
     st.markdown(f"**{ticker} · {history_label.lower()} price history**")
     figure.update_yaxes(title_text="Price", row=1, col=1)
     figure.update_yaxes(title_text="Short Δ %", row=2, col=1, secondary_y=False, zeroline=True)
@@ -202,6 +228,8 @@ try:
     st.plotly_chart(figure, width="stretch")
     if finra_rows:
         st.caption("FINRA pressure pulse · coral = rising short interest · teal = falling · gold = days to cover")
+    if visible_marker_types:
+        st.caption("Simulation markers · blue = manual · purple = completed suggestion · gold = suggested and pending")
 
     base_entry_score = float(industry_breakdown["score"])
     base_exit_score = calculate_exit_review_score(technical, risk)
@@ -227,19 +255,36 @@ try:
         if selected_holding else None
     )
     entry_color = "#38d996" if entry_score >= 60 else "#f0ad4e" if entry_score >= 40 else "#ff6375"
+    current_entry_signal = entry_label(entry_score)
+    entry_success = diagnostic_success_rate(backtest_runs, current_entry_signal, "entry")
+    entry_success_text = (
+        f"Historical success {float(entry_success['success_rate']):.0f}% · {entry_success['successes']}/{entry_success['sample_size']}"
+        if entry_success["available"] else
+        f"Historical success unavailable · {entry_success['sample_size']} comparable (need 3)"
+    )
+    overall_accuracy_text = (
+        "Overall decision accuracy unavailable"
+        if learning_modifier["decision_accuracy"] is None else
+        f"Overall decision accuracy {float(learning_modifier['decision_accuracy']):.0f}% · "
+        f"{int(learning_modifier['correct_decisions'])}/{int(learning_modifier['sample_size'])}"
+    )
     entry_figure = go.Figure(go.Indicator(
         mode="number",
         value=entry_score,
         number={"suffix": "/100", "valueformat": ".1f", "font": {"size": 36, "color": entry_color}},
         title={
-            "text": f"<b>ENTRY SCORE</b><br><span style='font-size:0.78em;color:#9aa4b2'>{entry_label(entry_score)}</span>",
+            "text": (
+                f"<b>ENTRY SCORE</b><br><span style='font-size:0.78em;color:#9aa4b2'>{current_entry_signal}</span>"
+                f"<br><span style='font-size:0.68em;color:#9aa4b2'>{entry_success_text}</span>"
+                f"<br><span style='font-size:0.68em;color:#9aa4b2'>{overall_accuracy_text}</span>"
+            ),
             "font": {"size": 15, "color": "#d6deea"},
         },
         domain={"x": [0, 1], "y": [0, 1]},
     ))
     entry_figure.update_layout(
-        height=125,
-        margin={"l": 0, "r": 0, "t": 26, "b": 0},
+        height=165,
+        margin={"l": 0, "r": 0, "t": 36, "b": 0},
         paper_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(entry_figure, width="stretch", config={"displayModeBar": False})
@@ -316,17 +361,27 @@ try:
         )
 
     exit_color = "#ff6375" if exit_score >= 70 else "#f0ad4e" if exit_score >= 50 else "#38d996"
+    current_exit_signal = exit_review_label(exit_score)
+    exit_success = diagnostic_success_rate(backtest_runs, current_exit_signal, "exit")
+    exit_success_text = (
+        f"Historical success {float(exit_success['success_rate']):.0f}% · {exit_success['successes']}/{exit_success['sample_size']}"
+        if exit_success["available"] else
+        f"Historical success unavailable · {exit_success['sample_size']} comparable (need 3)"
+    )
     exit_figure = go.Figure(go.Indicator(
         mode="number", value=exit_score,
         number={"suffix": "/100", "valueformat": ".1f", "font": {"size": 36, "color": exit_color}},
         title={
-            "text": f"<b>EXIT-REVIEW SCORE</b><br><span style='font-size:0.78em;color:#9aa4b2'>{exit_review_label(exit_score)}</span>",
+            "text": (
+                f"<b>EXIT-REVIEW SCORE</b><br><span style='font-size:0.78em;color:#9aa4b2'>{current_exit_signal}</span>"
+                f"<br><span style='font-size:0.68em;color:#9aa4b2'>{exit_success_text}</span>"
+            ),
             "font": {"size": 15, "color": "#d6deea"},
         },
         domain={"x": [0, 1], "y": [0, 1]},
     ))
     exit_figure.update_layout(
-        height=125, margin={"l": 0, "r": 0, "t": 26, "b": 0},
+        height=150, margin={"l": 0, "r": 0, "t": 34, "b": 0},
         paper_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(exit_figure, width="stretch", config={"displayModeBar": False})

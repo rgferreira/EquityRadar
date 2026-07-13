@@ -180,7 +180,16 @@ if not tickers:
 initial_refresh = not st.session_state.get("dashboard_initial_refresh_done", False)
 simulation_key = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
 if historical_mode and refresh:
-    schedule_backtest(simulation_key, tickers)
+    selected_suggestion_record = next(
+        (item for item in suggestions if str(item["suggested_date"]) == simulation_key), None,
+    ) if using_suggestion else None
+    schedule_backtest(
+        simulation_key, tickers,
+        simulation_source="suggested" if selected_suggestion_record else "manual",
+        suggestion_rationale=(
+            str(selected_suggestion_record["rationale"]) if selected_suggestion_record else None
+        ),
+    )
     st.session_state.backtest_active_date = simulation_key
     st.session_state.dashboard_rows_mode = "historical"
 elif not historical_mode and (refresh or initial_refresh or st.session_state.get("dashboard_rows_mode") == "historical"):
