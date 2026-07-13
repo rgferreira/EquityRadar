@@ -33,7 +33,7 @@ from src.scoring.positioning import apply_positioning_adjustment, positioning_sc
 from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header
-from src.backtesting import learned_score_adjustments, lesson_summary
+from src.backtesting import decision_outcome, learned_score_adjustments, lesson_summary
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
@@ -166,15 +166,19 @@ with st.expander("Saved simulations & learning history"):
             ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
             learned = learned_score_adjustments(ticker_runs)
             metric_cols = st.columns(4)
-            metric_cols[0].metric("Completed samples", learned["sample_size"])
-            metric_cols[1].metric("3M win rate", "—" if learned["win_rate"] is None else f"{learned['win_rate']:.0f}%")
+            metric_cols[0].metric("Learned / saved", f"{learned['sample_size']}/{learned['total_runs']}")
+            metric_cols[1].metric("Decision accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
             metric_cols[2].metric("Entry modifier", f"{learned['entry_adjustment']:+.1f}")
             metric_cols[3].metric("Exit modifier", f"{learned['exit_adjustment']:+.1f}")
             st.caption(str(learned["reason"]))
-            learning_history = pd.DataFrame(ticker_runs)[[
-                "as_of_date", "coverage", "entry_signal", "entry_score", "exit_signal", "exit_score",
-                "outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m", "model_version",
-            ]].rename(columns={"as_of_date": "Cutoff date"})
+            learning_history = pd.DataFrame([
+                {**run, **decision_outcome(run)} for run in ticker_runs
+            ])[[
+                "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
+                "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
+            ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
+                               "verdict": "Decision conclusion", "learning_priority": "Learning value",
+                               "should_learn": "Used for learning", "learning_reason": "Why"})
             st.dataframe(learning_history, hide_index=True, width="stretch")
 
 refresh_col, status_col = st.columns([1, 4], vertical_alignment="center")
@@ -319,7 +323,8 @@ if historical_mode:
                 if inputs.get("finra_observations_used") else
                 "Excluded unless timestamped evidence existed by the cutoff."
             ),
-            "Price data fetched at": run["created_at"], "Outcome 3M %": run["outcome_3m"],
+            "Price data fetched at": run["created_at"], "Outcome 1M %": run["outcome_1m"],
+            "Outcome 3M %": run["outcome_3m"], "Outcome 6M %": run["outcome_6m"],
             "Outcome 12M %": run["outcome_12m"],
         })
     status = backtest_status(simulation_key)
@@ -554,21 +559,28 @@ if rows:
 
     if historical_mode:
         st.subheader("Backtested learning")
-        st.caption(f"Cutoff date · {simulation_key} · Forward outcomes evaluate the old decision; they were never used to calculate it.")
-        outcome_view = frame[["Ticker", "Cutoff date", "Industry calibrated", "Entry signal", "Entry score", "Outcome 3M %", "Outcome 12M %"]].copy()
-        outcome_view["Outcome 3M"] = outcome_view["Outcome 3M %"].map(
-            lambda value: "Pending · 63 sessions" if pd.isna(value) else f"{float(value):+.2f}%"
+        st.caption(f"Cutoff date · {simulation_key} · Outcomes are judged against the old decision, never used to calculate it. Composite = 50% 1M + 30% 3M + 20% 6M after monthly normalization.")
+        analyses = {str(run["ticker"]): decision_outcome(run) for run in get_backtest_runs()
+                    if run["as_of_date"] == simulation_key}
+        outcome_view = frame[["Ticker", "Cutoff date", "Entry signal", "Entry score", "Outcome 1M %", "Outcome 3M %", "Outcome 6M %"]].copy()
+        for horizon, sessions in (("1M", 21), ("3M", 63), ("6M", 126)):
+            outcome_view[horizon] = outcome_view[f"Outcome {horizon} %"].map(
+                lambda value, required=sessions: f"Pending · {required} sessions" if pd.isna(value) else f"{float(value):+.2f}%"
+            )
+        outcome_view["Weighted monthly"] = outcome_view["Ticker"].map(
+            lambda ticker: "—" if analyses.get(str(ticker), {}).get("composite") is None else f"{float(analyses[str(ticker)]['composite']):+.2f}%"
         )
-        outcome_view["Outcome 12M"] = outcome_view["Outcome 12M %"].map(
-            lambda value: "Pending · 252 sessions" if pd.isna(value) else f"{float(value):+.2f}%"
-        )
-        outcome_view = outcome_view.drop(columns=["Outcome 3M %", "Outcome 12M %"])
+        outcome_view["Decision conclusion"] = outcome_view["Ticker"].map(lambda ticker: analyses.get(str(ticker), {}).get("verdict", "Pending"))
+        outcome_view["Learning value"] = outcome_view["Ticker"].map(lambda ticker: analyses.get(str(ticker), {}).get("learning_priority", 0))
+        outcome_view["Learn?"] = outcome_view["Ticker"].map(lambda ticker: "Yes" if analyses.get(str(ticker), {}).get("should_learn") else "No")
+        outcome_view = outcome_view.drop(columns=["Outcome 1M %", "Outcome 3M %", "Outcome 6M %"])
         st.dataframe(outcome_view, hide_index=True, width="stretch")
         lesson_rows = []
         for ticker in frame["Ticker"]:
             lesson = lesson_summary(get_backtest_runs(str(ticker)))
-            lesson_rows.append({"Ticker": ticker, "Samples": lesson["sample_size"], "3M win rate": lesson["win_rate"],
-                                "Average 3M %": lesson["average_3m_return"], "Confidence": lesson["confidence"]})
+            lesson_rows.append({"Ticker": ticker, "Learned / saved": f"{lesson['sample_size']}/{lesson['total_runs']}",
+                                "Decision accuracy": lesson["decision_accuracy"],
+                                "Weighted monthly %": lesson["average_composite"], "Confidence": lesson["confidence"]})
         st.dataframe(pd.DataFrame(lesson_rows), hide_index=True, width="stretch")
 
     @st.fragment(run_every=5)

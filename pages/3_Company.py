@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_watchlist, init_db
-from src.backtesting import learned_score_adjustments
+from src.backtesting import decision_outcome, learned_score_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -301,16 +301,16 @@ try:
             st.caption("Confidence-weighted · capped at ±5 Entry points")
     with learning_columns[1]:
         learning_outcome_text = (
-            "Outcome history still developing" if learning_modifier["win_rate"] is None
-            else f"Positive at 3M · {float(learning_modifier['win_rate']):.0f}% · Average {float(learning_modifier['average_3m_return']):+.1f}%"
+            "Decision-aware evidence still developing" if learning_modifier["decision_accuracy"] is None
+            else f"Decision accuracy · {float(learning_modifier['decision_accuracy']):.0f}% · Weighted monthly {float(learning_modifier['average_composite']):+.2f}%"
         )
         st.markdown(
             f"<div style='background:#d9dde2;color:#111820;border:1px solid #eef1f4;"
             f"border-radius:12px;padding:16px 18px;min-height:118px'>"
             f"<div style='font-weight:750;font-size:1rem;margin-bottom:12px'>"
             f"Learning evidence · {learning_modifier['confidence']}</div>"
-            f"<div style='font-size:.88rem;margin-bottom:7px'>Completed 3M samples · "
-            f"{int(learning_modifier['sample_size'])}</div>"
+            f"<div style='font-size:.88rem;margin-bottom:7px'>Selected / saved observations · "
+            f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}</div>"
             f"<div style='font-size:.88rem'>{learning_outcome_text}</div></div>",
             unsafe_allow_html=True,
         )
@@ -526,11 +526,11 @@ try:
 
     with learning_tab:
         st.subheader("Backtested learning")
-        st.caption("Ticker-specific evidence from persisted point-in-time simulations. Forward outcomes never enter their own historical score.")
+        st.caption("Ticker-specific, decision-aware evidence. The outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%; forward data never enters its own historical score.")
         learning_columns = st.columns(4)
-        learning_columns[0].metric("Completed 3M samples", int(learning_modifier["sample_size"]))
+        learning_columns[0].metric("Learned / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
         learning_columns[1].metric(
-            "3M win rate", "—" if learning_modifier["win_rate"] is None else f"{float(learning_modifier['win_rate']):.0f}%",
+            "Decision accuracy", "—" if learning_modifier["decision_accuracy"] is None else f"{float(learning_modifier['decision_accuracy']):.0f}%",
         )
         learning_columns[2].metric("Entry adjustment", f"{float(learning_modifier['entry_adjustment']):+.1f}")
         learning_columns[3].metric("Exit adjustment", f"{float(learning_modifier['exit_adjustment']):+.1f}")
@@ -545,10 +545,12 @@ try:
         else:
             st.success(f"Applied to current scores · {learning_modifier['reason']}.")
         if backtest_runs:
-            history_rows = pd.DataFrame(backtest_runs)[[
-                "as_of_date", "coverage", "entry_signal", "entry_score", "exit_signal", "exit_score",
-                "outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m", "model_version",
-            ]].rename(columns={"as_of_date": "Cutoff date"})
+            history_rows = pd.DataFrame([{**run, **decision_outcome(run)} for run in backtest_runs])[[
+                "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
+                "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
+            ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
+                               "verdict": "Decision conclusion", "learning_priority": "Learning value",
+                               "should_learn": "Used for learning", "learning_reason": "Why"})
             st.dataframe(history_rows, hide_index=True, width="stretch")
         else:
             st.info("No saved simulations exist for this ticker yet.")

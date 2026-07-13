@@ -39,12 +39,14 @@ pytest
 - Risk (0–100): lower drawdown and lower annualized daily volatility produce a higher score.
 - Entry score: 50% technical, 30% valuation, 20% risk. It expresses potential entry/add attractiveness, not a trading instruction.
 - Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
-- Backtested learning: historical simulations are stored per ticker. After at least three completed three-month outcomes, their win rate and average return can contribute a visible, confidence-weighted modifier capped at ±5 Entry points, with the opposite adjustment applied to Exit review. No modifier is applied below the sample threshold.
+- Decision-aware backtested learning: historical simulations are stored per ticker and their original decision is judged against subsequent returns. A Wait followed by gains is a missed opportunity, not a generic win; a Wait followed by weakness is correct avoidance. Comparable monthly 1M/3M/6M returns are combined at 50%/30%/20%. Only mature, informative, non-duplicate observations enter learning, and at least three selected observations are required before a visible modifier capped at ±5 affects Entry (with the opposite Exit-review adjustment).
 - Position-aware decision layer: unowned companies use initiation decisions, while holdings translate the same company evidence into Add/Hold/Monitor/Trim/Exit using current weight, optional target weight and concentration. This changes the action, not the underlying company research scores.
 
 ## Time Machine and point-in-time learning
 
 The Decision dashboard can reconstruct a custom past date. Price metrics are truncated at that cutoff, timestamped fundamentals are included only when already available, and unavailable historical industry/analyst/positioning evidence is excluded rather than replaced with today's knowledge. Forward outcomes are evaluated only after the reconstructed decision and stored separately in SQLite. Each run records its inputs, coverage and model version so results remain reproducible and future scoring changes do not rewrite past evidence.
+
+Phase 3.7 adds a learning-value gate. Each saved run shows its weighted outcome, decision conclusion, horizon coverage, learning priority, whether it was retained, and why. The engine prioritizes score/outcome disagreement and meaningful moves near decision boundaries, while immature, noisy and near-duplicate situations remain auditable but do not train current scores.
 
 Price history remains provided by yfinance. Fundamentals use a provider-neutral interface with FMP first and a separate Yahoo Finance fallback adapter, and are cached in SQLite at most once per calendar day unless explicitly refreshed. Provider failures and missing fields are isolated per ticker and do not block prices.
 

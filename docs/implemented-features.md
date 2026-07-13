@@ -33,10 +33,11 @@
 - Historical reconstruction downloads sufficient price history automatically and strictly excludes observations after the selected date from technical, risk, valuation, Entry, and Exit-review calculations.
 - Fundamentals are eligible only when their reporting/fetched date is on or before the cutoff; otherwise the simulation is explicitly labelled price-only.
 - Forward 1/3/6/12-month outcomes are calculated separately after scoring and persisted in SQLite with the full inputs and scoring-model version.
-- Per-ticker lessons expose sample size, three-month win rate, average return, and confidence.
-- Once at least three completed observations exist, ticker learning can influence current Entry and Exit-review scores through transparent opposing modifiers capped at ±5 points. Smaller samples produce a zero adjustment.
+- Per-ticker lessons expose selected versus saved observations, decision accuracy, weighted outcome and confidence.
+- Phase 3.7 interprets outcomes against the original decision: positive performance after Wait is a missed opportunity, while weakness after Wait is correct avoidance. It combines monthly-normalized 1M/3M/6M performance with 50%/30%/20% weights and transparently renormalizes weights while later horizons remain immature.
+- A systematic learning-value gate retains mature and informative score/outcome disagreements, filters near-duplicate situations, and exposes its priority and reason. Only selected evidence counts toward the three-observation minimum for transparent opposing Entry/Exit-review modifiers capped at ±5 points.
 - Simulations run in a persistent background worker with per-ticker queued/running/completed/failed state, so navigating to another page does not cancel the job.
-- Dashboard provides a saved-simulation archive grouped by cutoff date and a per-ticker learning history with every stored outcome and its current derived modifiers.
+- Dashboard provides a saved-simulation archive and per-ticker history showing decision conclusions, weighted outcomes, learning value, inclusion/exclusion and rationale; Company detail presents the same decision-aware evidence beside its current score impact.
 - Active simulations expose live persisted progress and remain visible after returning to Dashboard; completed jobs distinguish unavailable tickers from work still running and never retry permanent provider failures in a loop.
 - Saved runs automatically refresh incomplete forward outcomes once per calendar day. Immature 3M/12M horizons are labelled with their required trading-session count instead of displaying an ambiguous null value.
 - Company detail applies the same per-ticker Backtested Learning modifier as Dashboard to both Entry and Exit-review scores, exposes the stored observation history in its own tab, and color-codes learned impact (green favorable, red adverse, gray inactive) with Exit-review semantics correctly inverted.

@@ -3,8 +3,8 @@ from datetime import date
 import pandas as pd
 
 from src.backtesting import (
-    evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
-    lesson_summary, reconstruct_signal,
+    decision_outcome, evaluate_outcomes, evidence_available, history_as_of, learned_score_adjustments,
+    lesson_summary, reconstruct_signal, select_learning_observations,
 )
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, init_db, save_backtest_run, set_backtest_job_item,
@@ -50,11 +50,45 @@ def test_outcomes_are_measured_after_cutoff():
 
 
 def test_learning_requires_sample_and_is_bounded():
-    rows = [{"outcome_3m": 10.0}] * 3
+    rows = [
+        {"as_of_date": f"2025-0{index + 1}-01", "entry_signal": "Wait", "entry_score": 40 + index * 5,
+         "outcome_1m": 4 + index, "outcome_3m": 9 + index * 3, "outcome_6m": 12 + index * 4}
+        for index in range(3)
+    ]
     learned = learned_score_adjustments(rows)
     assert 0 < learned["entry_adjustment"] <= 5
     assert learned["exit_adjustment"] == -learned["entry_adjustment"]
     assert learned_score_adjustments(rows[:2])["entry_adjustment"] == 0
+
+
+def test_wait_followed_by_gain_is_a_missed_opportunity():
+    result = decision_outcome({"entry_signal": "Wait", "entry_score": 46,
+                               "outcome_1m": 3, "outcome_3m": 6, "outcome_6m": 12})
+    assert result["verdict"] == "Missed opportunity"
+    assert result["decision_utility"] < 0
+    assert result["should_learn"] is True
+    assert result["coverage"] == 1.0
+
+
+def test_buy_followed_by_decline_is_an_unfavorable_entry():
+    result = decision_outcome({"entry_signal": "Buy candidate", "entry_score": 75,
+                               "outcome_1m": -3, "outcome_3m": -6, "outcome_6m": -12})
+    assert result["verdict"] == "Unfavorable entry"
+    assert result["decision_utility"] < 0
+
+
+def test_learning_gate_skips_immature_noise_and_near_duplicates():
+    runs = [
+        {"as_of_date": "2025-01-01", "entry_signal": "Wait", "entry_score": 46,
+         "outcome_1m": .1, "outcome_3m": None, "outcome_6m": None},
+        {"as_of_date": "2025-02-01", "entry_signal": "Wait", "entry_score": 46,
+         "outcome_1m": 4, "outcome_3m": 9, "outcome_6m": 12},
+        {"as_of_date": "2025-03-01", "entry_signal": "Wait", "entry_score": 47,
+         "outcome_1m": 4.1, "outcome_3m": 9.2, "outcome_6m": 12.2},
+    ]
+    selected = select_learning_observations(runs)
+    assert len(selected) == 1
+    assert selected[0]["as_of_date"] == "2025-02-01"
 
 
 def test_backtest_persistence_and_lessons(tmp_path):
