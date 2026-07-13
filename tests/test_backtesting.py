@@ -77,6 +77,25 @@ def test_buy_followed_by_decline_is_an_unfavorable_entry():
     assert result["decision_utility"] < 0
 
 
+def test_one_month_only_outcome_is_provisional_and_does_not_change_learning():
+    result = decision_outcome({"entry_signal": "Buy candidate", "entry_score": 75,
+                               "outcome_1m": -8, "outcome_3m": None, "outcome_6m": None})
+    assert result["maturity"] == "Provisional"
+    assert result["should_evaluate"] is True
+    assert result["should_learn"] is False
+
+
+def test_watch_tolerates_modest_upside_but_not_a_large_missed_move():
+    modest = decision_outcome({"entry_signal": "Watch", "entry_score": 65,
+                               "outcome_1m": 1, "outcome_3m": 3, "outcome_6m": 6})
+    large = decision_outcome({"entry_signal": "Watch", "entry_score": 65,
+                              "outcome_1m": 8, "outcome_3m": 24, "outcome_6m": 48})
+    assert modest["verdict"] == "Correct watch"
+    assert modest["decision_utility"] > 0
+    assert large["verdict"] == "Missed opportunity"
+    assert large["decision_utility"] < 0
+
+
 def test_learning_gate_skips_immature_noise_and_near_duplicates():
     runs = [
         {"as_of_date": "2025-01-01", "entry_signal": "Wait", "entry_score": 46,
@@ -89,6 +108,14 @@ def test_learning_gate_skips_immature_noise_and_near_duplicates():
     selected = select_learning_observations(runs)
     assert len(selected) == 1
     assert selected[0]["as_of_date"] == "2025-02-01"
+
+
+def test_learning_collapses_nearby_same_signal_into_one_episode():
+    runs = [{"as_of_date": day, "entry_signal": "Wait", "entry_score": score,
+             "outcome_1m": 4, "outcome_3m": 12, "outcome_6m": 24}
+            for day, score in (("2025-01-01", 35), ("2025-01-08", 45), ("2025-02-01", 45))]
+    selected = select_learning_observations(runs)
+    assert [row["as_of_date"] for row in selected] == ["2025-01-01", "2025-02-01"]
 
 
 def test_latest_model_runs_prevents_duplicate_rows_after_recalculation():

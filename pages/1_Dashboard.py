@@ -96,7 +96,7 @@ def render_dashboard_table(
 ) -> None:
     """Render a responsive decision table with deterministic same-tab links."""
     labels = {
-        "Overall decision accuracy": "Decision<br>accuracy",
+        "Overall decision accuracy": "Confirmed<br>accuracy",
         "Entry score": "Entry<br>score",
         "Exit score": "Exit<br>score",
         "Industry calibrated": "Industry<br>calibrated",
@@ -651,8 +651,8 @@ if rows:
         lesson_rows = []
         for ticker in frame["Ticker"]:
             lesson = lesson_summary(get_backtest_runs(str(ticker)))
-            lesson_rows.append({"Ticker": ticker, "Learned / saved": f"{lesson['sample_size']}/{lesson['total_runs']}",
-                                "Decision accuracy": lesson["decision_accuracy"],
+            lesson_rows.append({"Ticker": ticker, "Confirmed / saved": f"{lesson['sample_size']}/{lesson['total_runs']}",
+                                "Confirmed accuracy": lesson["decision_accuracy"],
                                 "Weighted monthly %": lesson["average_composite"], "Confidence": lesson["confidence"]})
         st.dataframe(zebra_table(pd.DataFrame(lesson_rows)), hide_index=True, width="stretch")
 
@@ -824,8 +824,8 @@ if rows:
                 ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
                 learned = learned_score_adjustments(ticker_runs)
                 metric_cols = st.columns(4)
-                metric_cols[0].metric("Learned / saved", f"{learned['sample_size']}/{learned['total_runs']}")
-                metric_cols[1].metric("Decision accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
+                metric_cols[0].metric("Confirmed / saved", f"{learned['sample_size']}/{learned['total_runs']}")
+                metric_cols[1].metric("Confirmed accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
                 metric_cols[2].metric("Entry modifier", f"{learned['entry_adjustment']:+.1f}")
                 metric_cols[3].metric("Exit modifier", f"{learned['exit_adjustment']:+.1f}")
                 st.caption(str(learned["reason"]))

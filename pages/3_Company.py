@@ -269,10 +269,11 @@ try:
         f"Historical success unavailable · {entry_success['sample_size']} comparable (need 3)"
     )
     overall_accuracy_text = (
-        "Overall decision accuracy unavailable"
+        "Confirmed decision accuracy unavailable"
         if learning_modifier["decision_accuracy"] is None else
-        f"Overall decision accuracy {float(learning_modifier['decision_accuracy']):.0f}% · "
+        f"Confirmed decision accuracy {float(learning_modifier['decision_accuracy']):.0f}% · "
         f"{int(learning_modifier['correct_decisions'])}/{int(learning_modifier['sample_size'])}"
+        + (f" · {int(learning_modifier['provisional_runs'])} provisional" if learning_modifier.get("provisional_runs") else "")
     )
     entry_figure = go.Figure(go.Indicator(
         mode="number",
@@ -353,14 +354,14 @@ try:
     with learning_columns[1]:
         learning_outcome_text = (
             "Decision-aware evidence still developing" if learning_modifier["decision_accuracy"] is None
-            else f"Decision accuracy · {float(learning_modifier['decision_accuracy']):.0f}% · Weighted monthly {float(learning_modifier['average_composite']):+.2f}%"
+            else f"Confirmed accuracy · {float(learning_modifier['decision_accuracy']):.0f}% · Weighted monthly {float(learning_modifier['average_composite']):+.2f}%"
         )
         st.markdown(
             f"<div style='background:#d9dde2;color:#111820;border:1px solid #eef1f4;"
             f"border-radius:12px;padding:16px 18px;min-height:118px'>"
             f"<div style='font-weight:750;font-size:1rem;margin-bottom:12px'>"
             f"Learning evidence · {learning_modifier['confidence']}</div>"
-            f"<div style='font-size:.88rem;margin-bottom:7px'>Selected / saved observations · "
+            f"<div style='font-size:.88rem;margin-bottom:7px'>Confirmed episodes / saved simulations · "
             f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}</div>"
             f"<div style='font-size:.88rem'>{learning_outcome_text}</div></div>",
             unsafe_allow_html=True,
@@ -589,9 +590,9 @@ try:
         st.subheader("Backtested learning")
         st.caption("Ticker-specific, decision-aware evidence. The outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%; forward data never enters its own historical score.")
         learning_columns = st.columns(4)
-        learning_columns[0].metric("Learned / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
+        learning_columns[0].metric("Confirmed / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
         learning_columns[1].metric(
-            "Decision accuracy", "—" if learning_modifier["decision_accuracy"] is None else f"{float(learning_modifier['decision_accuracy']):.0f}%",
+            "Confirmed accuracy", "—" if learning_modifier["decision_accuracy"] is None else f"{float(learning_modifier['decision_accuracy']):.0f}%",
         )
         learning_columns[2].metric("Entry adjustment", f"{float(learning_modifier['entry_adjustment']):+.1f}")
         learning_columns[3].metric("Exit adjustment", f"{float(learning_modifier['exit_adjustment']):+.1f}")

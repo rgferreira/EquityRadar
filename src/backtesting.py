@@ -17,6 +17,9 @@ from src.data.market_data import calculate_metrics
 MODEL_VERSION = "backtested-learning-v4-orthogonal"
 OUTCOME_HORIZONS = {"1M": 21, "3M": 63, "6M": 126, "12M": 252}
 LEARNING_WEIGHTS = {"1M": .50, "3M": .30, "6M": .20}
+MINIMUM_CONFIRMED_HORIZON = "3M"
+EPISODE_WINDOW_DAYS = 21
+WATCH_UPSIDE_TOLERANCE = 3.0
 
 
 def history_as_of(history: pd.DataFrame, as_of: date | str) -> pd.DataFrame:
@@ -119,10 +122,16 @@ def decision_outcome(run: Mapping[str, object]) -> dict[str, object]:
     composite = sum(monthly[label] * LEARNING_WEIGHTS[label] for label in monthly) / available_weight
     signal = str(run.get("entry_signal") or "Wait")
     entered = signal == "Buy candidate"
-    utility = composite if entered else -composite
     if entered:
+        utility = composite
         verdict = "Correct entry" if composite > 0 else "Unfavorable entry" if composite < 0 else "Neutral entry"
+    elif signal == "Watch":
+        # Watch is a deliberate intermediate decision: tolerate modest upside
+        # while waiting for confirmation, reward caution during flat/down moves.
+        utility = WATCH_UPSIDE_TOLERANCE - composite if composite >= 0 else -composite
+        verdict = "Correct watch" if utility > 0 else "Missed opportunity" if utility < 0 else "Neutral watch"
     else:
+        utility = -composite
         verdict = "Correct avoidance" if composite < 0 else "Missed opportunity" if composite > 0 else "Neutral wait"
     disagreement = utility < 0
     magnitude_points = min(35, abs(composite) * 7)
@@ -131,34 +140,49 @@ def decision_outcome(run: Mapping[str, object]) -> dict[str, object]:
     boundary_points = max(0, 20 - threshold_distance * 2)
     priority = round(min(100, (45 if disagreement else 10) + magnitude_points + boundary_points))
     sufficient = available_weight >= .50
+    confirmed = run.get("outcome_3m") is not None
     # Directional disagreement matters only when the move clears a small noise
     # floor; otherwise every fractional fluctuation would become a lesson.
     informative = abs(composite) >= .75
-    should_learn = sufficient and informative
+    should_evaluate = sufficient and informative
+    should_learn = should_evaluate and confirmed
     reason_parts = [verdict, f"{available_weight:.0%} horizon coverage"]
     if not sufficient:
         reason_parts.append("awaiting more outcome coverage")
     elif not informative:
         reason_parts.append("outcome too close to noise")
+    elif not confirmed:
+        reason_parts.append(f"provisional until {MINIMUM_CONFIRMED_HORIZON} matures")
     else:
         reason_parts.append("decision/outcome evidence retained")
     return {
         "composite": round(composite, 2), "decision_utility": round(utility, 2),
         "verdict": verdict, "coverage": round(available_weight, 2),
         "should_learn": should_learn, "learning_priority": priority,
+        "should_evaluate": should_evaluate, "maturity": "Confirmed" if confirmed else "Provisional",
         "learning_reason": " · ".join(reason_parts),
     }
 
 
-def select_learning_observations(runs: list[Mapping[str, object]]) -> list[dict[str, object]]:
-    """Keep mature, informative and non-duplicate observations for learning."""
+def select_learning_observations(
+    runs: list[Mapping[str, object]], confirmed_only: bool = True,
+) -> list[dict[str, object]]:
+    """Keep informative, independent decision episodes for evaluation."""
     selected: list[dict[str, object]] = []
     signatures: list[tuple[str, float, float]] = []
     for run in sorted(_latest_runs_by_cutoff(runs), key=lambda row: str(row.get("as_of_date") or "")):
         analysis = decision_outcome(run)
         enriched = {**dict(run), **analysis}
-        if not analysis["should_learn"]:
+        if not (analysis["should_learn"] if confirmed_only else analysis["should_evaluate"]):
             continue
+        if selected:
+            current_date = pd.Timestamp(str(run.get("as_of_date")))
+            previous_date = pd.Timestamp(str(selected[-1].get("as_of_date")))
+            same_signal = str(run.get("entry_signal")) == str(selected[-1].get("entry_signal"))
+            if same_signal and (current_date - previous_date).days < EPISODE_WINDOW_DAYS:
+                enriched["should_learn"] = False
+                enriched["learning_reason"] = f"{analysis['learning_reason']} · same decision episode excluded"
+                continue
         signature = (str(run.get("entry_signal")), float(run.get("entry_score") or 0), float(analysis["composite"] or 0))
         duplicate = any(
             signature[0] == previous[0] and abs(signature[1] - previous[1]) < 3
@@ -228,10 +252,13 @@ def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
     """Aggregate only observations the learning-value gate considers useful."""
     latest = _latest_runs_by_cutoff(runs)
     selected = select_learning_observations(runs)
+    evaluated = select_learning_observations(runs, confirmed_only=False)
+    provisional = [row for row in evaluated if row["maturity"] == "Provisional"]
     if not selected:
         return {"sample_size": 0, "eligible_runs": 0, "total_runs": len(latest), "win_rate": None,
                 "average_3m_return": None, "average_composite": None, "decision_accuracy": None,
-                "correct_decisions": 0, "confidence": "Insufficient"}
+                "correct_decisions": 0, "confidence": "Insufficient",
+                "provisional_runs": len(provisional), "evaluated_runs": len(evaluated)}
     composites = [float(row["composite"]) for row in selected]
     utilities = [float(row["decision_utility"]) for row in selected]
     three_month = [float(row["outcome_3m"]) for row in selected if row.get("outcome_3m") is not None]
@@ -244,6 +271,7 @@ def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
         "decision_accuracy": round(sum(value > 0 for value in utilities) / size * 100, 1),
         "correct_decisions": sum(value > 0 for value in utilities),
         "confidence": "Developing" if size < 5 else "Moderate" if size < 15 else "Established",
+        "provisional_runs": len(provisional), "evaluated_runs": len(evaluated),
     }
 
 
@@ -267,4 +295,4 @@ def learned_score_adjustments(runs: list[Mapping[str, object]], minimum_samples:
     confidence_weight = min(1.0, size / 15)
     entry_adjustment = round(max(-5, min(5, 5 * evidence_signal * confidence_weight)), 1)
     return {**lesson, "entry_adjustment": entry_adjustment, "exit_adjustment": round(-entry_adjustment, 1),
-            "reason": f"{size}/{lesson['total_runs']} informative observations · {accuracy:.0f}% decision accuracy · {average:+.2f}% weighted monthly outcome"}
+            "reason": f"{size}/{lesson['total_runs']} confirmed independent episodes · {accuracy:.0f}% confirmed accuracy · {average:+.2f}% weighted monthly outcome"}
