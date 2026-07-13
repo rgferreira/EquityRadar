@@ -8,7 +8,7 @@ import json
 
 from src.backtesting import evaluate_outcomes, reconstruct_signal
 from src.data.database import (
-    get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, save_backtest_run,
+    get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, get_positioning_history, save_backtest_run,
     set_backtest_job_item, update_backtest_outcomes,
 )
 from src.data.market_data import fetch_price_history
@@ -24,7 +24,10 @@ def _run(as_of_date: str, tickers: list[str], db_path: str | Path | None) -> Non
         set_backtest_job_item(as_of_date, ticker, "running", db_path=db_path)
         try:
             history = fetch_price_history(ticker, period="max")
-            result = reconstruct_signal(history, as_of_date, get_cached_fundamentals(ticker, db_path))
+            result = reconstruct_signal(
+                history, as_of_date, get_cached_fundamentals(ticker, db_path),
+                get_positioning_history(ticker, db_path),
+            )
             outcomes = evaluate_outcomes(history, as_of_date)
             save_backtest_run({
                 "ticker": ticker, "as_of_date": as_of_date, "coverage": result["coverage"],
@@ -35,7 +38,9 @@ def _run(as_of_date: str, tickers: list[str], db_path: str | Path | None) -> Non
                 "outcome_3m": outcomes["3M"], "outcome_6m": outcomes["6M"],
                 "outcome_12m": outcomes["12M"],
                 "inputs_json": json.dumps({"metrics": result["metrics"],
-                                             "fundamentals_used": result["fundamentals_used"]}),
+                                             "fundamentals_used": result["fundamentals_used"],
+                                             "finra_observations_used": result["finra_observations_used"],
+                                             "positioning_modifier": result["positioning_modifier"]}),
                 "model_version": result["model_version"],
             }, db_path)
             set_backtest_job_item(as_of_date, ticker, "completed", db_path=db_path)
@@ -137,6 +142,23 @@ def schedule_ticker_backfill(ticker: str, db_path: str | Path | None = None) -> 
             if key in _futures:
                 continue
             set_backtest_job_item(as_of_date, normalized, "queued", db_path=db_path)
+            future = _executor.submit(_run, as_of_date, [normalized], db_path)
+            _futures[key] = future
+            future.add_done_callback(lambda completed, job_key=key: _finished(job_key, completed))
+            scheduled.append(as_of_date)
+    return scheduled
+
+
+def schedule_ticker_recalculation(ticker: str, db_path: str | Path | None = None) -> list[str]:
+    """Rebuild every saved cutoff using the newest point-in-time scoring model."""
+    normalized = ticker.strip().upper()
+    dates = sorted({str(run["as_of_date"]) for run in get_backtest_runs(normalized, db_path)})
+    scheduled: list[str] = []
+    with _lock:
+        for as_of_date in dates:
+            key = f"finra-recalc:{normalized}:{as_of_date}"
+            if key in _futures:
+                continue
             future = _executor.submit(_run, as_of_date, [normalized], db_path)
             _futures[key] = future
             future.add_done_callback(lambda completed, job_key=key: _finished(job_key, completed))

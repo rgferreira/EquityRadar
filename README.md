@@ -48,6 +48,8 @@ The Decision dashboard can reconstruct a custom past date. Price metrics are tru
 
 Price history remains provided by yfinance. Fundamentals use a provider-neutral interface with FMP first and a separate Yahoo Finance fallback adapter, and are cached in SQLite at most once per calendar day unless explicitly refreshed. Provider failures and missing fields are isolated per ticker and do not block prices.
 
+Official FINRA short-interest history is backfilled automatically for newly added equities and missing-coverage watchlist members. It contributes bounded modifiers to current scores. Historical simulations use only FINRA reports available by their cutoff and are versioned/rebuilt after new history arrives; crypto and instruments without FINRA equity coverage remain neutral.
+
 Entry scores can be calibrated by the Industry Feature after Company detail builds a daily research snapshot. The model combines business quality, direct-peer relative valuation, technical timing, non-duplicative risk resilience, and analyst sentiment. It displays the peer cohort, confidence, revisions, target dispersion inputs, provider, and freshness rather than presenting industry adjustment as an opaque score.
 
 ## Product queue

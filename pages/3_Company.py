@@ -11,12 +11,12 @@ from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
-from src.data.positioning_refresh import positioning_refresh_status, schedule_positioning_refresh
+from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
-from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
-from src.scoring.technical import calculate_technical_score, explain_technical_score
+from src.scoring.risk import calculate_risk_score, risk_score_details
+from src.scoring.technical import calculate_technical_score
 from src.scoring.decision import calculate_exit_review_score, entry_label, exit_review_label
-from src.scoring.valuation import calculate_valuation_score, explain_valuation_score, valuation_score_breakdown
+from src.scoring.valuation import valuation_score_breakdown
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
 from src.scoring.position_action import initiation_diagnostic, position_action
@@ -69,6 +69,7 @@ history_period = "1y" if history_label == "1 year" else "3y"
 
 schedule_industry_refresh([ticker], max_new=1)
 schedule_positioning_refresh([ticker], max_new=1)
+schedule_finra_backfill([ticker], max_new=1)
 
 @st.fragment(run_every=4)
 def render_selected_company_refresh_status() -> None:
@@ -93,17 +94,24 @@ render_selected_company_refresh_status()
 @st.fragment(run_every=4)
 def render_positioning_refresh_status() -> None:
     schedule_positioning_refresh([ticker], max_new=1)
+    schedule_finra_backfill([ticker], max_new=1)
     status = positioning_refresh_status(ticker)
+    finra_status = finra_backfill_status(ticker)
     if status == "Updating":
         st.caption("Market positioning is updating automatically in the background…")
     elif status == "Stale":
         st.caption("Showing the previous positioning snapshot while today’s update runs.")
     elif status == "Provider unavailable":
         st.caption("Positioning provider unavailable; the last successful snapshot is preserved.")
+    if finra_status == "Backfilling":
+        st.caption("Official FINRA short-interest history is backfilling automatically…")
+    elif finra_status == "Provider unavailable":
+        st.caption("FINRA history is temporarily unavailable; retry is automatic after cooldown.")
     key = f"company_positioning_status_{ticker}"
     previous = st.session_state.get(key)
-    st.session_state[key] = status
-    if previous is not None and previous != status:
+    combined_status = (status, finra_status)
+    st.session_state[key] = combined_status
+    if previous is not None and previous != combined_status:
         st.rerun()
 
 render_positioning_refresh_status()
@@ -123,7 +131,6 @@ try:
         current_price=metrics["latest_price"],
         force_refresh=False,
     )
-    valuation = calculate_valuation_score(fundamentals)
     risk = calculate_risk_score(metrics, metric_history)
     risk_details = risk_score_details(metrics, metric_history)
     industry_risk = min(100, risk + int(risk_details["drawdown_penalty"] or 0))
@@ -238,38 +245,75 @@ try:
     st.plotly_chart(entry_figure, width="stretch", config={"displayModeBar": False})
 
     st.caption("ENTRY MAP · EACH CARD MATCHES A DETAIL TAB BELOW")
+    business_quality = float(industry_breakdown["business_quality"])
+    relative_valuation = float(industry_breakdown["relative_valuation"])
+    technical_timing = float(industry_breakdown["technical_timing"])
+    risk_resilience = float(industry_breakdown["risk_resilience"])
+    analyst_sentiment = float(industry_breakdown["analyst_sentiment"])
+    fundamentals_points = business_quality * .25 + relative_valuation * .30
+    market_points = technical_timing * .20 + risk_resilience * .15
+    analyst_points = analyst_sentiment * .10
     entry_card_rows = [
         (
-            ("Fundamentals & valuation · 55%", f"Business quality {float(industry_breakdown['business_quality']):.1f} · Peer value {float(industry_breakdown['relative_valuation']):.1f}"),
-            ("Market metrics · 35%", f"Technical {float(industry_breakdown['technical_timing']):.1f} · Risk resilience {float(industry_breakdown['risk_resilience']):.1f}"),
+            (
+                f"55% · Fundamentals & valuation (+{fundamentals_points:.2f})",
+                [f"25% Business quality · {business_quality:.1f} (+{business_quality * .25:.2f})",
+                 f"30% Peer value · {relative_valuation:.1f} (+{relative_valuation * .30:.2f})"],
+            ),
+            (
+                f"35% · Market metrics (+{market_points:.2f})",
+                [f"20% Technical timing · {technical_timing:.1f} (+{technical_timing * .20:.2f})",
+                 f"15% Risk resilience · {risk_resilience:.1f} (+{risk_resilience * .15:.2f})"],
+            ),
         ),
         (
-            ("Industry & analysts · 10%", f"{float(industry_breakdown['analyst_sentiment']):.1f}/100"),
-            ("Market positioning modifier · capped ±5", f"{float(positioning_modifier['entry_adjustment']):+.1f} points"),
+            (
+                f"10% · Industry & analysts (+{analyst_points:.2f})",
+                [f"10% Analyst sentiment · {analyst_sentiment:.1f} (+{analyst_points:.2f})",
+                 "Industry cohort calibrates quality and valuation above"],
+            ),
+            (
+                f"Market positioning modifier ({float(positioning_modifier['entry_adjustment']):+.1f})",
+                ["Reliability-gated · capped at ±5 Entry points",
+                 f"Evidence reliability · {float(positioning_modifier['reliability']):.0f}/100"],
+            ),
         ),
     ]
     for card_row in entry_card_rows:
         card_columns = st.columns(2)
-        for column, (title, detail) in zip(card_columns, card_row):
+        for column, (title, details) in zip(card_columns, card_row):
             with column:
                 with st.container(border=True):
                     st.markdown(f"**{title}**")
-                    st.caption(detail)
+                    for detail in details:
+                        st.caption(detail)
 
     learning_entry_adjustment = float(learning_modifier["entry_adjustment"])
     learning_entry_color = "#38d996" if learning_entry_adjustment > 0 else "#ff6375" if learning_entry_adjustment < 0 else "#9aa4b2"
     learning_columns = st.columns(2)
     with learning_columns[0]:
         with st.container(border=True):
-            st.markdown("**Backtested learning modifier · capped ±5**")
+            st.markdown(f"**Backtested learning modifier ({learning_entry_adjustment:+.1f})**")
             st.markdown(
                 f"<span style='color:{learning_entry_color};font-size:1.35rem;font-weight:700'>"
                 f"{learning_entry_adjustment:+.1f} Entry points</span>", unsafe_allow_html=True,
             )
+            st.caption("Confidence-weighted · capped at ±5 Entry points")
     with learning_columns[1]:
-        with st.container(border=True):
-            st.markdown("**Learning evidence**")
-            st.caption(f"{int(learning_modifier['sample_size'])} completed 3M sample(s) · {learning_modifier['confidence']}")
+        learning_outcome_text = (
+            "Outcome history still developing" if learning_modifier["win_rate"] is None
+            else f"Positive at 3M · {float(learning_modifier['win_rate']):.0f}% · Average {float(learning_modifier['average_3m_return']):+.1f}%"
+        )
+        st.markdown(
+            f"<div style='background:#d9dde2;color:#111820;border:1px solid #eef1f4;"
+            f"border-radius:12px;padding:16px 18px;min-height:118px'>"
+            f"<div style='font-weight:750;font-size:1rem;margin-bottom:12px'>"
+            f"Learning evidence · {learning_modifier['confidence']}</div>"
+            f"<div style='font-size:.88rem;margin-bottom:7px'>Completed 3M samples · "
+            f"{int(learning_modifier['sample_size'])}</div>"
+            f"<div style='font-size:.88rem'>{learning_outcome_text}</div></div>",
+            unsafe_allow_html=True,
+        )
 
     exit_color = "#ff6375" if exit_score >= 70 else "#f0ad4e" if exit_score >= 50 else "#38d996"
     exit_figure = go.Figure(go.Indicator(
@@ -287,15 +331,20 @@ try:
     )
     st.plotly_chart(exit_figure, width="stretch", config={"displayModeBar": False})
     st.caption("EXIT MAP · DETERIORATION INPUTS")
+    technical_deterioration = 100 - float(technical)
+    risk_deterioration = 100 - float(risk)
     exit_columns = st.columns(2)
-    for column, title, detail in (
-        (exit_columns[0], "Technical deterioration · 60%", f"{100 - float(technical):.1f}/100"),
-        (exit_columns[1], "Market-risk deterioration · 40%", f"{100 - float(risk):.1f}/100"),
+    for column, title, details in (
+        (exit_columns[0], f"60% · Technical deterioration (+{technical_deterioration * .60:.2f})",
+         [f"Deterioration · {technical_deterioration:.1f}/100", f"60% × {technical_deterioration:.1f} = +{technical_deterioration * .60:.2f}"]),
+        (exit_columns[1], f"40% · Market-risk deterioration (+{risk_deterioration * .40:.2f})",
+         [f"Deterioration · {risk_deterioration:.1f}/100", f"40% × {risk_deterioration:.1f} = +{risk_deterioration * .40:.2f}"]),
     ):
         with column:
             with st.container(border=True):
                 st.markdown(f"**{title}**")
-                st.caption(detail)
+                for detail in details:
+                    st.caption(detail)
     learning_exit_adjustment = float(learning_modifier["exit_adjustment"])
     learning_exit_color = "#ff6375" if learning_exit_adjustment > 0 else "#38d996" if learning_exit_adjustment < 0 else "#9aa4b2"
     st.markdown(
@@ -331,12 +380,14 @@ try:
         st.info(f"**Not currently owned · {initiation}.** Entry/Exit evidence is interpreted as a possible new position, not an add/trim decision.")
 
     with st.expander("How these scores were calculated"):
-        st.write(f"**Entry score:** base {base_entry_score:.1f} from 25% business quality + 30% peer-relative valuation + 20% technical timing + 15% risk resilience + 10% analyst sentiment; market-positioning adjustment {float(positioning_modifier['entry_adjustment']):+.1f}; backtested-learning adjustment {float(learning_modifier['entry_adjustment']):+.1f}.")
-        st.write(f"**Technical timing ({technical}/100):** {explain_technical_score(metrics)}")
-        st.write(f"**Legacy absolute valuation ({valuation}/100, shown in Fundamentals):** {explain_valuation_score(fundamentals)}")
-        st.write(f"**Legacy market risk ({risk}/100, used by Exit Review):** {explain_risk_score(metrics, metric_history)}")
-        st.write(f"**Exit-review score:** base technical/risk deterioration {base_exit_score:.1f}; market-positioning adjustment {float(positioning_modifier['exit_adjustment']):+.1f}; backtested-learning adjustment {float(learning_modifier['exit_adjustment']):+.1f}. It is not an execution instruction.")
-        st.caption(f"Backtested learning · {learning_modifier['reason']}")
+        st.markdown("- **Business quality (25%)** — profitability, growth, margins and financial durability relative to comparable companies.")
+        st.markdown("- **Peer-relative valuation (30%)** — how valuation multiples compare with a relevant industry cohort; invalid or negative multiples are ignored.")
+        st.markdown("- **Technical timing (20%)** — price trend, moving-average position, recent returns and proximity to the yearly high.")
+        st.markdown("- **Risk resilience (15%)** — ability to withstand drawdowns and volatility without duplicating the technical signal.")
+        st.markdown("- **Analyst sentiment (10%)** — recommendations, estimate revisions, coverage and target-price expectations, confidence-adjusted.")
+        st.markdown("- **Market positioning modifier** — a small reliability-gated adjustment from FINRA short interest and available positioning evidence.")
+        st.markdown("- **Backtested learning modifier** — ticker-specific adjustment learned from completed point-in-time simulations; small samples remain neutral.")
+        st.markdown("- **Exit-review score** — urgency to reassess a holding when technical and market-risk conditions deteriorate; it is not an execution instruction.")
 
     fundamentals_tab, metrics_tab, industry_tab, positioning_tab, learning_tab, journal_tab = st.tabs([
         "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Backtested learning", "Journal context"

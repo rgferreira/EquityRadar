@@ -11,9 +11,10 @@ from src.scoring.decision import calculate_entry_score, calculate_exit_review_sc
 from src.scoring.risk import calculate_risk_score
 from src.scoring.technical import calculate_technical_score
 from src.scoring.valuation import calculate_valuation_score
+from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.data.market_data import calculate_metrics
 
-MODEL_VERSION = "backtested-learning-v1"
+MODEL_VERSION = "backtested-learning-v2-finra"
 OUTCOME_HORIZONS = {"1M": 21, "3M": 63, "6M": 126, "12M": 252}
 
 
@@ -42,6 +43,7 @@ def evidence_available(record: Mapping[str, object] | None, as_of: date | str) -
 def reconstruct_signal(
     history: pd.DataFrame, as_of: date | str,
     fundamentals: Mapping[str, object] | None = None,
+    positioning_history: list[Mapping[str, object]] | None = None,
 ) -> dict[str, object]:
     """Rebuild the price/risk decision using only data known at the cutoff."""
     point_in_time = history_as_of(history, as_of)
@@ -56,12 +58,25 @@ def reconstruct_signal(
     valuation = calculate_valuation_score(usable_fundamentals)
     entry = calculate_entry_score(technical, valuation, risk)
     exit_score = calculate_exit_review_score(technical, risk)
-    coverage = "Partial coverage" if usable_fundamentals else "Price-only reconstruction"
+    eligible_positioning = [
+        row for row in (positioning_history or []) if evidence_available(row, as_of)
+        and row.get("snapshot_type") == "historical_short_interest"
+    ]
+    positioning_modifier = positioning_score_adjustments(
+        eligible_positioning[-1] if eligible_positioning else None, eligible_positioning, technical,
+    )
+    entry = apply_positioning_adjustment(entry, float(positioning_modifier["entry_adjustment"]))
+    exit_score = apply_positioning_adjustment(exit_score, float(positioning_modifier["exit_adjustment"]))
+    coverage_parts = ["fundamentals" if usable_fundamentals else None,
+                      "FINRA" if eligible_positioning else None]
+    coverage = "Partial coverage · " + " + ".join(part for part in coverage_parts if part) if any(coverage_parts) else "Price-only reconstruction"
     return {
         "metrics": metrics, "technical": technical, "valuation": valuation, "risk": risk,
         "entry_score": entry, "exit_score": exit_score,
         "entry_signal": entry_label(entry), "exit_signal": exit_review_label(exit_score),
         "coverage": coverage, "fundamentals_used": bool(usable_fundamentals),
+        "positioning_modifier": positioning_modifier,
+        "finra_observations_used": len(eligible_positioning),
         "observations": len(point_in_time), "model_version": MODEL_VERSION,
     }
 
@@ -85,7 +100,13 @@ def evaluate_outcomes(history: pd.DataFrame, as_of: date | str) -> dict[str, flo
 
 def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
     """Aggregate completed historical observations without pretending small samples are certainty."""
-    completed = [r for r in runs if r.get("outcome_3m") is not None]
+    latest_by_cutoff: dict[str, Mapping[str, object]] = {}
+    for index, run in enumerate(runs):
+        cutoff = str(run.get("as_of_date") or run.get("created_at") or f"undated-{index}")
+        existing = latest_by_cutoff.get(cutoff)
+        if existing is None or str(run.get("model_version") or "") > str(existing.get("model_version") or ""):
+            latest_by_cutoff[cutoff] = run
+    completed = [r for r in latest_by_cutoff.values() if r.get("outcome_3m") is not None]
     if not completed:
         return {"sample_size": 0, "win_rate": None, "average_3m_return": None, "confidence": "Insufficient"}
     returns = [float(r["outcome_3m"]) for r in completed]

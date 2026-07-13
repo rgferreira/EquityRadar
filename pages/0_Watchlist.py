@@ -5,6 +5,7 @@ import streamlit as st
 
 from src.data.database import add_ticker, get_watchlist, init_db, remove_ticker
 from src.data.industry_refresh import schedule_industry_refresh
+from src.data.positioning_refresh import finra_backfill_status, schedule_finra_backfill
 from src.data.backtest_refresh import schedule_ticker_backfill, ticker_backfill_status
 from src.ui import inject_app_styles, page_header
 
@@ -33,6 +34,7 @@ with add_tab:
             normalized = ticker.strip().upper()
             add_ticker(normalized)
             schedule_industry_refresh([normalized], max_new=1)
+            schedule_finra_backfill([normalized], max_new=1)
             scheduled_dates = schedule_ticker_backfill(normalized)
             st.success(
                 f"Added {normalized}. Peer discovery and backfill across "
@@ -66,6 +68,7 @@ if tickers:
     # Recovery trigger: catches tickers added before automatic backfill existed.
     for symbol in tickers:
         schedule_ticker_backfill(symbol)
+    schedule_finra_backfill(tickers, max_new=2)
 
     @st.fragment(run_every=2)
     def render_backfill_status() -> None:
@@ -84,6 +87,9 @@ if tickers:
                 )
 
     render_backfill_status()
+    finra_pending = [symbol for symbol in tickers if finra_backfill_status(symbol) == "Backfilling"]
+    if finra_pending:
+        st.caption(f"FINRA history backfilling automatically · {', '.join(finra_pending)}")
     st.subheader("Current research universe")
     grid_width = 3
     cells = [f"{index + 1:02d} · {symbol}" for index, symbol in enumerate(tickers)]

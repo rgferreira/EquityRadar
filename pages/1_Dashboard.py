@@ -23,7 +23,7 @@ from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
-from src.data.positioning_refresh import positioning_refresh_status, schedule_positioning_refresh
+from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
@@ -296,6 +296,7 @@ if historical_mode:
     for run in runs:
         inputs = json.loads(str(run["inputs_json"]))
         metrics = inputs["metrics"]
+        historical_positioning = inputs.get("positioning_modifier") or {}
         rows.append({
             "Ticker": run["ticker"], "Cutoff date": run["as_of_date"], "Price": metrics["latest_price"],
             "1M %": metrics["return_1m"], "3M %": metrics["return_3m"], "6M %": metrics["return_6m"],
@@ -306,11 +307,18 @@ if historical_mode:
             "Entry score": run["entry_score"], "Entry signal": run["entry_signal"],
             "Exit-review score": run["exit_score"], "Exit signal": run["exit_signal"],
             "Diagnostic": f"{run['entry_signal']} / {run['exit_signal']}", "Industry calibrated": run["coverage"],
-            "Positioning entry adj": 0.0, "Positioning exit adj": 0.0, "Positioning reliability": 0.0,
-            "Short reversal lever": "Not available point-in-time", "Technical rationale": explain_technical_score(metrics),
+            "Positioning entry adj": historical_positioning.get("entry_adjustment", 0.0),
+            "Positioning exit adj": historical_positioning.get("exit_adjustment", 0.0),
+            "Positioning reliability": historical_positioning.get("reliability", 0.0),
+            "Short reversal lever": historical_positioning.get("short_reversal_lever", "Not available point-in-time"),
+            "Technical rationale": explain_technical_score(metrics),
             "Risk rationale": "Reconstructed from price history available at the cutoff.",
             "Valuation rationale": "Timestamp eligibility enforced at the cutoff.",
-            "Industry rationale": "Excluded unless timestamped evidence existed by the cutoff.",
+            "Industry rationale": (
+                f"Point-in-time FINRA evidence · {int(inputs.get('finra_observations_used', 0))} observations used."
+                if inputs.get("finra_observations_used") else
+                "Excluded unless timestamped evidence existed by the cutoff."
+            ),
             "Price data fetched at": run["created_at"], "Outcome 3M %": run["outcome_3m"],
             "Outcome 12M %": run["outcome_12m"],
         })
@@ -358,6 +366,7 @@ if rows:
     if not historical_mode:
         schedule_industry_refresh(refresh_priority, max_new=2)
         schedule_positioning_refresh(refresh_priority, max_new=2)
+        schedule_finra_backfill(refresh_priority, max_new=2)
     for row in rows if not historical_mode else []:
         research = get_cached_industry_research(str(row["Ticker"]))
         status = industry_refresh_status(str(row["Ticker"]))
@@ -566,8 +575,10 @@ if rows:
     def render_cohort_refresh_status() -> None:
         schedule_industry_refresh(refresh_priority, max_new=2)
         schedule_positioning_refresh(refresh_priority, max_new=2)
+        schedule_finra_backfill(refresh_priority, max_new=2)
         statuses = tuple((ticker, industry_refresh_status(ticker)) for ticker in tickers)
         positioning_statuses = tuple((ticker, positioning_refresh_status(ticker)) for ticker in tickers)
+        finra_statuses = tuple((ticker, finra_backfill_status(ticker)) for ticker in tickers)
         ready = sum(status in {"Ready", "Limited coverage", "Not applicable"} for _, status in statuses)
         updating = [ticker for ticker, status in statuses if status in {"Updating", "Discovering peers"}]
         st.caption(
@@ -575,7 +586,10 @@ if rows:
             + (f" · Updating {', '.join(updating)} automatically" if updating else "")
         )
         previous = st.session_state.get("cohort_status_signature")
-        signature = (statuses, positioning_statuses)
+        finra_updating = [ticker for ticker, status in finra_statuses if status == "Backfilling"]
+        if finra_updating:
+            st.caption(f"FINRA history updating · {', '.join(finra_updating)}")
+        signature = (statuses, positioning_statuses, finra_statuses)
         st.session_state.cohort_status_signature = signature
         if previous is not None and previous != signature:
             st.rerun()

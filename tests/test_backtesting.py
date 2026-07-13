@@ -31,6 +31,19 @@ def test_reconstruction_does_not_use_later_fundamentals():
     assert evidence_available(fundamentals, "2023-12-01") is False
 
 
+def test_reconstruction_uses_only_finra_rows_available_by_cutoff():
+    positioning = [
+        {"reporting_date": "2023-06-30", "snapshot_type": "historical_short_interest",
+         "short": {"shares_short": 100, "short_change_pct": 5, "days_to_cover": 2}},
+        {"reporting_date": "2024-01-31", "snapshot_type": "historical_short_interest",
+         "short": {"shares_short": 300, "short_change_pct": 200, "days_to_cover": 8}},
+    ]
+    result = reconstruct_signal(sample_history(), "2023-12-01", positioning_history=positioning)
+    assert result["finra_observations_used"] == 1
+    assert result["positioning_modifier"]["history_points"] == 1
+    assert "FINRA" in result["coverage"]
+
+
 def test_outcomes_are_measured_after_cutoff():
     outcomes = evaluate_outcomes(sample_history(), "2023-06-01")
     assert outcomes["3M"] > outcomes["1M"]

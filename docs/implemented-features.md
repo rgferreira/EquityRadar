@@ -24,6 +24,8 @@
 - Transparent 0–100 Long positioning, Short pressure, Squeeze potential, and Confidence outputs with evidence and explicit options-data caveats.
 - Phase 3.2 integration: official FINRA history provides six-report trend context; reliability-gated modifiers are capped at ±5 Entry points and ±7 Exit-review points and are shown explicitly in Company and Dashboard.
 - Historical bootstrap completed for the current watchlist, with 129–205 official FINRA observations per ticker. Missing current evidence still produces a zero adjustment.
+- Missing official FINRA history now backfills automatically for every equity added to the Watchlist and when Dashboard or Company detects a coverage gap; the Company chart rerenders when the background job completes. Non-equity instruments remain explicitly without FINRA coverage.
+- Saved simulations are rebuilt with a versioned point-in-time model after FINRA backfill. Each cutoff uses only reports published on or before that date, stores the exact observation count and modifier, and cannot see later FINRA reports.
 
 ## Phase 3.4 · Backtested Learning
 
