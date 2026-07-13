@@ -52,6 +52,7 @@ class YahooIndustryResearchProvider:
         free_cash_flow = _number(info.get("freeCashflow"))
         return {
             "ticker": ticker,
+            "company_name": info.get("longName") or info.get("shortName"),
             "quote_type": info.get("quoteType"),
             "sector": info.get("sector"),
             "industry": info.get("industry"),

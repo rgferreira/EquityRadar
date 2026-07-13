@@ -66,6 +66,11 @@ with ticker_col:
 with history_col:
     history_label = st.radio("Chart history", ["1 year", "3 years"], horizontal=True)
 history_period = "1y" if history_label == "1 year" else "3y"
+company_snapshot = get_cached_industry_research(ticker) or {}
+company_profile = company_snapshot.get("profile") or {}
+company_name = str(company_profile.get("company_name") or ticker)
+if company_name != ticker:
+    st.caption(company_name)
 
 schedule_industry_refresh([ticker], max_new=1)
 schedule_positioning_refresh([ticker], max_new=1)
@@ -220,7 +225,8 @@ try:
             x=[None], y=[None], mode="lines", name=marker_type,
             line={"color": marker_color, "width": 1, "dash": "dot"}, row=1, col=1,
         )
-    st.markdown(f"**{ticker} · {history_label.lower()} price history**")
+    company_heading = f"{ticker} — {company_name}" if company_name != ticker else ticker
+    st.markdown(f"**{company_heading} · {history_label.lower()} price history**")
     figure.update_yaxes(title_text="Price", row=1, col=1)
     figure.update_yaxes(title_text="Short Δ %", row=2, col=1, secondary_y=False, zeroline=True)
     figure.update_yaxes(title_text="Days", row=2, col=1, secondary_y=True, showgrid=False)

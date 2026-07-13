@@ -17,6 +17,7 @@ def test_calculate_metrics_uses_daily_close_prices():
     assert metrics["latest_price"] == 260.0
     assert metrics["high_52w"] == 260.0
     assert metrics["low_52w"] == 1.0
+    assert metrics["return_1d"] == pytest.approx((260 / 259 - 1) * 100)
     assert metrics["return_1m"] == pytest.approx((260 / 239 - 1) * 100)
     assert metrics["ma_200"] == pytest.approx(sum(range(61, 261)) / 200)
     assert metrics["drawdown_from_52w_high"] == 0.0

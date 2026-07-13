@@ -119,6 +119,7 @@ def calculate_metrics(history: pd.DataFrame) -> dict[str, float | None]:
     high_52w, low_52w = float(close.max()), float(close.min())
     return {
         "latest_price": latest,
+        "return_1d": _return_over_days(close, 1),
         "return_1m": _return_over_days(close, 21),
         "return_3m": _return_over_days(close, 63),
         "return_6m": _return_over_days(close, 126),

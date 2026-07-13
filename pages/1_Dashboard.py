@@ -91,6 +91,8 @@ def suggestion_run_status(as_of_date: str) -> str:
 def render_dashboard_table(
     frame: pd.DataFrame, owned_tickers: set[str], key_suffix: str = "all",
     price_freshness: dict[str, str] | None = None,
+    company_names: dict[str, str] | None = None,
+    daily_changes: dict[str, float | None] | None = None,
 ) -> None:
     """Render a responsive decision table with deterministic same-tab links."""
     labels = {
@@ -101,7 +103,7 @@ def render_dashboard_table(
     }
     widths = {
         "Ticker": 68, "Diagnostic": 160, "Overall decision accuracy": 105,
-        "Price": 96, "Entry score": 76, "Exit score": 76, "Industry calibrated": 108,
+        "Price": 152, "Entry score": 76, "Exit score": 76, "Industry calibrated": 108,
     }
     percentages = {"1M %", "3M %", "6M %", "12M %", "Drawdown %"}
     scores = {
@@ -136,20 +138,29 @@ def render_dashboard_table(
         cells = []
         for column in frame.columns:
             if column == "Ticker":
+                company_name = (company_names or {}).get(ticker, "Company name unavailable")
                 value = (
-                    f"<a href='/Company?ticker={quote(ticker)}' target='_top' "
+                    f"<a class='ticker-company' href='/Company?ticker={quote(ticker)}' target='_top' "
+                    f"data-company-name='{html.escape(company_name, quote=True)}' "
                     f"aria-label='Open {html.escape(ticker)} company detail'>{html.escape(ticker)}</a>"
                 )
             elif column == "Price":
                 timestamp = (price_freshness or {}).get(ticker, "Timestamp unavailable")
+                daily_change = (daily_changes or {}).get(ticker)
+                if daily_change is None or pd.isna(daily_change):
+                    move = "<span class='quote-move quote-flat'>—</span>"
+                else:
+                    direction = "quote-up" if float(daily_change) > 0 else "quote-down" if float(daily_change) < 0 else "quote-flat"
+                    sign = "+" if float(daily_change) > 0 else ""
+                    move = f"<span class='quote-move {direction}'>{sign}{float(daily_change):.2f}%</span>"
                 value = (
-                    f"<span class='price-freshness' tabindex='0' "
-                    f"data-freshness='{html.escape(timestamp, quote=True)}'>{display(column, row[column])}</span>"
+                    f"<span class='quote-line'><span class='price-freshness' tabindex='0' "
+                    f"data-freshness='{html.escape(timestamp, quote=True)}'>{display(column, row[column])}</span>{move}</span>"
                 )
             else:
                 value = display(column, row[column])
             cells.append(f"<td>{value}</td>")
-        body_rows.append(f"<tr style='background:{color}'>{''.join(cells)}</tr>")
+        body_rows.append(f"<tr style='background:{color};--row-bg:{color}'>{''.join(cells)}</tr>")
 
     st.html(
         f"""<style>
@@ -162,7 +173,31 @@ def render_dashboard_table(
         .decision-table a {{ color:#70a5ff; font-weight:700; text-decoration:underline;
           text-underline-offset:2px; }}
         .decision-table a:hover {{ color:#9bc0ff; }}
+        .ticker-company {{ position:relative; }}
+        .ticker-company:hover::after,.ticker-company:focus::after {{
+          content:attr(data-company-name); position:absolute; z-index:30;
+          left:0; bottom:calc(100% + 8px); width:max-content; max-width:280px;
+          padding:.42rem .58rem; border:1px solid #39506a; border-radius:.4rem;
+          background:#102238; color:#e8eef7; font-size:.78rem; font-weight:600;
+          text-decoration:none; box-shadow:0 8px 24px rgba(0,0,0,.38); pointer-events:none;
+        }}
+        .decision-table tbody tr:first-child .ticker-company:hover::after,
+        .decision-table tbody tr:first-child .ticker-company:focus::after {{
+          top:calc(100% + 8px); bottom:auto;
+        }}
+        .decision-table td:first-child:has(.ticker-company:hover),
+        .decision-table td:first-child:has(.ticker-company:focus) {{ z-index:12; }}
+        .decision-table th:first-child {{ position:sticky; left:0; z-index:4; background:#111827;
+          box-shadow:3px 0 7px rgba(0,0,0,.28); }}
+        .decision-table td:first-child {{ position:sticky; left:0; z-index:3; background:var(--row-bg);
+          box-shadow:3px 0 7px rgba(0,0,0,.22); }}
         .price-freshness {{ position:relative; cursor:help; border-bottom:1px dotted #64748b; }}
+        .quote-line {{ display:inline-flex; align-items:center; gap:.42rem; white-space:nowrap; }}
+        .quote-move {{ display:inline-block; min-width:3.7rem; padding:.18rem .34rem; border-radius:.32rem;
+          color:#fff; font-size:.74rem; font-weight:750; line-height:1.2; text-align:center; }}
+        .quote-up {{ background:#16845b; }}
+        .quote-down {{ background:#d33f49; }}
+        .quote-flat {{ background:#526071; }}
         .price-freshness:hover::after,.price-freshness:focus::after {{
           content:"Data timestamp · " attr(data-freshness); position:absolute; z-index:30;
           left:50%; bottom:calc(100% + 8px); transform:translateX(-50%); width:max-content;
@@ -301,6 +336,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             rows.append({
                 "Ticker": ticker,
                 "Price": metrics["latest_price"],
+                "1D %": metrics["return_1d"],
                 "1M %": metrics["return_1m"],
                 "3M %": metrics["return_3m"],
                 "6M %": metrics["return_6m"],
@@ -353,6 +389,7 @@ if historical_mode:
         historical_positioning = inputs.get("positioning_modifier") or {}
         rows.append({
             "Ticker": run["ticker"], "Cutoff date": run["as_of_date"], "Price": metrics["latest_price"],
+            "1D %": metrics["return_1d"],
             "1M %": metrics["return_1m"], "3M %": metrics["return_3m"], "6M %": metrics["return_6m"],
             "12M %": metrics["return_12m"], "52W High": metrics["high_52w"], "52W Low": metrics["low_52w"],
             "Drawdown %": metrics["drawdown_from_52w_high"], "50D MA": metrics["ma_50"],
@@ -542,19 +579,33 @@ if rows:
         str(row["Ticker"]): pd.Timestamp(row["Price data fetched at"]).strftime("%Y-%m-%d %H:%M:%S")
         for _, row in frame.iterrows() if row.get("Price data fetched at")
     }
+    daily_changes = {
+        str(row["Ticker"]): row.get("1D %") for _, row in frame.iterrows()
+    }
+    company_names = {}
+    for symbol in frame["Ticker"].astype(str):
+        snapshot = get_cached_industry_research(symbol) or {}
+        profile = snapshot.get("profile") or {}
+        name = profile.get("company_name")
+        if name:
+            company_names[symbol] = str(name)
     if not historical_mode and portfolio_tickers:
         owned_frame = display_frame[display_frame["Ticker"].isin(portfolio_tickers)].copy()
         watchlist_frame = display_frame[~display_frame["Ticker"].isin(portfolio_tickers)].copy()
         if not owned_frame.empty:
             st.markdown("#### Portfolio actions")
             st.caption("Owned positions · sizing-aware Add / Hold / Monitor / Trim / Exit decisions")
-            render_dashboard_table(owned_frame, set(portfolio_tickers), "portfolio", price_freshness)
+            render_dashboard_table(
+                owned_frame, set(portfolio_tickers), "portfolio", price_freshness, company_names, daily_changes,
+            )
         if not watchlist_frame.empty:
             st.markdown("#### Watchlist opportunities")
             st.caption("Unowned securities · potential position-initiation decisions")
-            render_dashboard_table(watchlist_frame, set(), "watchlist", price_freshness)
+            render_dashboard_table(watchlist_frame, set(), "watchlist", price_freshness, company_names, daily_changes)
     else:
-        render_dashboard_table(display_frame, set(portfolio_tickers), "historical", price_freshness)
+        render_dashboard_table(
+            display_frame, set(portfolio_tickers), "historical", price_freshness, company_names, daily_changes,
+        )
     st.caption("MARKET SNAPSHOT")
     summary_frame = pd.DataFrame({
         "Breadth": [
