@@ -24,3 +24,17 @@ The discovery cohort showed that historical valuation was unavailable and repres
 - No threshold search, alternate date substitution, ticker removal, or repeated challenger variants after viewing results.
 
 An encouraging point estimate is not sufficient for deployment. Any live-model proposal requires an explicit user decision, review of missing-data semantics in the UI, and evidence that is not wholly derived from this historically selected watchlist.
+
+## Frozen confirmation result — 2026-07-14
+
+The preregistration above was committed as `2778398` before the four confirmation cutoffs were retrieved. Experiment `20534e21…e91e2b` was then run and persisted without modifying the model registry.
+
+- 76 eligible observations across four independent cutoff dates; all used the predeclared valuation-unavailable branch.
+- Current-policy utility: **+2.21%** (date-clustered 95% interval **−1.55% to +5.97%**).
+- Challenger utility: **+4.49%** (95% interval **−1.18% to +10.15%**).
+- Paired utility improvement: **+2.27 percentage points** (95% interval **−0.88 to +5.43**).
+- Paired accuracy improvement: **+3.95 percentage points** (95% interval **−4.86 to +12.76**).
+- Decisions changed in nine cases: eight Watch→Buy candidate and one Wait→Watch. The eight upgraded candidates produced an average 3M benchmark-relative return of +8.56%.
+- Improvement occurred on two of four dates and was zero on the other two; it was not uniformly distributed.
+
+Conclusion: directionally encouraging but **not promotion-grade** because both paired intervals cross zero, the effective sample is four dates, valuation was unavailable in every confirmation row, and the universe is the historically selected watchlist. The live model remains unchanged. Further confirmation must come from prospectively accumulated dates or a separately governed external universe—not substituted historical dates selected after viewing this result.

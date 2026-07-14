@@ -8,6 +8,8 @@ This is the live planning document. Completed work belongs in [`implemented-feat
 
 The forensic audit supersedes the former improvised implementation queue. PR-001 through PR-005 are complete on the Phase 3.8 branch. Continue accumulating immutable, verified-known-at predictions and versioned relative outcomes; run the offline evaluator only as a diagnostic and accept `insufficient_evidence` when independent dates are scarce. The ordered record remains in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md). Do not treat the evidence pack or evaluator output as evidence of alpha.
 
+The first pre-registered coverage-aware challenger was directionally positive but did not clear the live-model gate: its paired utility and accuracy intervals cross zero on four independent confirmation dates. Do not substitute more favorable historical dates or change thresholds. The next scientific action is prospective evidence accumulation (or a separately governed external-universe validation) before any live-model proposal.
+
 ## Deferred operational work from Phase 3.7
 
 1. **Automated end-to-end UI regression tests - pending.** Cover the critical Dashboard, Portfolio, Company, Journal, Watchlist, deep-link, simulation and mobile-width flows. The Python suite is extensive, but it does not yet replace browser-level regression coverage.
