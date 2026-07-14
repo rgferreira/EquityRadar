@@ -884,6 +884,9 @@ if rows:
 
     with st.expander("Saved simulations & learning history"):
         saved_runs = latest_model_runs(get_backtest_runs())
+        registered_saved_runs = sum(
+            int(run.get("has_prediction_snapshot") or 0) for run in saved_runs
+        )
         if not saved_runs:
             st.info("No persisted simulations yet.")
         else:
@@ -891,6 +894,10 @@ if rows:
                 "Simulation archive", "Learning by ticker", "Score overlap audit",
             ])
             with archive_tab:
+                st.caption(
+                    f"Model lineage · {registered_saved_runs} immutable prediction(s) · "
+                    f"{len(saved_runs) - registered_saved_runs} compatibility-only run(s)"
+                )
                 archive = pd.DataFrame(saved_runs)
                 archive_summary = (
                     archive.groupby("as_of_date", as_index=False)

@@ -25,6 +25,7 @@ Latest release commit: `337926b` (`feat: add extended-hours market awareness`, 2
 4. **Backtested learning v1-v3:** original decisions are evaluated against comparable monthly 1M/3M/6M outcomes weighted 50%/30%/20%; provisional evidence remains visible but cannot train scores.
 5. **Current model - `backtested-learning-v4-orthogonal`:** duplicate drawdown evidence was removed from Technical, analyst actions were removed from Positioning, Technical weights were rescaled, and all saved cutoffs were rebuilt.
 6. **Phase 3.8 temporal variant - `backtested-learning-v4-orthogonal-known-at-v1`:** weights remain unchanged, but newly generated historical scores admit non-price evidence only with verified `known_at`; legacy v4 research remains preserved and quarantined.
+7. **Phase 3.8 registered candidate:** the temporal variant now has a deterministic configuration hash; new predictions freeze input references and outputs, while no model is designated champion before purged evaluation.
 6. **Confirmed-episode rule:** only informative independent episodes with matured 3M outcomes train scores; at least three are required; the learning modifier is capped at +/-5 points.
 
 ## Operating principles

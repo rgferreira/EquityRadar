@@ -8,7 +8,7 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-from src.backtesting import decision_outcome
+from src.backtesting import decision_outcome, latest_model_runs
 
 CORE_COMPONENTS = ["Technical", "Valuation", "Risk resilience", "Positioning modifier"]
 
@@ -43,13 +43,7 @@ SEMANTIC_OVERLAPS = [
 
 
 def _latest_runs(runs: list[Mapping[str, object]]) -> list[Mapping[str, object]]:
-    latest: dict[tuple[str, str], Mapping[str, object]] = {}
-    for run in runs:
-        key = (str(run.get("ticker") or ""), str(run.get("as_of_date") or ""))
-        existing = latest.get(key)
-        if existing is None or str(run.get("model_version") or "") > str(existing.get("model_version") or ""):
-            latest[key] = run
-    return list(latest.values())
+    return list(latest_model_runs(runs))
 
 
 def audit_frame(runs: list[Mapping[str, object]]) -> pd.DataFrame:

@@ -6,12 +6,13 @@ from threading import RLock
 from datetime import date
 import json
 
-from src.backtesting import evaluate_outcomes, reconstruct_signal
+from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_signal
 from src.data.database import (
-    get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, get_positioning_history, save_backtest_run,
-    set_backtest_job_item, update_backtest_outcomes,
+    get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, get_positioning_history,
+    save_backtest_run, save_prediction_snapshot, set_backtest_job_item, update_backtest_outcomes,
 )
 from src.data.market_data import fetch_price_history
+from src.model_registry import build_prediction_snapshot, current_model_registration
 
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtested-learning")
 _lock = RLock()
@@ -32,7 +33,7 @@ def _run(
                 get_positioning_history(ticker, db_path),
             )
             outcomes = evaluate_outcomes(history, as_of_date)
-            save_backtest_run({
+            legacy_run = {
                 "ticker": ticker, "as_of_date": as_of_date, "coverage": result["coverage"],
                 "entry_score": result["entry_score"], "exit_score": result["exit_score"],
                 "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
@@ -48,7 +49,31 @@ def _run(
                 "model_version": result["model_version"],
                 "simulation_source": simulation_source,
                 "suggestion_rationale": suggestion_rationale,
-            }, db_path)
+            }
+            save_backtest_run(legacy_run, db_path)
+            model = current_model_registration()
+            frozen_inputs = {
+                "features": {
+                    "technical_score": result["technical"],
+                    "valuation_score": result["valuation"],
+                    "risk_score": result["risk"],
+                },
+                "positioning_adjustments": {
+                    "entry_adjustment": result["positioning_modifier"]["entry_adjustment"],
+                    "exit_adjustment": result["positioning_modifier"]["exit_adjustment"],
+                },
+                "temporal_coverage": result["temporal_coverage"],
+                "input_references": result["input_references"],
+            }
+            frozen_outputs = {
+                "entry_score": result["entry_score"], "exit_score": result["exit_score"],
+                "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
+            }
+            save_prediction_snapshot(build_prediction_snapshot(
+                ticker=ticker, as_of_date=as_of_date, model=model, inputs=frozen_inputs,
+                outputs=frozen_outputs, simulation_source=simulation_source,
+                suggestion_rationale=suggestion_rationale,
+            ), db_path)
             set_backtest_job_item(as_of_date, ticker, "completed", db_path=db_path)
         except Exception as exc:
             set_backtest_job_item(as_of_date, ticker, "failed", str(exc), db_path)
@@ -154,7 +179,7 @@ def schedule_ticker_backfill(ticker: str, db_path: str | Path | None = None) -> 
                 continue
             set_backtest_job_item(as_of_date, normalized, "queued", db_path=db_path)
             date_runs = [run for run in runs if str(run["as_of_date"]) == as_of_date]
-            provenance = max(date_runs, key=lambda run: str(run.get("model_version") or "")) if date_runs else {}
+            provenance = latest_model_runs(date_runs)[0] if date_runs else {}
             future = _executor.submit(
                 _run, as_of_date, [normalized], db_path,
                 str(provenance.get("simulation_source") or "manual"),
@@ -177,7 +202,7 @@ def schedule_ticker_recalculation(ticker: str, db_path: str | Path | None = None
             if key in _futures:
                 continue
             date_runs = [run for run in get_backtest_runs(normalized, db_path) if str(run["as_of_date"]) == as_of_date]
-            provenance = max(date_runs, key=lambda run: str(run.get("model_version") or "")) if date_runs else {}
+            provenance = latest_model_runs(date_runs)[0] if date_runs else {}
             future = _executor.submit(
                 _run, as_of_date, [normalized], db_path,
                 str(provenance.get("simulation_source") or "manual"),

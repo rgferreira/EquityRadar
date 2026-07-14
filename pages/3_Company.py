@@ -147,6 +147,9 @@ try:
     positioning_history = get_positioning_history(ticker)
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
     backtest_runs = latest_model_runs(get_backtest_runs(ticker))
+    registered_backtests = sum(
+        int(run.get("has_prediction_snapshot") or 0) for run in backtest_runs
+    )
     learning_modifier = learned_score_adjustments(backtest_runs)
     learning_policy = governed_learning_adjustments(learning_modifier)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
@@ -624,6 +627,11 @@ try:
     with learning_tab:
         st.subheader("Backtested learning")
         st.caption("Diagnostic research only · quarantined and excluded from live Entry/Exit scores. The legacy outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%.")
+        if backtest_runs:
+            st.caption(
+                f"Model lineage · {registered_backtests} immutable prediction(s) · "
+                f"{len(backtest_runs) - registered_backtests} compatibility-only run(s)"
+            )
         learning_columns = st.columns(4)
         learning_columns[0].metric("Confirmed / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
         learning_columns[1].metric(

@@ -6,7 +6,7 @@ This is the live planning document. Completed work belongs in [`implemented-feat
 
 ## Phase 3.8 - active priority
 
-The forensic audit supersedes the former improvised implementation queue. PR-001 (learning quarantine) and PR-002 (verified `known_at` semantics) are complete; PR-003 (model registry and immutable snapshots) is next. Execute the ordered, PR-sized slices in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md), using [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) as the original reconciliation with HEAD. Do not treat the evidence pack as evidence of alpha.
+The forensic audit supersedes the former improvised implementation queue. PR-001 through PR-003 are complete; PR-004 (versioned benchmark-relative outcomes) is next. Execute the ordered, PR-sized slices in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md), using [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) as the original reconciliation with HEAD. Do not treat the evidence pack as evidence of alpha.
 
 ## Deferred operational work from Phase 3.7
 

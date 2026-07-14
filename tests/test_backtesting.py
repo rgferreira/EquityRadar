@@ -167,13 +167,13 @@ def test_accuracy_history_is_cumulative_and_uses_confirmed_episodes_only():
 
 def test_latest_model_runs_prevents_duplicate_rows_after_recalculation():
     rows = [
-        {"ticker": "TEST", "as_of_date": "2025-01-01", "model_version": "v3"},
-        {"ticker": "TEST", "as_of_date": "2025-01-01", "model_version": "v4"},
-        {"ticker": "OTHER", "as_of_date": "2025-01-01", "model_version": "v4"},
+        {"id": 9, "ticker": "TEST", "as_of_date": "2025-01-01", "model_version": "zzzz-unregistered", "model_is_active": 0},
+        {"id": 2, "ticker": "TEST", "as_of_date": "2025-01-01", "model_version": "active-v1", "model_is_active": 1},
+        {"id": 3, "ticker": "OTHER", "as_of_date": "2025-01-01", "model_version": "active-v1", "model_is_active": 1},
     ]
     latest = latest_model_runs(rows)
     assert len(latest) == 2
-    assert next(row for row in latest if row["ticker"] == "TEST")["model_version"] == "v4"
+    assert next(row for row in latest if row["ticker"] == "TEST")["model_version"] == "active-v1"
 
 
 def test_exact_diagnostic_success_is_sample_aware_for_entry_and_exit():
@@ -205,12 +205,36 @@ def test_backtest_persistence_and_lessons(tmp_path):
     refreshed = get_backtest_runs("TEST", db)[0]
     assert refreshed["outcome_3m"] == 9
     assert refreshed["outcome_refreshed_at"] is not None
+    from src.data.database import get_connection
+    with get_connection(db) as connection:
+        original = connection.execute(
+            "SELECT outcome_3m, outcome_refreshed_at FROM backtest_runs WHERE ticker='TEST'"
+        ).fetchone()
+        observations = connection.execute("SELECT COUNT(*) FROM legacy_outcome_observations").fetchone()[0]
+    assert original["outcome_3m"] == 8
+    assert original["outcome_refreshed_at"] is None
+    assert observations == 1
     assert refreshed["simulation_source"] == "manual"
     save_backtest_run({**run, "as_of_date": "2023-02-01", "simulation_source": "suggested",
                        "suggestion_rationale": "Market regime transition"}, db)
     suggested = next(row for row in get_backtest_runs("TEST", db) if row["as_of_date"] == "2023-02-01")
     assert suggested["simulation_source"] == "suggested"
     assert suggested["suggestion_rationale"] == "Market regime transition"
+
+
+def test_backtest_score_inputs_are_not_rewritten_for_same_model_identity(tmp_path):
+    db = tmp_path / "immutable-compatibility.db"
+    run = {"ticker": "TEST", "as_of_date": "2023-01-01", "coverage": "Price-only reconstruction",
+           "entry_score": 60, "exit_score": 20, "entry_signal": "Watch", "exit_signal": "Hold / no review",
+           "technical_score": 70, "valuation_score": 50, "risk_score": 60, "outcome_1m": 2,
+           "outcome_3m": 8, "outcome_6m": 12, "outcome_12m": 20, "inputs_json": "{}",
+           "model_version": "legacy-test-v1"}
+    save_backtest_run(run, db)
+    save_backtest_run({**run, "entry_score": 99, "inputs_json": '{"changed":true}'}, db)
+
+    stored = get_backtest_runs("TEST", db)[0]
+    assert stored["entry_score"] == 60
+    assert stored["inputs_json"] == "{}"
 
 
 def test_backtest_job_state_is_persisted(tmp_path):

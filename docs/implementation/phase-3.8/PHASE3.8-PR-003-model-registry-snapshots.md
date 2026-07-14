@@ -1,5 +1,7 @@
 # PHASE3.8-PR-003 — Model registry and immutable snapshots
 
+Status: **implemented and validated on `phase/3.8-audit-hardening`**.
+
 ## Objective
 
 Replace lexicographic model discovery and mutable backtest rows with explicit model governance and replayable predictions.

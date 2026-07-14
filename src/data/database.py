@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from src.utils.config import DATABASE_PATH
+from src.model_registry import current_model_registration
 
 
 def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
@@ -180,6 +181,54 @@ def init_db(db_path: str | Path | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(ticker, as_of_date, model_version)
             );
+            CREATE TABLE IF NOT EXISTS model_registry (
+                model_version TEXT PRIMARY KEY,
+                config_json TEXT NOT NULL,
+                config_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('legacy','candidate','champion','retired')),
+                is_active INTEGER NOT NULL DEFAULT 0 CHECK(is_active IN (0,1)),
+                is_champion INTEGER NOT NULL DEFAULT 0 CHECK(is_champion IN (0,1)),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                promoted_at TEXT,
+                UNIQUE(model_version, config_hash)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS one_active_registered_model
+                ON model_registry(is_active) WHERE is_active = 1;
+            CREATE UNIQUE INDEX IF NOT EXISTS one_champion_model
+                ON model_registry(is_champion) WHERE is_champion = 1;
+            CREATE TABLE IF NOT EXISTS prediction_input_snapshots (
+                input_snapshot_id TEXT PRIMARY KEY,
+                input_json TEXT NOT NULL,
+                input_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS prediction_snapshots (
+                prediction_id TEXT PRIMARY KEY,
+                input_snapshot_id TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                config_hash TEXT NOT NULL,
+                output_json TEXT NOT NULL,
+                output_hash TEXT NOT NULL,
+                simulation_source TEXT NOT NULL DEFAULT 'manual',
+                suggestion_rationale TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ticker, as_of_date, model_version),
+                FOREIGN KEY(input_snapshot_id) REFERENCES prediction_input_snapshots(input_snapshot_id),
+                FOREIGN KEY(model_version, config_hash) REFERENCES model_registry(model_version, config_hash)
+            );
+            CREATE TABLE IF NOT EXISTS legacy_outcome_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                outcome_1m REAL,
+                outcome_3m REAL,
+                outcome_6m REAL,
+                outcome_12m REAL,
+                observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS backtest_job_items (
                 as_of_date TEXT NOT NULL,
                 ticker TEXT NOT NULL,
@@ -226,6 +275,27 @@ def init_db(db_path: str | Path | None = None) -> None:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('known_at_semantics_v1')"
+        )
+        model = current_model_registration()
+        existing_model = connection.execute(
+            "SELECT config_hash, config_json FROM model_registry WHERE model_version = ?",
+            (model["model_version"],),
+        ).fetchone()
+        if existing_model and (
+            existing_model["config_hash"] != model["config_hash"]
+            or existing_model["config_json"] != model["config_json"]
+        ):
+            raise RuntimeError("Registered model version has a different immutable configuration")
+        connection.execute(
+            """INSERT OR IGNORE INTO model_registry
+                (model_version, config_json, config_hash, status, is_active, is_champion)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            tuple(model[field] for field in (
+                "model_version", "config_json", "config_hash", "status", "is_active", "is_champion",
+            )),
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_registry_snapshots_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -274,15 +344,7 @@ def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = No
     with get_connection(db_path) as connection:
         connection.execute(
             f"""INSERT INTO backtest_runs ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})
-            ON CONFLICT(ticker, as_of_date, model_version) DO UPDATE SET
-                coverage=excluded.coverage, entry_score=excluded.entry_score, exit_score=excluded.exit_score,
-                entry_signal=excluded.entry_signal, exit_signal=excluded.exit_signal,
-                technical_score=excluded.technical_score, valuation_score=excluded.valuation_score,
-                risk_score=excluded.risk_score, outcome_1m=excluded.outcome_1m,
-                outcome_3m=excluded.outcome_3m, outcome_6m=excluded.outcome_6m,
-                outcome_12m=excluded.outcome_12m, inputs_json=excluded.inputs_json,
-                simulation_source=excluded.simulation_source,
-                suggestion_rationale=excluded.suggestion_rationale
+            ON CONFLICT(ticker, as_of_date, model_version) DO NOTHING
             """,
             values,
         )
@@ -290,29 +352,174 @@ def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = No
 
 def get_backtest_runs(ticker: str | None = None, db_path: str | Path | None = None) -> list[dict[str, object]]:
     init_db(db_path)
-    query = "SELECT * FROM backtest_runs"
+    query = """WITH latest_outcomes AS (
+        SELECT observations.* FROM legacy_outcome_observations AS observations
+        JOIN (
+            SELECT ticker, as_of_date, model_version, MAX(id) AS latest_id
+            FROM legacy_outcome_observations GROUP BY ticker, as_of_date, model_version
+        ) AS latest ON latest.latest_id = observations.id
+    )
+        SELECT backtest_runs.id, backtest_runs.ticker, backtest_runs.as_of_date,
+        backtest_runs.coverage, backtest_runs.entry_score, backtest_runs.exit_score,
+        backtest_runs.entry_signal, backtest_runs.exit_signal, backtest_runs.technical_score,
+        backtest_runs.valuation_score, backtest_runs.risk_score,
+        COALESCE(latest_outcomes.outcome_1m, backtest_runs.outcome_1m) AS outcome_1m,
+        COALESCE(latest_outcomes.outcome_3m, backtest_runs.outcome_3m) AS outcome_3m,
+        COALESCE(latest_outcomes.outcome_6m, backtest_runs.outcome_6m) AS outcome_6m,
+        COALESCE(latest_outcomes.outcome_12m, backtest_runs.outcome_12m) AS outcome_12m,
+        backtest_runs.inputs_json, backtest_runs.model_version, backtest_runs.simulation_source,
+        backtest_runs.suggestion_rationale,
+        COALESCE(latest_outcomes.observed_at, backtest_runs.outcome_refreshed_at) AS outcome_refreshed_at,
+        backtest_runs.created_at,
+        COALESCE(model_registry.is_active, 0) AS model_is_active,
+        COALESCE(model_registry.is_champion, 0) AS model_is_champion,
+        COALESCE(model_registry.status, 'legacy_unregistered') AS model_registry_status,
+        CASE WHEN prediction_snapshots.prediction_id IS NULL THEN 0 ELSE 1 END AS has_prediction_snapshot
+        FROM backtest_runs LEFT JOIN model_registry
+        ON model_registry.model_version = backtest_runs.model_version
+        LEFT JOIN latest_outcomes ON latest_outcomes.ticker = backtest_runs.ticker
+        AND latest_outcomes.as_of_date = backtest_runs.as_of_date
+        AND latest_outcomes.model_version = backtest_runs.model_version
+        LEFT JOIN prediction_snapshots
+        ON prediction_snapshots.ticker = backtest_runs.ticker
+        AND prediction_snapshots.as_of_date = backtest_runs.as_of_date
+        AND prediction_snapshots.model_version = backtest_runs.model_version"""
     params: tuple[object, ...] = ()
     if ticker:
-        query += " WHERE ticker = ?"
+        query += " WHERE backtest_runs.ticker = ?"
         params = (ticker.strip().upper(),)
-    query += " ORDER BY as_of_date DESC, ticker"
+    query += " ORDER BY backtest_runs.as_of_date DESC, backtest_runs.ticker"
     with get_connection(db_path) as connection:
         return [dict(row) for row in connection.execute(query, params).fetchall()]
+
+
+def get_registered_models(db_path: str | Path | None = None) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(
+            "SELECT * FROM model_registry ORDER BY created_at, model_version"
+        ).fetchall()]
+
+
+def register_model(model: Mapping[str, object], db_path: str | Path | None = None) -> None:
+    """Register an immutable model configuration; never mutate an existing version."""
+    init_db(db_path)
+    fields = ("model_version", "config_json", "config_hash", "status", "is_active", "is_champion")
+    with get_connection(db_path) as connection:
+        existing = connection.execute(
+            "SELECT * FROM model_registry WHERE model_version = ?", (model["model_version"],)
+        ).fetchone()
+        if existing:
+            if existing["config_hash"] != model["config_hash"] or existing["config_json"] != model["config_json"]:
+                raise ValueError("Model version is already registered with a different configuration")
+            return
+        connection.execute(
+            f"INSERT INTO model_registry ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
+            tuple(model[field] for field in fields),
+        )
+
+
+def set_active_model(
+    model_version: str, *, champion: bool = False, db_path: str | Path | None = None,
+) -> None:
+    """Explicitly activate a registered model; promotion is never inferred from its name."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        if not connection.execute(
+            "SELECT 1 FROM model_registry WHERE model_version = ?", (model_version,)
+        ).fetchone():
+            raise ValueError(f"Unknown registered model: {model_version}")
+        connection.execute("UPDATE model_registry SET is_active = 0")
+        connection.execute(
+            "UPDATE model_registry SET is_active = 1 WHERE model_version = ?", (model_version,)
+        )
+        if champion:
+            connection.execute("UPDATE model_registry SET is_champion = 0 WHERE is_champion = 1")
+            connection.execute(
+                """UPDATE model_registry SET is_champion = 1, status = 'champion',
+                   promoted_at = CURRENT_TIMESTAMP WHERE model_version = ?""",
+                (model_version,),
+            )
+
+
+def save_prediction_snapshot(
+    snapshot: Mapping[str, object], db_path: str | Path | None = None,
+) -> None:
+    """Persist immutable input/prediction content, idempotently by identity."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT OR IGNORE INTO prediction_input_snapshots
+               (input_snapshot_id, input_json, input_hash) VALUES (?, ?, ?)""",
+            (snapshot["input_snapshot_id"], snapshot["input_json"], snapshot["input_hash"]),
+        )
+        stored_input = connection.execute(
+            "SELECT input_json, input_hash FROM prediction_input_snapshots WHERE input_snapshot_id = ?",
+            (snapshot["input_snapshot_id"],),
+        ).fetchone()
+        if stored_input["input_json"] != snapshot["input_json"] or stored_input["input_hash"] != snapshot["input_hash"]:
+            raise ValueError("Immutable input snapshot conflict")
+        fields = (
+            "prediction_id", "input_snapshot_id", "ticker", "as_of_date", "model_version",
+            "config_hash", "output_json", "output_hash", "simulation_source", "suggestion_rationale",
+        )
+        connection.execute(
+            f"INSERT OR IGNORE INTO prediction_snapshots ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
+            tuple(snapshot.get(field) for field in fields),
+        )
+        stored = connection.execute(
+            "SELECT * FROM prediction_snapshots WHERE prediction_id = ?", (snapshot["prediction_id"],)
+        ).fetchone()
+        immutable_fields = fields[:8]
+        if any(stored[field] != snapshot.get(field) for field in immutable_fields):
+            raise ValueError("Immutable prediction snapshot conflict")
+
+
+def get_prediction_snapshots(
+    ticker: str | None = None, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    query = """SELECT prediction_snapshots.*, prediction_input_snapshots.input_json,
+        prediction_input_snapshots.input_hash, model_registry.status AS model_status,
+        model_registry.is_active, model_registry.is_champion
+        FROM prediction_snapshots
+        JOIN prediction_input_snapshots USING(input_snapshot_id)
+        JOIN model_registry USING(model_version, config_hash)"""
+    params: tuple[object, ...] = ()
+    if ticker:
+        query += " WHERE prediction_snapshots.ticker = ?"
+        params = (ticker.strip().upper(),)
+    query += " ORDER BY prediction_snapshots.as_of_date DESC, prediction_snapshots.ticker"
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(query, params).fetchall()]
+
+
+def get_prediction_snapshot(
+    prediction_id: str, db_path: str | Path | None = None,
+) -> dict[str, object] | None:
+    snapshots = get_prediction_snapshots(db_path=db_path)
+    return next((row for row in snapshots if row["prediction_id"] == prediction_id), None)
 
 
 def update_backtest_outcomes(
     ticker: str, as_of_date: str, outcomes: Mapping[str, object],
     db_path: str | Path | None = None,
 ) -> None:
-    """Refresh only forward outcomes; reconstructed inputs/scores remain immutable."""
+    """Append a legacy outcome observation; never rewrite the research row."""
     init_db(db_path)
     with get_connection(db_path) as connection:
-        connection.execute(
-            """UPDATE backtest_runs SET outcome_1m=?, outcome_3m=?, outcome_6m=?, outcome_12m=?,
-                outcome_refreshed_at=CURRENT_TIMESTAMP
-            WHERE ticker=? AND as_of_date=?""",
-            (outcomes.get("1M"), outcomes.get("3M"), outcomes.get("6M"), outcomes.get("12M"),
-             ticker.strip().upper(), as_of_date),
+        versions = connection.execute(
+            "SELECT model_version FROM backtest_runs WHERE ticker=? AND as_of_date=?",
+            (ticker.strip().upper(), as_of_date),
+        ).fetchall()
+        connection.executemany(
+            """INSERT INTO legacy_outcome_observations
+                (ticker, as_of_date, model_version, outcome_1m, outcome_3m, outcome_6m, outcome_12m)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [(
+                ticker.strip().upper(), as_of_date, row["model_version"], outcomes.get("1M"),
+                outcomes.get("3M"), outcomes.get("6M"), outcomes.get("12M"),
+            ) for row in versions],
         )
 
 

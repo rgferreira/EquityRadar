@@ -14,8 +14,9 @@ from src.scoring.valuation import calculate_valuation_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.data.market_data import calculate_metrics
 from src.data.temporal import evidence_known_by
+from src.model_registry import CURRENT_MODEL_VERSION
 
-MODEL_VERSION = "backtested-learning-v4-orthogonal-known-at-v1"
+MODEL_VERSION = CURRENT_MODEL_VERSION
 OUTCOME_HORIZONS = {"1M": 21, "3M": 63, "6M": 126, "12M": 252}
 LEARNING_WEIGHTS = {"1M": .50, "3M": .30, "6M": .20}
 MINIMUM_CONFIRMED_HORIZON = "3M"
@@ -78,6 +79,20 @@ def reconstruct_signal(
             "missing" if not positioning_history else "unverified_or_after_cutoff"
         ),
     }
+    input_references = {
+        "fundamentals": ({
+            field: usable_fundamentals.get(field) for field in (
+                "provider_name", "period_end", "published_at", "known_at", "known_at_status",
+            )
+        } if usable_fundamentals else None),
+        "finra": [{
+            field: row.get(field) for field in (
+                "provider_name", "snapshot_date", "period_end", "reporting_date", "published_at",
+                "known_at", "known_at_status",
+            )
+        } for row in eligible_positioning],
+        "prices": {"cutoff": str(as_of), "observations": len(point_in_time), "policy": "end_of_day"},
+    }
     return {
         "metrics": metrics, "technical": technical, "valuation": valuation, "risk": risk,
         "entry_score": entry, "exit_score": exit_score,
@@ -86,6 +101,7 @@ def reconstruct_signal(
         "positioning_modifier": positioning_modifier,
         "finra_observations_used": len(eligible_positioning),
         "temporal_coverage": temporal_coverage,
+        "input_references": input_references,
         "observations": len(point_in_time), "model_version": MODEL_VERSION,
     }
 
@@ -237,20 +253,29 @@ def _latest_runs_by_cutoff(runs: list[Mapping[str, object]]) -> list[Mapping[str
     for index, run in enumerate(runs):
         cutoff = str(run.get("as_of_date") or run.get("created_at") or f"undated-{index}")
         existing = latest.get(cutoff)
-        if existing is None or str(run.get("model_version") or "") > str(existing.get("model_version") or ""):
+        if existing is None or _model_selection_key(run) > _model_selection_key(existing):
             latest[cutoff] = run
     return list(latest.values())
 
 
 def latest_model_runs(runs: list[Mapping[str, object]]) -> list[Mapping[str, object]]:
-    """Return one newest-model run per ticker/cutoff for display and analysis."""
+    """Select active registered rows; retain explicit legacy fallback by row identity."""
     latest: dict[tuple[str, str], Mapping[str, object]] = {}
     for run in runs:
         key = (str(run.get("ticker") or ""), str(run.get("as_of_date") or ""))
         existing = latest.get(key)
-        if existing is None or str(run.get("model_version") or "") > str(existing.get("model_version") or ""):
+        if existing is None or _model_selection_key(run) > _model_selection_key(existing):
             latest[key] = run
     return sorted(latest.values(), key=lambda row: (str(row.get("as_of_date") or ""), str(row.get("ticker") or "")), reverse=True)
+
+
+def _model_selection_key(run: Mapping[str, object]) -> tuple[int, str, int]:
+    """Rank by explicit registry activity, then immutable row creation identity."""
+    return (
+        int(run.get("model_is_active") or 0),
+        str(run.get("created_at") or ""),
+        int(run.get("id") or 0),
+    )
 
 
 def lesson_summary(runs: list[Mapping[str, object]]) -> dict[str, object]:
