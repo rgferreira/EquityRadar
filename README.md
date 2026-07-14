@@ -6,6 +6,8 @@ Industry coverage self-configures in the background when a ticker is added: comp
 
 Company detail also includes market positioning: short interest, near-term option-chain balance, ownership, insider activity and analyst actions become transparent Long positioning, Short pressure, Squeeze potential and Confidence scores. Official FINRA history gates small, visible modifiers capped at ±5 Entry points and ±7 Exit-review points.
 
+Backtested-learning results are retained as transparent diagnostic research, but Phase 3.8 quarantines them from live Entry/Exit scores by default pending point-in-time and out-of-sample scientific validation.
+
 ## Setup
 
 ```bash

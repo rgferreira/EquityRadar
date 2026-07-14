@@ -40,6 +40,7 @@ from src.scoring.orthogonality import score_orthogonality_audit
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, zebra_table
 from src.backtesting import decision_outcome, latest_model_runs, learned_score_adjustments, lesson_summary
+from src.model_policy import governed_learning_adjustments
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
@@ -381,8 +382,13 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                 base_exit, float(positioning_modifier["exit_adjustment"]),
             )
             learned = learned_score_adjustments(get_backtest_runs(ticker))
-            calibrated_entry = apply_positioning_adjustment(calibrated_entry, float(learned["entry_adjustment"]))
-            calibrated_exit = apply_positioning_adjustment(calibrated_exit, float(learned["exit_adjustment"]))
+            learning_policy = governed_learning_adjustments(learned)
+            calibrated_entry = apply_positioning_adjustment(
+                calibrated_entry, float(learning_policy["applied_entry_adjustment"]),
+            )
+            calibrated_exit = apply_positioning_adjustment(
+                calibrated_exit, float(learning_policy["applied_exit_adjustment"]),
+            )
             rows.append({
                 "Ticker": ticker,
                 "Price": metrics["latest_price"],
@@ -411,6 +417,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                 "Learning entry adj": learned["entry_adjustment"],
                 "Learning exit adj": learned["exit_adjustment"],
                 "Learning rationale": learned["reason"],
+                "Learning policy": learning_policy["label"],
                 "Short reversal lever": positioning_modifier.get("short_reversal_lever", "Unavailable"),
                 "Exit signal": exit_review_label(calibrated_exit),
                 "Technical rationale": explain_technical_score(metrics),
@@ -532,11 +539,17 @@ if rows:
             base_exit = calculate_exit_review_score(float(row["Technical"]), float(row["Risk"]))
             row["Exit-review score"] = apply_positioning_adjustment(base_exit, float(modifier["exit_adjustment"]))
             learned = learned_score_adjustments(get_backtest_runs(str(row["Ticker"])))
+            learning_policy = governed_learning_adjustments(learned)
             row["Learning entry adj"] = learned["entry_adjustment"]
             row["Learning exit adj"] = learned["exit_adjustment"]
             row["Learning rationale"] = learned["reason"]
-            row["Entry score"] = apply_positioning_adjustment(float(row["Entry score"]), float(learned["entry_adjustment"]))
-            row["Exit-review score"] = apply_positioning_adjustment(float(row["Exit-review score"]), float(learned["exit_adjustment"]))
+            row["Learning policy"] = learning_policy["label"]
+            row["Entry score"] = apply_positioning_adjustment(
+                float(row["Entry score"]), float(learning_policy["applied_entry_adjustment"]),
+            )
+            row["Exit-review score"] = apply_positioning_adjustment(
+                float(row["Exit-review score"]), float(learning_policy["applied_exit_adjustment"]),
+            )
             row["Entry signal"] = entry_label(float(row["Entry score"]))
             row["Exit signal"] = exit_review_label(float(row["Exit-review score"]))
             row["Diagnostic"] = f"{row['Entry signal']} / {row['Exit signal']}"
@@ -781,8 +794,10 @@ if rows:
                     st.write(f"**Initiation decision:** {row['Diagnostic']}. {row['Position rationale']}")
             if not historical_mode:
                 st.write(
-                    f"**Backtested learning:** Entry {float(row.get('Learning entry adj', 0)):+.1f}; "
-                    f"Exit {float(row.get('Learning exit adj', 0)):+.1f}. {row.get('Learning rationale', 'No completed simulations yet.')}"
+                    f"**Backtested learning — diagnostic only, not applied:** Entry evidence "
+                    f"{float(row.get('Learning entry adj', 0)):+.1f}; Exit evidence "
+                    f"{float(row.get('Learning exit adj', 0)):+.1f}. "
+                    f"{row.get('Learning rationale', 'No completed simulations yet.')}"
                 )
 
     st.divider()
@@ -898,9 +913,9 @@ if rows:
                 metric_cols = st.columns(4)
                 metric_cols[0].metric("Confirmed / saved", f"{learned['sample_size']}/{learned['total_runs']}")
                 metric_cols[1].metric("Confirmed accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
-                metric_cols[2].metric("Entry modifier", f"{learned['entry_adjustment']:+.1f}")
-                metric_cols[3].metric("Exit modifier", f"{learned['exit_adjustment']:+.1f}")
-                st.caption(str(learned["reason"]))
+                metric_cols[2].metric("Entry evidence", f"{learned['entry_adjustment']:+.1f}")
+                metric_cols[3].metric("Exit evidence", f"{learned['exit_adjustment']:+.1f}")
+                st.caption(f"Diagnostic only · quarantined · not applied to live scores. {learned['reason']}")
                 learning_history = pd.DataFrame([{**run, **decision_outcome(run)} for run in ticker_runs])[[
                     "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
                     "composite", "verdict", "learning_priority", "should_learn", "learning_reason",

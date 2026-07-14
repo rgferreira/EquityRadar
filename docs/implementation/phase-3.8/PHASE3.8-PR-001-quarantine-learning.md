@@ -1,5 +1,7 @@
 # PHASE3.8-PR-001 — Quarantine learning
 
+Status: **implemented and validated on `phase/3.8-audit-hardening`**.
+
 ## Objective
 
 Prevent unvalidated backtested learning from changing live Entry/Exit scores while preserving it as transparent diagnostic research.

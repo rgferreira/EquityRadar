@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
 from src.backtesting import decision_accuracy_history, diagnostic_success_rate, decision_outcome, latest_model_runs, learned_score_adjustments
+from src.model_policy import governed_learning_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
@@ -147,6 +148,7 @@ try:
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
     backtest_runs = latest_model_runs(get_backtest_runs(ticker))
     learning_modifier = learned_score_adjustments(backtest_runs)
+    learning_policy = governed_learning_adjustments(learning_modifier)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
     extended_quote = get_extended_hours_quote(ticker)
 
@@ -269,8 +271,8 @@ try:
     base_exit_score = calculate_exit_review_score(technical, risk)
     entry_score = apply_positioning_adjustment(base_entry_score, float(positioning_modifier["entry_adjustment"]))
     exit_score = apply_positioning_adjustment(base_exit_score, float(positioning_modifier["exit_adjustment"]))
-    entry_score = apply_positioning_adjustment(entry_score, float(learning_modifier["entry_adjustment"]))
-    exit_score = apply_positioning_adjustment(exit_score, float(learning_modifier["exit_adjustment"]))
+    entry_score = apply_positioning_adjustment(entry_score, float(learning_policy["applied_entry_adjustment"]))
+    exit_score = apply_positioning_adjustment(exit_score, float(learning_policy["applied_exit_adjustment"]))
     portfolio_holdings = get_portfolio_holdings()
     selected_holding = next((item for item in portfolio_holdings if item["ticker"] == ticker), None)
     target_map = {str(item["ticker"]): float(item["target_weight_pct"]) for item in get_portfolio_targets()}
@@ -373,12 +375,12 @@ try:
     learning_columns = st.columns(2)
     with learning_columns[0]:
         with st.container(border=True):
-            st.markdown(f"**Backtested learning modifier ({learning_entry_adjustment:+.1f})**")
+            st.markdown(f"**Backtested learning evidence ({learning_entry_adjustment:+.1f})**")
             st.markdown(
                 f"<span style='color:{learning_entry_color};font-size:1.35rem;font-weight:700'>"
-                f"{learning_entry_adjustment:+.1f} Entry points</span>", unsafe_allow_html=True,
+                f"{learning_entry_adjustment:+.1f} diagnostic points</span>", unsafe_allow_html=True,
             )
-            st.caption("Confidence-weighted · capped at ±5 Entry points")
+            st.caption("Diagnostic only · quarantined · not applied to Entry score")
     with learning_columns[1]:
         learning_outcome_text = (
             "Decision-aware evidence still developing" if learning_modifier["decision_accuracy"] is None
@@ -440,7 +442,8 @@ try:
     st.markdown(
         f"<div style='color:#9aa4b2;font-size:.88rem'>Base {base_exit_score:.1f} · "
         f"Market positioning {float(positioning_modifier['exit_adjustment']):+.1f} · "
-        f"Backtested learning <strong style='color:{learning_exit_color}'>{learning_exit_adjustment:+.1f}</strong></div>",
+        f"Backtested learning diagnostic <strong style='color:{learning_exit_color}'>{learning_exit_adjustment:+.1f}</strong> "
+        f"(quarantined · not applied)</div>",
         unsafe_allow_html=True,
     )
 
@@ -476,7 +479,7 @@ try:
         st.markdown("- **Risk resilience (15%)** — ability to withstand drawdowns and volatility without duplicating the technical signal.")
         st.markdown("- **Analyst sentiment (10%)** — recommendations, estimate revisions, coverage and target-price expectations, confidence-adjusted.")
         st.markdown("- **Market positioning modifier** — a small reliability-gated adjustment from FINRA short interest and available positioning evidence.")
-        st.markdown("- **Backtested learning modifier** — ticker-specific adjustment learned from completed point-in-time simulations; small samples remain neutral.")
+        st.markdown("- **Backtested learning evidence** — ticker-specific research from completed simulations; it is quarantined and does not alter live scores pending scientific validation.")
         st.markdown("- **Exit-review score** — urgency to reassess a holding when technical and market-risk conditions deteriorate; it is not an execution instruction.")
 
     fundamentals_tab, metrics_tab, industry_tab, positioning_tab, learning_tab, journal_tab = st.tabs([
@@ -616,24 +619,24 @@ try:
 
     with learning_tab:
         st.subheader("Backtested learning")
-        st.caption("Ticker-specific, decision-aware evidence. The outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%; forward data never enters its own historical score.")
+        st.caption("Diagnostic research only · quarantined and excluded from live Entry/Exit scores. The legacy outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%.")
         learning_columns = st.columns(4)
         learning_columns[0].metric("Confirmed / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
         learning_columns[1].metric(
             "Confirmed accuracy", "—" if learning_modifier["decision_accuracy"] is None else f"{float(learning_modifier['decision_accuracy']):.0f}%",
         )
-        learning_columns[2].metric("Entry adjustment", f"{float(learning_modifier['entry_adjustment']):+.1f}")
-        learning_columns[3].metric("Exit adjustment", f"{float(learning_modifier['exit_adjustment']):+.1f}")
+        learning_columns[2].metric("Entry evidence", f"{float(learning_modifier['entry_adjustment']):+.1f}")
+        learning_columns[3].metric("Exit evidence", f"{float(learning_modifier['exit_adjustment']):+.1f}")
         st.markdown(
             f"<div style='display:flex;gap:1rem;flex-wrap:wrap'>"
-            f"<span style='color:{learning_entry_color};font-weight:700'>Entry impact {learning_entry_adjustment:+.1f}</span>"
-            f"<span style='color:{learning_exit_color};font-weight:700'>Exit-review impact {learning_exit_adjustment:+.1f}</span>"
+            f"<span style='color:{learning_entry_color};font-weight:700'>Entry diagnostic {learning_entry_adjustment:+.1f}</span>"
+            f"<span style='color:{learning_exit_color};font-weight:700'>Exit-review diagnostic {learning_exit_adjustment:+.1f}</span>"
             f"</div>", unsafe_allow_html=True,
         )
         if int(learning_modifier["sample_size"]) < 3:
-            st.info(f"No score influence yet · {learning_modifier['reason']}.")
+            st.info(f"Diagnostic evidence remains neutral · {learning_modifier['reason']}.")
         else:
-            st.success(f"Applied to current scores · {learning_modifier['reason']}.")
+            st.info(f"Quarantined · not applied to current scores. {learning_modifier['reason']}.")
         if backtest_runs:
             history_rows = pd.DataFrame([{**run, **decision_outcome(run)} for run in backtest_runs])[[
                 "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
