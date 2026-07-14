@@ -6,10 +6,12 @@ coverage must never depend on or expose the user's local research data.
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.data.database import init_db
+from src.data.database import add_ticker
 
 
 PAGES = (
@@ -49,3 +51,54 @@ def test_mobile_navigation_contract_remains_present():
     assert "touchstart" in source and "touchend" in source
     assert "window.parent.innerWidth <= 700" in source
     assert "stSidebarCollapsedControl" in source
+
+
+def test_navigation_and_simulation_contracts_are_regression_guarded():
+    shell = Path("app.py").read_text(encoding="utf-8")
+    for route in (
+        "Decision-dashboard", "Portfolio", "Company", "Journal", "Watchlist",
+        "Model-tuning", "Operations", "Scenario-lab",
+    ):
+        assert f'url_path="{route}"' in shell
+    dashboard = Path("pages/1_Dashboard.py").read_text(encoding="utf-8")
+    assert '"Present date", "Past date"' in dashboard
+    assert "Run historical simulation" in dashboard
+    assert "Saved simulations & learning history" in dashboard
+
+
+def test_responsive_breakpoint_contract_covers_phone_density():
+    styles = Path("src/ui.py").read_text(encoding="utf-8")
+    assert "@media (max-width: 700px)" in styles
+    assert "@media (min-width: 1100px)" in styles
+    assert "touch.clientX <= 34" in styles
+
+
+def test_historical_simulation_requires_explicit_confirmation(isolated_ui_database, monkeypatch):
+    add_ticker("AAA", isolated_ui_database)
+    index = pd.date_range("2025-01-01", periods=380, freq="D")
+    history = pd.DataFrame({
+        "Close": [100 + value * .1 for value in range(len(index))],
+        "High": [101 + value * .1 for value in range(len(index))],
+    }, index=index)
+    monkeypatch.setattr("src.data.market_data.fetch_price_history", lambda *a, **k: history.copy())
+    monkeypatch.setattr("src.data.market_data.get_price_history_fetched_at", lambda *a, **k: "2026-07-14T12:00:00")
+    monkeypatch.setattr("src.data.fundamentals.get_fundamentals", lambda *a, **k: None)
+    monkeypatch.setattr("src.data.industry_refresh.schedule_industry_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.positioning_refresh.schedule_finra_backfill", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.positioning_refresh.schedule_positioning_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.extended_hours_refresh.schedule_extended_hours_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.cutoff_suggestions.schedule_cutoff_suggestions", lambda *a, **k: False)
+    monkeypatch.setattr("src.data.backtest_refresh.schedule_outcome_refresh", lambda *a, **k: False)
+    scheduled = []
+    monkeypatch.setattr(
+        "src.data.backtest_refresh.schedule_backtest",
+        lambda cutoff, tickers, **kwargs: scheduled.append((cutoff, tuple(tickers))) or [],
+    )
+    app = AppTest.from_file("pages/1_Dashboard.py", default_timeout=30).run()
+    decision_mode = next(radio for radio in app.radio if radio.label == "Decision date")
+    decision_mode.set_value("Past date").run()
+    assert scheduled == []
+    run_buttons = [button for button in app.button if button.label == "Run historical simulation"]
+    assert len(run_buttons) == 1
+    run_buttons[0].click().run()
+    assert scheduled
