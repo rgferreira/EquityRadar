@@ -38,6 +38,7 @@ from src.data.extended_hours_refresh import extended_hours_refresh_status, sched
 from src.data.extended_hours import effective_extended_quote
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
+from src.scoring.technology import technology_potential_evidence
 from src.scoring.decision import (
     calculate_coverage_aware_entry_score, calculate_exit_review_score,
     entry_label, exit_review_label,
@@ -56,7 +57,7 @@ from src.data.backtest_refresh import (
 )
 from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
 from src.shadow_model import build_shadow_snapshot, meaningful_valuation_available
-from src.model_registry import COVERAGE_AWARE_PROMOTED
+from src.model_registry import ACTIVE_SHADOW_ENABLED
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -428,8 +429,9 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                 "exit_score": calibrated_exit,
                 "exit_signal": exit_review_label(calibrated_exit),
             }
-            if not COVERAGE_AWARE_PROMOTED:
+            if ACTIVE_SHADOW_ENABLED:
                 try:
+                    technology_evidence = technology_potential_evidence(industry_research)
                     save_shadow_decision_snapshot(build_shadow_snapshot(
                         ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
                         inputs={
@@ -441,6 +443,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                             },
                             "valuation_available": meaningful_valuation_available(fundamentals),
                             "industry_calibrated": bool(industry_research),
+                            "technology_potential": technology_evidence,
                         },
                         current_outputs=current_outputs,
                     ))

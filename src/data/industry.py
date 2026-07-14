@@ -48,9 +48,18 @@ class YahooIndustryResearchProvider:
         self.fmp_provider = fmp_provider or (FMPProvider(FMP_API_KEY) if FMP_API_KEY else None)
 
     def _profile(self, ticker: str) -> dict[str, object]:
-        info = yf.Ticker(ticker).info
+        security = yf.Ticker(ticker)
+        info = security.info
         revenue = _number(info.get("totalRevenue"), positive=True)
         free_cash_flow = _number(info.get("freeCashflow"))
+        research_and_development = _number(info.get("researchAndDevelopment"), positive=True)
+        if research_and_development is None:
+            try:
+                income_statement = security.get_income_stmt(freq="yearly")
+                values = _row(income_statement, "ResearchAndDevelopment")
+                research_and_development = _number(next(iter(values.values()), None), positive=True)
+            except Exception:
+                research_and_development = None
         return {
             "ticker": ticker,
             "company_name": info.get("longName") or info.get("shortName"),
@@ -68,7 +77,14 @@ class YahooIndustryResearchProvider:
             "profit_margin": _number(info.get("profitMargins")),
             "gross_margin": _number(info.get("grossMargins")),
             "free_cash_flow_margin": free_cash_flow / revenue if free_cash_flow is not None and revenue else None,
-            "net_debt": (_number(info.get("totalDebt")) or 0) - (_number(info.get("totalCash")) or 0),
+            "r_and_d_intensity": (
+                research_and_development / revenue
+                if research_and_development is not None and revenue else None
+            ),
+            "net_debt": (
+                (_number(info.get("totalDebt")) or 0) - (_number(info.get("totalCash")) or 0)
+                if info.get("totalDebt") is not None or info.get("totalCash") is not None else None
+            ),
         }
 
     @staticmethod

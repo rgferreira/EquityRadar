@@ -15,7 +15,7 @@ from src.data.database import (
     get_shadow_decision_snapshots,
     sync_model_gate_alert_state, update_model_gate_email_status,
 )
-from src.model_registry import COVERAGE_AWARE_SHADOW_VERSION
+from src.model_registry import TECHNOLOGY_POTENTIAL_SHADOW_VERSION
 from src.model_tuning import build_model_tuning_report, prepare_shadow_comparisons
 from src.outcome_labels import RELATIVE_LABEL_VERSION
 from src.utils.config import (
@@ -44,7 +44,10 @@ class EmailSettings:
 def current_gate_evidence(db_path: str | Path | None = None) -> tuple[dict[str, object], str]:
     """Build the current gate report and a privacy-safe immutable evidence signature."""
     rows = prepare_shadow_comparisons(
-        get_shadow_decision_snapshots(db_path=db_path),
+        [
+            row for row in get_shadow_decision_snapshots(db_path=db_path)
+            if str(row.get("challenger_model_version")) == TECHNOLOGY_POTENTIAL_SHADOW_VERSION
+        ],
         get_prediction_snapshots(db_path=db_path),
         get_outcome_labels(label_version=RELATIVE_LABEL_VERSION, db_path=db_path),
     )
@@ -102,28 +105,28 @@ def process_model_gate_alert(
     report, signature = current_gate_evidence(db_path)
     all_green = bool(report["gate"]["passed"] == report["gate"]["total"])
     state = sync_model_gate_alert_state(
-        COVERAGE_AWARE_SHADOW_VERSION, gates_cleared=all_green,
+        TECHNOLOGY_POTENTIAL_SHADOW_VERSION, gates_cleared=all_green,
         evidence_signature=signature, db_path=db_path,
     )
     mail = settings or EmailSettings()
     if all_green and state["email_status"] in {"pending", "configuration_required"}:
         if not mail.configured:
             update_model_gate_email_status(
-                COVERAGE_AWARE_SHADOW_VERSION, "configuration_required", db_path=db_path,
+                TECHNOLOGY_POTENTIAL_SHADOW_VERSION, "configuration_required", db_path=db_path,
             )
         else:
             try:
                 send_gate_clearance_email(report, mail, smtp_factory)
             except Exception as exc:
                 update_model_gate_email_status(
-                    COVERAGE_AWARE_SHADOW_VERSION, "failed", error=str(exc)[:500], db_path=db_path,
+                    TECHNOLOGY_POTENTIAL_SHADOW_VERSION, "failed", error=str(exc)[:500], db_path=db_path,
                 )
             else:
                 update_model_gate_email_status(
-                    COVERAGE_AWARE_SHADOW_VERSION, "sent", db_path=db_path,
+                    TECHNOLOGY_POTENTIAL_SHADOW_VERSION, "sent", db_path=db_path,
                 )
         state = sync_model_gate_alert_state(
-            COVERAGE_AWARE_SHADOW_VERSION, gates_cleared=True,
+            TECHNOLOGY_POTENTIAL_SHADOW_VERSION, gates_cleared=True,
             evidence_signature=signature, db_path=db_path,
         )
     return report, state

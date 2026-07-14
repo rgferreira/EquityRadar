@@ -1,5 +1,13 @@
 # Implemented features
 
+## Phase 3.9 · Technology Potential shadow challenger
+
+- Registered `technology-potential-modifier-v1-shadow` as an inactive, reversible challenger based on the current live champion.
+- Computes a transparent industry-relative Technology Potential proxy from R&D intensity, revenue growth, gross margin, free-cash-flow margin and balance-sheet funding capacity.
+- Applies a confidence-gated Entry modifier capped at +/-5 shadow points; missing evidence is neutral and the live model remains unchanged.
+- Persists only verified point-in-time technology evidence in new simulation snapshots; archived promotion evidence remains separate.
+- Company detail exposes score, confidence, coverage and hypothetical shadow points, while Model tuning starts a fresh readiness cycle.
+
 ## Phase 3.9 — Model tuning research console
 
 - A dedicated read-only page preserves the former-live versus coverage-aware promotion evidence.

@@ -15,6 +15,7 @@ from src.scoring.risk import calculate_risk_score
 from src.scoring.technical import calculate_technical_score
 from src.scoring.valuation import calculate_valuation_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
+from src.scoring.technology import technology_potential_evidence
 from src.data.market_data import calculate_metrics
 from src.data.temporal import evidence_known_by
 from src.model_registry import CURRENT_MODEL_VERSION
@@ -45,6 +46,7 @@ def reconstruct_signal(
     history: pd.DataFrame, as_of: date | str,
     fundamentals: Mapping[str, object] | None = None,
     positioning_history: list[Mapping[str, object]] | None = None,
+    industry_research: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Rebuild the price/risk decision using only data known at the cutoff."""
     point_in_time = history_as_of(history, as_of)
@@ -56,6 +58,10 @@ def reconstruct_signal(
     technical = calculate_technical_score(metrics)
     risk = calculate_risk_score(metrics, trailing)
     usable_fundamentals = fundamentals if evidence_available(fundamentals, as_of) else None
+    usable_industry_research = (
+        industry_research if evidence_available(industry_research, as_of) else None
+    )
+    technology_evidence = technology_potential_evidence(usable_industry_research)
     valuation = calculate_valuation_score(usable_fundamentals)
     entry = calculate_coverage_aware_entry_score(
         technical, valuation, risk, valuation_available=bool(usable_fundamentals),
@@ -83,6 +89,10 @@ def reconstruct_signal(
             "verified_known_at" if eligible_positioning else
             "missing" if not positioning_history else "unverified_or_after_cutoff"
         ),
+        "technology_potential": (
+            "verified_known_at" if usable_industry_research else
+            "missing" if not industry_research else "unverified_or_after_cutoff"
+        ),
     }
     input_references = {
         "fundamentals": ({
@@ -96,6 +106,11 @@ def reconstruct_signal(
                 "known_at", "known_at_status",
             )
         } for row in eligible_positioning],
+        "technology_potential": ({
+            field: usable_industry_research.get(field) for field in (
+                "provider_name", "period_end", "published_at", "known_at", "known_at_status",
+            )
+        } if usable_industry_research else None),
         "prices": {"cutoff": str(as_of), "observations": len(point_in_time), "policy": "end_of_day"},
     }
     return {
@@ -107,6 +122,7 @@ def reconstruct_signal(
         "finra_observations_used": len(eligible_positioning),
         "temporal_coverage": temporal_coverage,
         "input_references": input_references,
+        "technology_potential": technology_evidence,
         "observations": len(point_in_time), "model_version": MODEL_VERSION,
     }
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from src.utils.config import DATABASE_PATH
 from src.model_registry import (
     coverage_aware_shadow_registration, current_model_registration,
-    previous_live_model_registration,
+    previous_live_model_registration, technology_potential_shadow_registration,
 )
 
 
@@ -426,7 +426,7 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute("UPDATE model_registry SET is_active=0, is_champion=0")
         for model in (
             previous_live_model_registration(), coverage_aware_shadow_registration(),
-            current_model_registration(),
+            current_model_registration(), technology_potential_shadow_registration(),
         ):
             existing_model = connection.execute(
                 "SELECT config_hash, config_json FROM model_registry WHERE model_version = ?",
@@ -445,6 +445,10 @@ def init_db(db_path: str | Path | None = None) -> None:
                     "model_version", "config_json", "config_hash", "status", "is_active", "is_champion",
                 )),
             )
+        connection.execute(
+            "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
+            (coverage_aware_shadow_registration()["model_version"],),
+        )
         if not promotion_applied:
             current = current_model_registration()
             previous = previous_live_model_registration()
@@ -495,6 +499,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('inactive_shadow_snapshots_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('technology_potential_shadow_v1')"
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_gate_alerts_v1')"

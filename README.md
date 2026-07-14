@@ -61,9 +61,11 @@ python -m scripts.run_ui_acceptance
   | Risk resilience | 15% |
   | Analyst sentiment | 10% |
   | Market positioning | Modifier: up to +/-5 points |
+  | Technology Potential | Shadow modifier: up to +/-5 points; 0 live contribution |
   | Backtested learning | Diagnostic evidence only; not applied to the live score |
 
   If industry research is unavailable, the promoted coverage-aware fallback uses 50% technical, 30% absolute valuation, and 20% risk; when meaningful valuation is also unavailable, its weight is omitted and the verified technical/risk weights are renormalized. The entry diagnostic is assigned from the resulting 0-100 score using predefined thresholds; it has no separate weighting formula. Entry scores express potential entry/add attractiveness, not a trading instruction.
+- Technology Potential is preregistered as the next inactive shadow challenger. It compares R&D intensity, revenue growth, gross margin, free-cash-flow margin and balance-sheet funding capacity with direct peers. Its confidence-gated Entry modifier is `(score - 50) / 10 × confidence`, capped at +/-5; missing evidence contributes zero. It does not alter live Entry/Exit scores, and only prospective point-in-time observations may contribute to its promotion gates.
 - Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
 - Archived decision-aware learning: historical simulations are stored per ticker and their original decision is judged against subsequent returns. Buy, Watch and Wait have distinct research utility, but the legacy learning modifier is scientifically quarantined and contributes exactly zero to current Entry/Exit scores.
 - Position-aware decision layer: unowned companies use initiation decisions, while holdings translate the same company evidence into Add/Hold/Monitor/Trim/Exit using current weight, optional target weight and concentration. This changes the action, not the underlying company research scores.

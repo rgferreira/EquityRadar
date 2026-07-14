@@ -5,6 +5,7 @@ from src.data.database import (
 )
 from src.model_promotion import materialize_promoted_history
 from src.model_registry import (
+    coverage_aware_shadow_registration,
     build_prediction_snapshot, previous_live_model_registration, replay_prediction,
 )
 from src.shadow_model import build_shadow_snapshot
@@ -39,7 +40,7 @@ def test_promotion_materialization_is_additive_and_idempotent(tmp_path):
     save_shadow_decision_snapshot(build_shadow_snapshot(
         ticker="TEST", as_of_date="2026-02-16", surface="historical_replay",
         inputs={**inputs, "industry_calibrated": False}, current_outputs=outputs,
-        current_model=previous,
+        current_model=previous, challenger_model=coverage_aware_shadow_registration(),
     ), database)
 
     first = materialize_promoted_history(database)

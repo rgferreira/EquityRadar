@@ -15,7 +15,10 @@ from src.model_tuning import (
     build_model_tuning_report, build_post_promotion_report, cumulative_date_evidence,
     prepare_shadow_comparisons,
 )
-from src.model_registry import CURRENT_MODEL_VERSION, PREVIOUS_LIVE_MODEL_VERSION
+from src.model_registry import (
+    CURRENT_MODEL_VERSION, PREVIOUS_LIVE_MODEL_VERSION,
+    TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+)
 from src.outcome_labels import RELATIVE_LABEL_VERSION
 from src.ui import inject_app_styles, page_header, style_figure, zebra_table
 
@@ -38,9 +41,9 @@ st.set_page_config(page_title="Model tuning | Personal Equity Radar", page_icon=
 inject_app_styles()
 init_db()
 page_header(
-    "Phase 3.9 promotion archive", "Model tuning",
-    "Review the frozen live-versus-shadow evidence behind the coverage-aware promotion.",
-    "Promoted manually · Reversible",
+    "Phase 3.9 shadow decision center", "Model tuning",
+    "Evaluate the active Technology Potential challenger without changing the live model.",
+    "Shadow only · Reversible",
 )
 st.warning(
     "Historical comparison evidence is not proof of durable benchmark outperformance. This page "
@@ -80,11 +83,40 @@ if promotion:
             f"{baseline['independent_dates']} dates · former live {baseline['former_live_accuracy_pct']:.2f}%"
         )
 
+shadow_snapshots = get_shadow_decision_snapshots()
+active_shadow_snapshots = [
+    row for row in shadow_snapshots
+    if str(row.get("challenger_model_version")) == TECHNOLOGY_POTENTIAL_SHADOW_VERSION
+]
+archived_shadow_snapshots = [
+    row for row in shadow_snapshots
+    if str(row.get("challenger_model_version")) != TECHNOLOGY_POTENTIAL_SHADOW_VERSION
+]
 comparisons = prepare_shadow_comparisons(
-    get_shadow_decision_snapshots(), predictions, labels, horizon="3M",
+    active_shadow_snapshots, predictions, labels, horizon="3M",
+)
+archived_comparisons = prepare_shadow_comparisons(
+    archived_shadow_snapshots, predictions, labels, horizon="3M",
 )
 if not comparisons:
-    st.info("No archived live-versus-promoted comparison snapshots are available yet.")
+    st.markdown(f"### Active challenger: `{TECHNOLOGY_POTENTIAL_SHADOW_VERSION}`")
+    st.info(
+        "Registered and awaiting its first immutable prospective snapshot. Load or refresh the "
+        "Decision dashboard; no historical evidence will be invented or reused."
+    )
+    st.subheader("Current promotion readiness · Awaiting new challenger/data")
+    for criterion in (
+        "Independent outcome maturity", "Decision-change maturity",
+        "Utility improvement uncertainty", "Decision accuracy non-deterioration",
+        "Across-date consistency", "Ticker concentration",
+    ):
+        st.markdown(f"⚪ **{criterion}** · Awaiting prospective data")
+    if archived_comparisons:
+        archived_gate = build_model_tuning_report(archived_comparisons)["gate"]
+        with st.expander(
+            f"Archived promotion result · {archived_gate['passed']}/{archived_gate['total']} gates green · already promoted"
+        ):
+            st.caption("Frozen audit evidence only; it cannot authorize another promotion.")
     st.stop()
 
 tickers = sorted({str(row["ticker"]) for row in comparisons})
@@ -135,39 +167,42 @@ report = build_model_tuning_report(filtered)
 coverage = gate_report["coverage"]
 gate = gate_report["gate"]
 
-st.markdown("### Current challenger: :gray[Awaiting registration and prospective data]")
-st.caption(
-    "The previous challenger has already been promoted and frozen. A new readiness cycle starts "
-    "only after a distinct shadow hypothesis is preregistered and begins collecting evidence."
-)
+status_color = {
+    "Collecting evidence": "gray", "Inconclusive": "orange",
+    "Eligible for human review": "green",
+}.get(str(gate["status"]), "gray")
+st.markdown(f"### Active challenger: `{TECHNOLOGY_POTENTIAL_SHADOW_VERSION}`")
+st.markdown(f"**Evidence status:** :{status_color}[{gate['status']}]  ")
+st.caption(str(gate["rationale"]))
 
-st.subheader("Current promotion readiness · Awaiting new challenger/data")
+st.subheader(f"Current promotion readiness · {gate['passed']}/{gate['total']} gates green")
 criteria_columns = st.columns(2)
 for index, criterion in enumerate(gate["criteria"]):
+    icon = (
+        "🟢" if criterion["passed"] else
+        "⚪" if gate["status"] == "Collecting evidence" else "🔴"
+    )
     with criteria_columns[index % 2]:
         with st.container(border=True):
-            st.markdown(f"**⚪ {criterion['criterion']}**")
-            st.markdown("**Observed:** Awaiting a new shadow challenger  ")
+            st.markdown(f"**{icon} {criterion['criterion']}**")
+            st.markdown(f"**Observed:** {criterion['observed']}  ")
             st.caption(f"Required: {criterion['required']}")
             st.caption(str(criterion["purpose"]))
 
-with st.expander(
-    f"Archived promotion result · {gate['passed']}/{gate['total']} gates green · already promoted",
-    expanded=False,
-):
-    st.caption(str(gate["rationale"]))
-    archive_columns = st.columns(2)
-    for index, criterion in enumerate(gate["criteria"]):
-        icon = "🟢" if criterion["passed"] else "🔴"
-        with archive_columns[index % 2]:
-            st.markdown(
-                f"{icon} **{criterion['criterion']}** · {criterion['observed']} "
-                f"(required: {criterion['required']})"
-            )
-    st.caption(
-        "This frozen gate record supported the completed human promotion decision. It is retained "
-        "for audit and rollback context; it cannot authorize another promotion."
-    )
+if archived_comparisons:
+    archived_gate = build_model_tuning_report(archived_comparisons)["gate"]
+    with st.expander(
+        f"Archived promotion result · {archived_gate['passed']}/{archived_gate['total']} gates green · already promoted",
+        expanded=False,
+    ):
+        archive_columns = st.columns(2)
+        for index, criterion in enumerate(archived_gate["criteria"]):
+            icon = "🟢" if criterion["passed"] else "🔴"
+            with archive_columns[index % 2]:
+                st.markdown(f"{icon} **{criterion['criterion']}** · {criterion['observed']}")
+        st.caption(
+            "Frozen audit and rollback evidence only; it cannot authorize another promotion."
+        )
 
 metrics = st.columns(6)
 metrics[0].metric("Snapshots", int(coverage["snapshots"]))

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 from src.model_registry import (
     COVERAGE_AWARE_PROMOTED, canonical_json, content_hash, coverage_aware_shadow_registration,
-    current_model_registration,
+    current_model_registration, technology_potential_shadow_registration,
 )
 from src.scoring.decision import entry_label
 from src.scoring.positioning import apply_positioning_adjustment
@@ -63,14 +63,49 @@ def coverage_aware_shadow_output(
     }
 
 
+def technology_potential_shadow_output(
+    inputs: Mapping[str, object], current_outputs: Mapping[str, object],
+) -> dict[str, object]:
+    """Apply only the preregistered, frozen Technology Potential modifier."""
+    evidence = dict(inputs.get("technology_potential") or {})
+    current_entry = float(current_outputs["entry_score"])
+    current_signal = str(current_outputs["entry_signal"])
+    modifier = float(evidence.get("entry_modifier") or 0.0)
+    if not evidence or float(evidence.get("confidence") or 0.0) <= 0:
+        modifier = 0.0
+        mode = "technology_evidence_unavailable_neutral"
+    else:
+        modifier = max(-5.0, min(5.0, modifier))
+        mode = f"technology_potential_{evidence.get('coverage') or 'limited'}"
+    score = round(max(0.0, min(100.0, current_entry + modifier)), 1)
+    signal = entry_label(score)
+    return {
+        "entry_score": score,
+        "entry_signal": signal,
+        "exit_score": current_outputs.get("exit_score"),
+        "exit_signal": current_outputs.get("exit_signal"),
+        "coverage_mode": mode,
+        "technology_score": float(evidence.get("score") or 50.0),
+        "technology_confidence": float(evidence.get("confidence") or 0.0),
+        "technology_entry_modifier": round(modifier, 1),
+        "entry_score_delta": round(score - current_entry, 1),
+        "signal_changed": signal != current_signal,
+    }
+
+
 def build_shadow_snapshot(
     *, ticker: str, as_of_date: str, surface: str,
     inputs: Mapping[str, object], current_outputs: Mapping[str, object],
     current_model: Mapping[str, object] | None = None,
+    challenger_model: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     registered_current = dict(current_model or current_model_registration())
-    challenger = coverage_aware_shadow_registration()
-    challenger_outputs = coverage_aware_shadow_output(inputs, current_outputs)
+    challenger = dict(challenger_model or technology_potential_shadow_registration())
+    challenger_outputs = (
+        coverage_aware_shadow_output(inputs, current_outputs)
+        if challenger["model_version"] == coverage_aware_shadow_registration()["model_version"]
+        else technology_potential_shadow_output(inputs, current_outputs)
+    )
     input_json = canonical_json(dict(inputs))
     current_output_json = canonical_json(dict(current_outputs))
     challenger_output_json = canonical_json(challenger_outputs)

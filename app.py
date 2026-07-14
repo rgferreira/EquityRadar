@@ -4,7 +4,7 @@ import streamlit as st
 
 from src.data.database import acknowledge_model_gate_modal
 from src.model_gate_alerts import process_model_gate_alert
-from src.model_registry import COVERAGE_AWARE_PROMOTED, COVERAGE_AWARE_SHADOW_VERSION
+from src.model_registry import ACTIVE_SHADOW_ENABLED, TECHNOLOGY_POTENTIAL_SHADOW_VERSION
 from src.operations import start_local_scheduler
 
 st.set_page_config(
@@ -16,7 +16,7 @@ st.set_page_config(
 start_local_scheduler()
 
 gate_report = gate_alert_state = None
-if not COVERAGE_AWARE_PROMOTED:
+if ACTIVE_SHADOW_ENABLED:
     try:
         gate_report, gate_alert_state = process_model_gate_alert()
     except Exception:
@@ -45,7 +45,7 @@ if (
         elif email_status == "failed":
             st.warning("Email delivery failed; the application and model state are unaffected.")
         if st.button("Acknowledge and continue", type="primary", width="stretch"):
-            acknowledge_model_gate_modal(COVERAGE_AWARE_SHADOW_VERSION)
+            acknowledge_model_gate_modal(TECHNOLOGY_POTENTIAL_SHADOW_VERSION)
             st.rerun()
 
     show_gate_clearance_modal()

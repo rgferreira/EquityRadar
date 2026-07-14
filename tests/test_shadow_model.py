@@ -9,7 +9,7 @@ from src.data.database import (
 from src.model_registry import build_prediction_snapshot, current_model_registration
 from src.shadow_model import (
     backfill_shadow_history, build_shadow_snapshot, coverage_aware_shadow_output,
-    meaningful_valuation_available,
+    meaningful_valuation_available, technology_potential_shadow_output,
 )
 
 
@@ -71,11 +71,23 @@ def test_shadow_snapshot_is_immutable_and_models_remain_inactive(tmp_path):
 
     assert len(stored) == 1
     assert json.loads(stored[0]["current_output_json"])["entry_score"] == 66.0
-    assert json.loads(stored[0]["challenger_output_json"])["entry_score"] == 75.3
+    assert json.loads(stored[0]["challenger_output_json"])["entry_score"] == 66.0
     assert sum(model["is_active"] for model in models) == 1
-    assert next(model for model in models if model["model_version"] == "coverage-aware-renormalized-v1")["is_active"] == 0
+    assert next(model for model in models if model["model_version"] == "technology-potential-modifier-v1-shadow")["is_active"] == 0
     with pytest.raises(ValueError, match="Immutable shadow decision conflict"):
         save_shadow_decision_snapshot({**snapshot, "entry_score_delta": 99}, database)
+
+
+def test_technology_modifier_is_bounded_confidence_gated_and_shadow_only():
+    original = dict(CURRENT)
+    challenger = technology_potential_shadow_output(inputs(technology_potential={
+        "score": 90, "confidence": .75, "entry_modifier": 3.0, "coverage": "ready",
+    }), CURRENT)
+
+    assert CURRENT == original
+    assert challenger["entry_score"] == 69.0
+    assert challenger["technology_entry_modifier"] == 3.0
+    assert challenger["coverage_mode"] == "technology_potential_ready"
 
 
 def test_promoted_shadow_backfill_is_archived(tmp_path):

@@ -8,13 +8,14 @@ import json
 
 from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_signal
 from src.data.database import (
-    get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, get_positioning_history,
+    get_backtest_job_items, get_backtest_runs, get_cached_fundamentals,
+    get_cached_industry_research, get_positioning_history,
     save_backtest_run, save_outcome_label, save_prediction_snapshot, save_shadow_decision_snapshot,
     set_backtest_job_item, update_backtest_outcomes,
 )
 from src.data.market_data import fetch_price_history
 from src.model_registry import (
-    COVERAGE_AWARE_PROMOTED, build_prediction_snapshot, current_model_registration,
+    ACTIVE_SHADOW_ENABLED, build_prediction_snapshot, current_model_registration,
 )
 from src.outcome_labels import benchmark_for_ticker, build_relative_outcome_label
 from src.shadow_model import build_shadow_snapshot
@@ -35,7 +36,7 @@ def _run(
             history = fetch_price_history(ticker, period="max")
             result = reconstruct_signal(
                 history, as_of_date, get_cached_fundamentals(ticker, db_path),
-                get_positioning_history(ticker, db_path),
+                get_positioning_history(ticker, db_path), get_cached_industry_research(ticker, db_path),
             )
             outcomes = evaluate_outcomes(history, as_of_date)
             legacy_run = {
@@ -50,7 +51,8 @@ def _run(
                                              "fundamentals_used": result["fundamentals_used"],
                                              "finra_observations_used": result["finra_observations_used"],
                                              "temporal_coverage": result["temporal_coverage"],
-                                             "positioning_modifier": result["positioning_modifier"]}),
+                                             "positioning_modifier": result["positioning_modifier"],
+                                             "technology_potential": result["technology_potential"]}),
                 "model_version": result["model_version"],
                 "simulation_source": simulation_source,
                 "suggestion_rationale": suggestion_rationale,
@@ -69,6 +71,7 @@ def _run(
                 },
                 "temporal_coverage": result["temporal_coverage"],
                 "input_references": result["input_references"],
+                "technology_potential": result["technology_potential"],
             }
             frozen_outputs = {
                 "entry_score": result["entry_score"], "exit_score": result["exit_score"],
@@ -80,7 +83,7 @@ def _run(
                 suggestion_rationale=suggestion_rationale,
             )
             save_prediction_snapshot(snapshot, db_path)
-            if not COVERAGE_AWARE_PROMOTED:
+            if ACTIVE_SHADOW_ENABLED:
                 try:
                     save_shadow_decision_snapshot(build_shadow_snapshot(
                         ticker=ticker, as_of_date=as_of_date, surface="historical_simulation",

@@ -17,6 +17,7 @@ from src.data.positioning_refresh import finra_backfill_status, positioning_refr
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.scoring.risk import calculate_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score
+from src.scoring.technology import technology_potential_evidence
 from src.scoring.decision import (
     calculate_coverage_aware_entry_score, calculate_exit_review_score,
     entry_label, exit_review_label,
@@ -146,6 +147,7 @@ try:
     risk_details = risk_score_details(metrics, metric_history)
     industry_risk = min(100, risk + int(risk_details["drawdown_penalty"] or 0))
     industry_research = get_cached_industry_research(ticker)
+    technology_evidence = technology_potential_evidence(industry_research)
     positioning = get_cached_positioning(ticker)
     positioning_breakdown = positioning_scores(positioning)
     positioning_history = get_positioning_history(ticker)
@@ -411,6 +413,24 @@ try:
                     st.markdown(f"**{title}**")
                     for detail in details:
                         st.caption(detail)
+
+    with st.container(border=True):
+        technology_modifier = float(technology_evidence["entry_modifier"])
+        technology_color = (
+            "#38d996" if technology_modifier > 0
+            else "#ff6375" if technology_modifier < 0 else "#9aa4b2"
+        )
+        st.markdown("**Technology Potential · active shadow modifier**")
+        st.markdown(
+            f"<span style='color:{technology_color};font-size:1.15rem;font-weight:700'>"
+            f"{float(technology_evidence['score']):.1f}/100 · {technology_modifier:+.1f} shadow Entry points"
+            f"</span>", unsafe_allow_html=True,
+        )
+        st.caption(
+            f"Confidence {float(technology_evidence['confidence']):.0%} · "
+            f"{technology_evidence['coverage']} coverage · live contribution exactly 0.0"
+        )
+        st.caption(str(technology_evidence["rationale"]))
 
     learning_entry_adjustment = float(learning_modifier["entry_adjustment"])
     learning_columns = st.columns(2)

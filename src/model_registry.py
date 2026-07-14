@@ -52,6 +52,28 @@ CURRENT_MODEL_CONFIG: dict[str, object] = {
     },
 }
 
+TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v1-shadow"
+TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+    "base_model": CURRENT_MODEL_VERSION,
+    "hypothesis": "industry-relative technology potential improves selective entry decisions",
+    "components": {
+        "r_and_d_intensity": 0.35,
+        "revenue_growth": 0.25,
+        "gross_margin": 0.15,
+        "free_cash_flow_margin": 0.15,
+        "balance_sheet_capacity": 0.10,
+    },
+    "modifier": "(score-50)/10*confidence",
+    "entry_modifier_cap": 5.0,
+    "missing_evidence": "neutral_zero_modifier",
+    "minimum_peer_observations_per_component": 2,
+    "r_and_d_missing_confidence_cap": 0.50,
+    "thresholds": {"buy_candidate": 70, "watch": 55},
+    "evaluation": "prospective_purged_benchmark_relative_3m",
+    "role": "inactive_shadow_only",
+}
+ACTIVE_SHADOW_ENABLED = True
+
 
 def canonical_json(value: Mapping[str, object] | list[object]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -88,6 +110,17 @@ def coverage_aware_shadow_registration() -> dict[str, object]:
         "model_version": COVERAGE_AWARE_SHADOW_VERSION,
         "config_json": canonical_json(COVERAGE_AWARE_SHADOW_CONFIG),
         "config_hash": content_hash(COVERAGE_AWARE_SHADOW_CONFIG),
+        "status": "candidate",
+        "is_active": 0,
+        "is_champion": 0,
+    }
+
+
+def technology_potential_shadow_registration() -> dict[str, object]:
+    return {
+        "model_version": TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+        "config_json": canonical_json(TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
+        "config_hash": content_hash(TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
         "status": "candidate",
         "is_active": 0,
         "is_champion": 0,
