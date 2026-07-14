@@ -1,12 +1,12 @@
 # Next best actions
 
-Last reviewed: 2026-07-14. Current internal phase: **3.8 - Scientific hardening (audit intake complete; implementation not started)**.
+Last reviewed: 2026-07-14. Current internal phase: **3.8 - Scientific hardening (PR-004 complete; PR-005 next)**.
 
 This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
 
 ## Phase 3.8 - active priority
 
-The forensic audit supersedes the former improvised implementation queue. PR-001 through PR-003 are complete; PR-004 (versioned benchmark-relative outcomes) is next. Execute the ordered, PR-sized slices in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md), using [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) as the original reconciliation with HEAD. Do not treat the evidence pack as evidence of alpha.
+The forensic audit supersedes the former improvised implementation queue. PR-001 through PR-004 are complete; PR-005 (purged evaluator) is next. Execute the ordered, PR-sized slices in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md), using [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) as the original reconciliation with HEAD. Do not treat the evidence pack as evidence of alpha.
 
 ## Deferred operational work from Phase 3.7
 

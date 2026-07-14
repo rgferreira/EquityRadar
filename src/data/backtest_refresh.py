@@ -9,10 +9,12 @@ import json
 from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_signal
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, get_positioning_history,
-    save_backtest_run, save_prediction_snapshot, set_backtest_job_item, update_backtest_outcomes,
+    save_backtest_run, save_outcome_label, save_prediction_snapshot, set_backtest_job_item,
+    update_backtest_outcomes,
 )
 from src.data.market_data import fetch_price_history
 from src.model_registry import build_prediction_snapshot, current_model_registration
+from src.outcome_labels import benchmark_for_ticker, build_relative_outcome_label
 
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtested-learning")
 _lock = RLock()
@@ -69,10 +71,24 @@ def _run(
                 "entry_score": result["entry_score"], "exit_score": result["exit_score"],
                 "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
             }
-            save_prediction_snapshot(build_prediction_snapshot(
+            snapshot = build_prediction_snapshot(
                 ticker=ticker, as_of_date=as_of_date, model=model, inputs=frozen_inputs,
                 outputs=frozen_outputs, simulation_source=simulation_source,
                 suggestion_rationale=suggestion_rationale,
+            )
+            save_prediction_snapshot(snapshot, db_path)
+            benchmark_ticker = benchmark_for_ticker(ticker)
+            benchmark_history = None
+            if benchmark_ticker:
+                try:
+                    benchmark_history = fetch_price_history(benchmark_ticker, period="max")
+                except Exception:
+                    # The prediction remains valid; the explicit label records unavailable evidence.
+                    benchmark_history = None
+            save_outcome_label(build_relative_outcome_label(
+                prediction_id=str(snapshot["prediction_id"]), ticker=ticker,
+                as_of_date=as_of_date, security_history=history,
+                benchmark_history=benchmark_history, benchmark_ticker=benchmark_ticker,
             ), db_path)
             set_backtest_job_item(as_of_date, ticker, "completed", db_path=db_path)
         except Exception as exc:

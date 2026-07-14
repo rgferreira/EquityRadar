@@ -31,3 +31,7 @@ Use `--database PATH` for a non-default SQLite file. Replay recomputes Entry/Exi
 ## Rollback
 
 Application reads can return to compatibility-only paths without dropping the additive registry/snapshot tables. Immutable rows should be retained for audit even if their consumer is rolled back.
+
+## Evaluation labels
+
+New immutable predictions receive the separately versioned outcome contract described in [`outcome-labels.md`](outcome-labels.md). Legacy absolute returns and benchmark-relative labels are deliberately stored and named separately; they must not be mixed in an evaluation.

@@ -229,6 +229,27 @@ def init_db(db_path: str | Path | None = None) -> None:
                 outcome_12m REAL,
                 observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS outcome_label_observations (
+                label_id TEXT PRIMARY KEY,
+                prediction_id TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                label_version TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('available','pending','unavailable')),
+                unavailable_reason TEXT,
+                benchmark_ticker TEXT,
+                benchmark_policy_version TEXT NOT NULL,
+                timing_convention TEXT NOT NULL,
+                cost_bps REAL NOT NULL,
+                execution_date TEXT,
+                security_entry_price REAL,
+                benchmark_entry_price REAL,
+                outcomes_json TEXT NOT NULL,
+                max_drawdown_6m_pct REAL,
+                outcome_hash TEXT NOT NULL,
+                observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(prediction_id, label_version),
+                FOREIGN KEY(prediction_id) REFERENCES prediction_snapshots(prediction_id)
+            );
             CREATE TABLE IF NOT EXISTS backtest_job_items (
                 as_of_date TEXT NOT NULL,
                 ticker TEXT NOT NULL,
@@ -296,6 +317,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_registry_snapshots_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('relative_outcome_labels_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -499,6 +523,61 @@ def get_prediction_snapshot(
 ) -> dict[str, object] | None:
     snapshots = get_prediction_snapshots(db_path=db_path)
     return next((row for row in snapshots if row["prediction_id"] == prediction_id), None)
+
+
+def save_outcome_label(
+    label: Mapping[str, object], db_path: str | Path | None = None,
+) -> None:
+    """Persist one immutable, versioned outcome label per prediction."""
+    init_db(db_path)
+    fields = (
+        "label_id", "prediction_id", "ticker", "label_version", "status",
+        "unavailable_reason", "benchmark_ticker", "benchmark_policy_version",
+        "timing_convention", "cost_bps", "execution_date", "security_entry_price",
+        "benchmark_entry_price", "outcomes_json", "max_drawdown_6m_pct", "outcome_hash",
+    )
+    values = {
+        **dict(label),
+        "outcomes_json": json.dumps(
+            label.get("outcomes") or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+        ),
+    }
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"INSERT OR IGNORE INTO outcome_label_observations ({', '.join(fields)}) "
+            f"VALUES ({', '.join('?' for _ in fields)})",
+            tuple(values.get(field) for field in fields),
+        )
+        stored = connection.execute(
+            "SELECT * FROM outcome_label_observations WHERE prediction_id=? AND label_version=?",
+            (label["prediction_id"], label["label_version"]),
+        ).fetchone()
+        if stored is None or stored["outcome_hash"] != label["outcome_hash"]:
+            raise ValueError("Immutable outcome label conflict")
+
+
+def get_outcome_labels(
+    *, prediction_id: str | None = None, label_version: str | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    clauses: list[str] = []
+    params: list[object] = []
+    if prediction_id:
+        clauses.append("prediction_id = ?")
+        params.append(prediction_id)
+    if label_version:
+        clauses.append("label_version = ?")
+        params.append(label_version)
+    query = "SELECT * FROM outcome_label_observations"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY observed_at, ticker"
+    with get_connection(db_path) as connection:
+        rows = [dict(row) for row in connection.execute(query, params).fetchall()]
+    for row in rows:
+        row["outcomes"] = json.loads(str(row["outcomes_json"]))
+    return rows
 
 
 def update_backtest_outcomes(
