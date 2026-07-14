@@ -85,5 +85,6 @@ class FMPProvider:
             revenue_growth=revenue_growth,
             eps_growth=eps_growth,
             reporting_date=reporting_date,
+            period_end=reporting_date,
             provider_name=self.name,
         )

@@ -13,8 +13,9 @@ from src.scoring.technical import calculate_technical_score
 from src.scoring.valuation import calculate_valuation_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.data.market_data import calculate_metrics
+from src.data.temporal import evidence_known_by
 
-MODEL_VERSION = "backtested-learning-v4-orthogonal"
+MODEL_VERSION = "backtested-learning-v4-orthogonal-known-at-v1"
 OUTCOME_HORIZONS = {"1M": 21, "3M": 63, "6M": 126, "12M": 252}
 LEARNING_WEIGHTS = {"1M": .50, "3M": .30, "6M": .20}
 MINIMUM_CONFIRMED_HORIZON = "3M"
@@ -33,15 +34,7 @@ def history_as_of(history: pd.DataFrame, as_of: date | str) -> pd.DataFrame:
 
 def evidence_available(record: Mapping[str, object] | None, as_of: date | str) -> bool:
     """Whether a timestamped record was publicly available by the cutoff."""
-    if not record:
-        return False
-    timestamp = record.get("reporting_date") or record.get("fetched_at")
-    if not timestamp:
-        return False
-    try:
-        return pd.Timestamp(str(timestamp)).date() <= pd.Timestamp(as_of).date()
-    except (TypeError, ValueError):
-        return False
+    return evidence_known_by(record, as_of)
 
 
 def reconstruct_signal(
@@ -74,6 +67,17 @@ def reconstruct_signal(
     coverage_parts = ["fundamentals" if usable_fundamentals else None,
                       "FINRA" if eligible_positioning else None]
     coverage = "Partial coverage · " + " + ".join(part for part in coverage_parts if part) if any(coverage_parts) else "Price-only reconstruction"
+    temporal_coverage = {
+        "price": "end_of_day_cutoff",
+        "fundamentals": (
+            "verified_known_at" if usable_fundamentals else
+            "missing" if not fundamentals else "unverified_or_after_cutoff"
+        ),
+        "finra": (
+            "verified_known_at" if eligible_positioning else
+            "missing" if not positioning_history else "unverified_or_after_cutoff"
+        ),
+    }
     return {
         "metrics": metrics, "technical": technical, "valuation": valuation, "risk": risk,
         "entry_score": entry, "exit_score": exit_score,
@@ -81,6 +85,7 @@ def reconstruct_signal(
         "coverage": coverage, "fundamentals_used": bool(usable_fundamentals),
         "positioning_modifier": positioning_modifier,
         "finra_observations_used": len(eligible_positioning),
+        "temporal_coverage": temporal_coverage,
         "observations": len(point_in_time), "model_version": MODEL_VERSION,
     }
 

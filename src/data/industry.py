@@ -8,6 +8,7 @@ import pandas as pd
 import yfinance as yf
 
 from src.data.database import get_cached_industry_research, save_industry_research
+from src.data.temporal import observed_at_fetch
 from src.data.fmp import FMPProvider
 from src.utils.config import FMP_API_KEY
 
@@ -237,8 +238,10 @@ def get_industry_research(
     try:
         payload = provider.fetch(normalized)
         fetched_at = datetime.now().isoformat(timespec="seconds")
+        temporal = observed_at_fetch(fetched_at)
         payload["provider_name"] = provider.name
         payload["fetched_at"] = fetched_at
+        payload.update(temporal.as_dict())
         save_industry_research(normalized, payload, provider.name, fetched_at, db_path)
         return payload
     except Exception:

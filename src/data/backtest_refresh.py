@@ -43,6 +43,7 @@ def _run(
                 "inputs_json": json.dumps({"metrics": result["metrics"],
                                              "fundamentals_used": result["fundamentals_used"],
                                              "finra_observations_used": result["finra_observations_used"],
+                                             "temporal_coverage": result["temporal_coverage"],
                                              "positioning_modifier": result["positioning_modifier"]}),
                 "model_version": result["model_version"],
                 "simulation_source": simulation_source,

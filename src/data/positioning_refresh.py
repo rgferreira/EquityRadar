@@ -9,6 +9,7 @@ from typing import Callable
 from src.data.database import get_cached_positioning, get_positioning_history, save_positioning_snapshot
 from src.data.finra_short_interest import FINRAShortInterestProvider, backfill_finra_short_history
 from src.data.positioning import YahooPositioningProvider
+from src.data.temporal import observed_at_fetch
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="positioning-refresh")
 _lock = RLock()
@@ -36,6 +37,7 @@ def _refresh(ticker: str, provider_factory: Callable[[], YahooPositioningProvide
     reporting_date = str(payload.get("reporting_date") or "") or None
     payload["provider_name"] = provider.name
     payload["fetched_at"] = fetched_at
+    payload.update(observed_at_fetch(fetched_at, period_end=reporting_date).as_dict())
     save_positioning_snapshot(ticker, payload, provider.name, reporting_date, fetched_at, db_path)
     return payload
 

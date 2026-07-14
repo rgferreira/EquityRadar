@@ -8,6 +8,8 @@ Company detail also includes market positioning: short interest, near-term optio
 
 Backtested-learning results are retained as transparent diagnostic research, but Phase 3.8 quarantines them from live Entry/Exit scores by default pending point-in-time and out-of-sample scientific validation.
 
+Historical simulations now require verified point-in-time `known_at` metadata for fundamentals, analyst/cohort and positioning evidence. Period ends, settlement dates and legacy fetch timestamps are never silently treated as publication dates; see `docs/temporal-data-contract.md`.
+
 ## Setup
 
 ```bash

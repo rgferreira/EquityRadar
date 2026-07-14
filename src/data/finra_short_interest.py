@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from src.data.database import save_positioning_history_snapshot
+from src.data.temporal import observed_at_fetch
 
 
 class FINRAShortInterestProvider:
@@ -58,6 +59,7 @@ def backfill_finra_short_history(
     fetched_at = datetime.now().isoformat(timespec="seconds")
     for row in rows:
         reporting_date = str(row["reporting_date"])
+        row.update(observed_at_fetch(fetched_at, period_end=reporting_date).as_dict())
         save_positioning_history_snapshot(
             ticker, reporting_date, row, provider.name, reporting_date, fetched_at, db_path,
         )

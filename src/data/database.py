@@ -50,6 +50,10 @@ def init_db(db_path: str | Path | None = None) -> None:
                 revenue_growth REAL,
                 eps_growth REAL,
                 reporting_date TEXT,
+                period_end TEXT,
+                published_at TEXT,
+                known_at TEXT,
+                known_at_status TEXT,
                 provider_name TEXT NOT NULL,
                 fetched_at TEXT NOT NULL
             );
@@ -57,6 +61,10 @@ def init_db(db_path: str | Path | None = None) -> None:
                 ticker TEXT PRIMARY KEY,
                 payload_json TEXT NOT NULL,
                 provider_name TEXT NOT NULL,
+                period_end TEXT,
+                published_at TEXT,
+                known_at TEXT,
+                known_at_status TEXT,
                 fetched_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS positioning_cache (
@@ -64,6 +72,10 @@ def init_db(db_path: str | Path | None = None) -> None:
                 payload_json TEXT NOT NULL,
                 provider_name TEXT NOT NULL,
                 reporting_date TEXT,
+                period_end TEXT,
+                published_at TEXT,
+                known_at TEXT,
+                known_at_status TEXT,
                 fetched_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS extended_hours_cache (
@@ -79,6 +91,10 @@ def init_db(db_path: str | Path | None = None) -> None:
                 payload_json TEXT NOT NULL,
                 provider_name TEXT NOT NULL,
                 reporting_date TEXT,
+                period_end TEXT,
+                published_at TEXT,
+                known_at TEXT,
+                known_at_status TEXT,
                 fetched_at TEXT NOT NULL,
                 PRIMARY KEY (ticker, snapshot_date)
             );
@@ -198,6 +214,19 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute("ALTER TABLE backtest_runs ADD COLUMN simulation_source TEXT NOT NULL DEFAULT 'manual'")
         if "suggestion_rationale" not in backtest_columns:
             connection.execute("ALTER TABLE backtest_runs ADD COLUMN suggestion_rationale TEXT")
+        temporal_tables = (
+            "fundamentals_cache", "industry_research_cache", "positioning_cache", "positioning_history",
+        )
+        for table in temporal_tables:
+            existing_columns = {
+                row["name"] for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            for column in ("period_end", "published_at", "known_at", "known_at_status"):
+                if column not in existing_columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('known_at_semantics_v1')"
+        )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
         ).fetchone()
@@ -777,7 +806,8 @@ def save_fundamentals(
     init_db(db_path)
     fields = (
         "ticker", "trailing_pe", "forward_pe", "price_to_sales_ttm",
-        "revenue_growth", "eps_growth", "reporting_date", "provider_name", "fetched_at",
+        "revenue_growth", "eps_growth", "reporting_date", "period_end", "published_at",
+        "known_at", "known_at_status", "provider_name", "fetched_at",
     )
     with get_connection(db_path) as connection:
         connection.execute(
@@ -791,6 +821,10 @@ def save_fundamentals(
                 revenue_growth=excluded.revenue_growth,
                 eps_growth=excluded.eps_growth,
                 reporting_date=excluded.reporting_date,
+                period_end=excluded.period_end,
+                published_at=excluded.published_at,
+                known_at=excluded.known_at,
+                known_at_status=excluded.known_at_status,
                 provider_name=excluded.provider_name,
                 fetched_at=excluded.fetched_at
             """,
@@ -818,12 +852,17 @@ def save_industry_research(
     with get_connection(db_path) as connection:
         connection.execute(
             """
-            INSERT INTO industry_research_cache (ticker, payload_json, provider_name, fetched_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO industry_research_cache
+                (ticker, payload_json, provider_name, period_end, published_at, known_at,
+                 known_at_status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker) DO UPDATE SET payload_json=excluded.payload_json,
-                provider_name=excluded.provider_name, fetched_at=excluded.fetched_at
+                provider_name=excluded.provider_name, period_end=excluded.period_end,
+                published_at=excluded.published_at, known_at=excluded.known_at,
+                known_at_status=excluded.known_at_status, fetched_at=excluded.fetched_at
             """,
-            (ticker.strip().upper(), json.dumps(payload), provider_name, fetched_at),
+            (ticker.strip().upper(), json.dumps(payload), provider_name, payload.get("period_end"),
+             payload.get("published_at"), payload.get("known_at"), payload.get("known_at_status"), fetched_at),
         )
 
 
@@ -834,14 +873,15 @@ def get_cached_industry_research(
     init_db(db_path)
     with get_connection(db_path) as connection:
         row = connection.execute(
-            "SELECT payload_json, provider_name, fetched_at FROM industry_research_cache WHERE ticker = ?",
+            "SELECT * FROM industry_research_cache WHERE ticker = ?",
             (ticker.strip().upper(),),
         ).fetchone()
     if not row:
         return None
     payload = json.loads(row["payload_json"])
-    payload["provider_name"] = row["provider_name"]
-    payload["fetched_at"] = row["fetched_at"]
+    payload.update({field: row[field] for field in (
+        "provider_name", "period_end", "published_at", "known_at", "known_at_status", "fetched_at",
+    )})
     return payload
 
 
@@ -893,24 +933,30 @@ def save_positioning_snapshot(
         connection.execute(
             """
             INSERT INTO positioning_cache
-                (ticker, payload_json, provider_name, reporting_date, fetched_at)
-            VALUES (?, ?, ?, ?, ?)
+                (ticker, payload_json, provider_name, reporting_date, period_end, published_at,
+                 known_at, known_at_status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker) DO UPDATE SET payload_json=excluded.payload_json,
                 provider_name=excluded.provider_name, reporting_date=excluded.reporting_date,
+                period_end=excluded.period_end, published_at=excluded.published_at,
+                known_at=excluded.known_at, known_at_status=excluded.known_at_status,
                 fetched_at=excluded.fetched_at
             """,
-            (ticker.strip().upper(), json.dumps(payload), provider_name, reporting_date, fetched_at),
+            (ticker.strip().upper(), json.dumps(payload), provider_name, reporting_date,
+             payload.get("period_end"), payload.get("published_at"), payload.get("known_at"),
+             payload.get("known_at_status"), fetched_at),
         )
         connection.execute(
             """
             INSERT INTO positioning_history
-                (ticker, snapshot_date, payload_json, provider_name, reporting_date, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ticker, snapshot_date) DO UPDATE SET payload_json=excluded.payload_json,
-                provider_name=excluded.provider_name, reporting_date=excluded.reporting_date,
-                fetched_at=excluded.fetched_at
+                (ticker, snapshot_date, payload_json, provider_name, reporting_date, period_end,
+                 published_at, known_at, known_at_status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker, snapshot_date) DO NOTHING
             """,
-            (ticker.strip().upper(), fetched_at[:10], json.dumps(payload), provider_name, reporting_date, fetched_at),
+            (ticker.strip().upper(), fetched_at[:10], json.dumps(payload), provider_name, reporting_date,
+             payload.get("period_end"), payload.get("published_at"), payload.get("known_at"),
+             payload.get("known_at_status"), fetched_at),
         )
 
 
@@ -920,15 +966,17 @@ def get_cached_positioning(
     init_db(db_path)
     with get_connection(db_path) as connection:
         row = connection.execute(
-            "SELECT payload_json, provider_name, reporting_date, fetched_at FROM positioning_cache WHERE ticker = ?",
+            "SELECT * FROM positioning_cache WHERE ticker = ?",
             (ticker.strip().upper(),),
         ).fetchone()
     if not row:
         return None
     payload = json.loads(row["payload_json"])
     payload.update({
-        "provider_name": row["provider_name"], "reporting_date": row["reporting_date"],
-        "fetched_at": row["fetched_at"],
+        field: row[field] for field in (
+            "provider_name", "reporting_date", "period_end", "published_at", "known_at",
+            "known_at_status", "fetched_at",
+        )
     })
     return payload
 
@@ -942,7 +990,9 @@ def get_positioning_history(ticker: str, db_path: str | Path | None = None) -> l
         ).fetchall()
     return [{**json.loads(row["payload_json"]), **{
         "snapshot_date": row["snapshot_date"], "provider_name": row["provider_name"],
-        "reporting_date": row["reporting_date"], "fetched_at": row["fetched_at"],
+        **{field: row[field] for field in (
+            "reporting_date", "period_end", "published_at", "known_at", "known_at_status", "fetched_at",
+        )},
     }} for row in rows]
 
 
@@ -950,19 +1000,20 @@ def save_positioning_history_snapshot(
     ticker: str, snapshot_date: str, payload: Mapping[str, object], provider_name: str,
     reporting_date: str | None, fetched_at: str, db_path: str | Path | None = None,
 ) -> None:
-    """Persist historical evidence without replacing the current positioning cache."""
+    """Append historical evidence without rewriting an existing legacy observation."""
     init_db(db_path)
     with get_connection(db_path) as connection:
         connection.execute(
             """
             INSERT INTO positioning_history
-                (ticker, snapshot_date, payload_json, provider_name, reporting_date, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ticker, snapshot_date) DO UPDATE SET payload_json=excluded.payload_json,
-                provider_name=excluded.provider_name, reporting_date=excluded.reporting_date,
-                fetched_at=excluded.fetched_at
+                (ticker, snapshot_date, payload_json, provider_name, reporting_date, period_end,
+                 published_at, known_at, known_at_status, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ticker, snapshot_date) DO NOTHING
             """,
-            (ticker.strip().upper(), snapshot_date, json.dumps(payload), provider_name, reporting_date, fetched_at),
+            (ticker.strip().upper(), snapshot_date, json.dumps(payload), provider_name, reporting_date,
+             payload.get("period_end"), payload.get("published_at"), payload.get("known_at"),
+             payload.get("known_at_status"), fetched_at),
         )
 
 

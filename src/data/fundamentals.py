@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from src.data.database import get_cached_fundamentals, save_fundamentals
+from src.data.temporal import observed_at_fetch
 
 
 @dataclass
@@ -17,6 +18,10 @@ class Fundamentals:
     revenue_growth: float | None = None
     eps_growth: float | None = None
     reporting_date: str | None = None
+    period_end: str | None = None
+    published_at: str | None = None
+    known_at: str | None = None
+    known_at_status: str | None = None
     provider_name: str = "unknown"
     fetched_at: str | None = None
 
@@ -64,6 +69,12 @@ def get_fundamentals(
     try:
         result = provider.fetch(normalized, current_price)
         result.fetched_at = datetime.now().isoformat(timespec="seconds")
+        result.period_end = result.period_end or result.reporting_date
+        temporal = observed_at_fetch(
+            result.fetched_at, period_end=result.period_end, published_at=result.published_at,
+        )
+        result.known_at = temporal.known_at
+        result.known_at_status = temporal.known_at_status
         payload = asdict(result)
         save_fundamentals(payload, db_path)
         return payload

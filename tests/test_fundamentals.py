@@ -24,6 +24,7 @@ def test_fmp_adapter_normalizes_mocked_responses_and_derives_forward_pe():
     assert result.price_to_sales_ttm == 5
     assert result.revenue_growth == 0.11
     assert result.reporting_date == "2026-06-30"
+    assert result.period_end == "2026-06-30"
 
 
 class CountingProvider:
@@ -40,9 +41,11 @@ class CountingProvider:
 def test_daily_cache_avoids_second_provider_call(tmp_path):
     provider = CountingProvider()
     database = tmp_path / "radar.db"
-    get_fundamentals("AAPL", provider, db_path=database)
-    get_fundamentals("AAPL", provider, db_path=database)
+    first = get_fundamentals("AAPL", provider, db_path=database)
+    second = get_fundamentals("AAPL", provider, db_path=database)
     assert provider.calls == 1
+    assert first["known_at_status"] == second["known_at_status"] == "verified_observed"
+    assert first["known_at"] == first["fetched_at"]
 
 
 def test_provider_error_preserves_stale_cache(tmp_path):
@@ -89,3 +92,4 @@ def test_yfinance_adapter_normalizes_public_company_fields(monkeypatch):
     assert result.revenue_growth == 0.14
     assert result.eps_growth == 0.22
     assert result.provider_name == "Yahoo Finance"
+    assert result.period_end == result.reporting_date

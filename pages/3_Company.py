@@ -494,7 +494,9 @@ try:
                 "Price/sales TTM": "—" if fundamentals.get("price_to_sales_ttm") is None else f"{fundamentals['price_to_sales_ttm']:.2f}x",
                 "Revenue growth": "—" if fundamentals.get("revenue_growth") is None else f"{fundamentals['revenue_growth'] * 100:.2f}%",
                 "EPS growth": "—" if fundamentals.get("eps_growth") is None else f"{fundamentals['eps_growth'] * 100:.2f}%",
-                "Reporting date": fundamentals.get("reporting_date"),
+                "Period end": fundamentals.get("period_end") or fundamentals.get("reporting_date"),
+                "Historical known at": fundamentals.get("known_at"),
+                "Historical status": fundamentals.get("known_at_status") or "unverified legacy",
                 "Provider": fundamentals.get("provider_name"),
                 "Fetched at": fundamentals.get("fetched_at"),
             }
@@ -519,7 +521,8 @@ try:
             profile = industry_research.get("profile", {})
             st.caption(
                 f"{profile.get('sector') or 'Unknown sector'} · {profile.get('industry') or 'Unknown industry'} · "
-                f"Provider: {industry_research.get('provider_name')} · Fetched: {industry_research.get('fetched_at')}"
+                f"Provider: {industry_research.get('provider_name')} · Fetched: {industry_research.get('fetched_at')} · "
+                f"Historical status: {industry_research.get('known_at_status') or 'unverified legacy'}"
             )
             feature_rows = [
                 {"Dimension": "Business quality", "Score": industry_breakdown["business_quality"], "Weight": "25%", "Confidence": f"{float(industry_breakdown['quality_confidence']):.0%}"},
@@ -592,7 +595,8 @@ try:
                 st.caption(f"Short reversal lever · {positioning_modifier['short_reversal_lever']}")
             st.caption(
                 f"Provider: {positioning.get('provider_name')} · Short-interest report: "
-                f"{positioning.get('reporting_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')}"
+                f"{positioning.get('reporting_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')} · "
+                f"Historical status: {positioning.get('known_at_status') or 'unverified legacy'}"
             )
             short, options = positioning.get("short", {}), positioning.get("options", {})
             ownership = positioning.get("ownership", {})

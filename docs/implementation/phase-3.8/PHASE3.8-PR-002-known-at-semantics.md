@@ -1,5 +1,7 @@
 # PHASE3.8-PR-002 — Known-at semantics
 
+Status: **implemented and validated on `phase/3.8-audit-hardening`**.
+
 ## Objective
 
 Create an auditable temporal contract so historical reconstruction uses only evidence verified to be publicly knowable by the cutoff.

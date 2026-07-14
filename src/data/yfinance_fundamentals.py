@@ -40,6 +40,7 @@ class YFinanceFundamentalsProvider:
         eps_growth = self._number(info.get("earningsGrowth"))
         if not any((trailing_pe, forward_pe, price_to_sales, revenue_growth is not None, eps_growth is not None)):
             raise RuntimeError(f"Yahoo Finance returned no usable fundamentals for {normalized}")
+        period_end = self._reporting_date(info)
         return Fundamentals(
             ticker=normalized,
             trailing_pe=trailing_pe,
@@ -47,6 +48,7 @@ class YFinanceFundamentalsProvider:
             price_to_sales_ttm=price_to_sales,
             revenue_growth=revenue_growth,
             eps_growth=eps_growth,
-            reporting_date=self._reporting_date(info),
+            reporting_date=period_end,
+            period_end=period_end,
             provider_name=self.name,
         )

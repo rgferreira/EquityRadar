@@ -6,7 +6,7 @@ import pytest
 
 from src.data.database import get_cached_positioning, get_positioning_history, save_positioning_snapshot
 from src.data.positioning import YahooPositioningProvider
-from src.data.positioning_refresh import positioning_is_fresh
+from src.data.positioning_refresh import _refresh, positioning_is_fresh
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
 
 
@@ -80,6 +80,22 @@ def test_positioning_cache_round_trip(tmp_path):
     assert cached["short"]["days_to_cover"] == 6
     assert cached["provider_name"] == "mock"
     assert len(get_positioning_history("AAPL", database)) == 1
+
+
+def test_new_positioning_refresh_gets_observed_known_at(tmp_path):
+    class StubProvider:
+        name = "stub positioning"
+
+        def fetch(self, ticker):
+            return {**sample_snapshot(), "ticker": ticker, "reporting_date": "2026-06-30"}
+
+    database = tmp_path / "radar.db"
+    refreshed = _refresh("AAPL", StubProvider, database)
+    cached = get_cached_positioning("AAPL", database)
+
+    assert refreshed["period_end"] == "2026-06-30"
+    assert cached["known_at"] == cached["fetched_at"]
+    assert cached["known_at_status"] == "verified_observed"
 
 
 def test_positioning_freshness_is_daily():

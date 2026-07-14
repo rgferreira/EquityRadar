@@ -76,7 +76,10 @@ def test_background_refresh_persists_snapshot_and_reaches_ready(tmp_path):
             break
         time.sleep(.01)
     assert industry_refresh_status("ABC", database) == "Limited coverage"
-    assert get_cached_industry_research("ABC", database)["provider_name"] == "stub"
+    cached = get_cached_industry_research("ABC", database)
+    assert cached["provider_name"] == "stub"
+    assert cached["known_at"] == cached["fetched_at"]
+    assert cached["known_at_status"] == "verified_observed"
 
 
 def test_legacy_limited_snapshot_triggers_immediate_discovery():

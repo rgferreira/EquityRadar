@@ -8,6 +8,7 @@ from typing import Callable
 
 from src.data.database import get_cached_industry_research, save_industry_research
 from src.data.industry import YahooIndustryResearchProvider
+from src.data.temporal import observed_at_fetch
 
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="industry-refresh")
@@ -54,8 +55,10 @@ def _refresh(
     else:
         payload = provider.fetch(ticker)
     fetched_at = datetime.now().isoformat(timespec="seconds")
+    temporal = observed_at_fetch(fetched_at)
     payload["provider_name"] = provider.name
     payload["fetched_at"] = fetched_at
+    payload.update(temporal.as_dict())
     save_industry_research(ticker, payload, provider.name, fetched_at, db_path)
     return payload
 

@@ -33,15 +33,47 @@ def test_reconstruction_does_not_use_later_fundamentals():
 
 def test_reconstruction_uses_only_finra_rows_available_by_cutoff():
     positioning = [
-        {"reporting_date": "2023-06-30", "snapshot_type": "historical_short_interest",
+        {"reporting_date": "2023-06-30", "known_at": "2023-07-12T12:00:00+00:00",
+         "known_at_status": "verified_observed", "snapshot_type": "historical_short_interest",
          "short": {"shares_short": 100, "short_change_pct": 5, "days_to_cover": 2}},
-        {"reporting_date": "2024-01-31", "snapshot_type": "historical_short_interest",
+        {"reporting_date": "2024-01-31", "known_at": "2024-02-12T12:00:00+00:00",
+         "known_at_status": "verified_observed", "snapshot_type": "historical_short_interest",
          "short": {"shares_short": 300, "short_change_pct": 200, "days_to_cover": 8}},
     ]
     result = reconstruct_signal(sample_history(), "2023-12-01", positioning_history=positioning)
     assert result["finra_observations_used"] == 1
     assert result["positioning_modifier"]["history_points"] == 1
     assert "FINRA" in result["coverage"]
+    assert result["temporal_coverage"]["finra"] == "verified_known_at"
+
+
+def test_legacy_dates_never_establish_historical_availability():
+    legacy = {
+        "reporting_date": "2023-01-01", "fetched_at": "2023-01-02T09:00:00",
+        "trailing_pe": 10,
+    }
+
+    assert evidence_available(legacy, "2026-01-01") is False
+
+
+def test_unverified_evidence_is_reported_without_breaking_price_reconstruction():
+    result = reconstruct_signal(
+        sample_history(), "2023-12-01",
+        fundamentals={"trailing_pe": 10, "reporting_date": "2023-01-01"},
+        positioning_history=[{
+            "reporting_date": "2023-06-30", "snapshot_type": "historical_short_interest",
+            "short": {"shares_short": 100},
+        }],
+    )
+
+    assert result["coverage"] == "Price-only reconstruction"
+    assert result["fundamentals_used"] is False
+    assert result["finra_observations_used"] == 0
+    assert result["temporal_coverage"] == {
+        "price": "end_of_day_cutoff",
+        "fundamentals": "unverified_or_after_cutoff",
+        "finra": "unverified_or_after_cutoff",
+    }
 
 
 def test_outcomes_are_measured_after_cutoff():

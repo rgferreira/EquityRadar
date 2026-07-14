@@ -5,8 +5,8 @@ Phase 3.8 converts the forensic audit into five small, reversible implementation
 ## Ordered delivery
 
 1. **PR-001 — Quarantine learning — complete.** Unvalidated backtested learning no longer changes live Entry/Exit scores and remains clearly labelled diagnostic evidence.
-2. **PR-002 — Known-at semantics — next.** Establish source-specific point-in-time rules and make unverified legacy timestamps explicit.
-3. **PR-003 — Model registry and immutable snapshots.** Make model selection explicit and every prediction replayable.
+2. **PR-002 — Known-at semantics — complete.** Source-specific point-in-time rules now exclude unverified legacy timestamps without rewriting them.
+3. **PR-003 — Model registry and immutable snapshots — next.** Make model selection explicit and every prediction replayable.
 4. **PR-004 — Relative outcomes.** Version evaluation labels around benchmark-relative, delayed, cost-aware outcomes.
 5. **PR-005 — Purged evaluator.** Evaluate frozen predictions with rolling-origin splits, purge/embargo, baselines, and uncertainty.
 
@@ -26,4 +26,5 @@ Dependency chain: PR-001 → PR-002 → PR-003 → PR-004 → PR-005. PR-001 is 
 - Findings reconciled with current HEAD: complete; see `../AUDIT_TRIAGE.md`.
 - PR-sized specifications: complete.
 - PR-001 production implementation: complete; no migration and no historical-row rewrite.
-- PR-002 through PR-005 production implementation: not started.
+- PR-002 production implementation: complete; additive nullable migration, conservative new-snapshot capture, and no legacy-row promotion.
+- PR-003 through PR-005 production implementation: not started.

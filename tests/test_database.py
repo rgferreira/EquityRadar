@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from src.data.database import (
@@ -29,6 +31,7 @@ from src.data.database import (
     save_dashboard_order,
     get_active_backtest,
     save_active_backtest,
+    init_db,
 )
 
 
@@ -220,3 +223,28 @@ def test_fundamentals_migration_and_cache_round_trip(tmp_path):
     assert cached is not None
     assert cached["trailing_pe"] == 20.5
     assert cached["forward_pe"] is None
+
+
+def test_known_at_migration_preserves_legacy_rows_as_unverified(tmp_path):
+    database = tmp_path / "legacy.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """CREATE TABLE fundamentals_cache (
+                ticker TEXT PRIMARY KEY, trailing_pe REAL, forward_pe REAL,
+                price_to_sales_ttm REAL, revenue_growth REAL, eps_growth REAL,
+                reporting_date TEXT, provider_name TEXT NOT NULL, fetched_at TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            "INSERT INTO fundamentals_cache VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("AAPL", 20.0, None, 4.0, .1, .2, "2026-03-31", "legacy", "2026-05-01T10:00:00"),
+        )
+
+    init_db(database)
+    init_db(database)  # Idempotent.
+    cached = get_cached_fundamentals("AAPL", database)
+
+    assert cached["trailing_pe"] == 20.0
+    assert cached["reporting_date"] == "2026-03-31"
+    assert cached["known_at"] is None
+    assert cached["known_at_status"] is None
