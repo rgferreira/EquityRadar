@@ -63,6 +63,23 @@ def _with_identity(payload: Mapping[str, object]) -> dict[str, object]:
             ).hexdigest()}
 
 
+def clone_outcome_label(
+    label: Mapping[str, object], *, prediction_id: str,
+) -> dict[str, object]:
+    """Bind an unchanged outcome contract to an additive, versioned prediction."""
+    payload = {
+        field: label.get(field) for field in (
+            "ticker", "label_version", "status", "unavailable_reason",
+            "benchmark_ticker", "benchmark_policy_version", "timing_convention",
+            "cost_bps", "execution_date", "security_entry_price",
+            "benchmark_entry_price", "max_drawdown_6m_pct",
+        )
+    }
+    payload["prediction_id"] = prediction_id
+    payload["outcomes"] = label.get("outcomes") or {}
+    return _with_identity(payload)
+
+
 def build_relative_outcome_label(
     *, prediction_id: str, ticker: str, as_of_date: str,
     security_history: pd.DataFrame, benchmark_history: pd.DataFrame | None,

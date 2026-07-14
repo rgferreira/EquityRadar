@@ -6,7 +6,10 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from src.utils.config import DATABASE_PATH
-from src.model_registry import coverage_aware_shadow_registration, current_model_registration
+from src.model_registry import (
+    coverage_aware_shadow_registration, current_model_registration,
+    previous_live_model_registration,
+)
 
 
 def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
@@ -329,10 +332,26 @@ def init_db(db_path: str | Path | None = None) -> None:
                 email_error TEXT,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS model_promotion_events (
+                promoted_model_version TEXT PRIMARY KEY,
+                previous_model_version TEXT NOT NULL,
+                decision_type TEXT NOT NULL,
+                gates_passed INTEGER NOT NULL,
+                gates_total INTEGER NOT NULL,
+                override_reason TEXT,
+                rollback_model_version TEXT NOT NULL,
+                superseded_by TEXT,
+                promoted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
         }
+        promotion_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(model_promotion_events)")
+        }
+        if "superseded_by" not in promotion_columns:
+            connection.execute("ALTER TABLE model_promotion_events ADD COLUMN superseded_by TEXT")
         if "base_currency" not in snapshot_columns:
             connection.execute(
                 "ALTER TABLE portfolio_snapshots ADD COLUMN base_currency TEXT NOT NULL DEFAULT 'USD'"
@@ -359,7 +378,15 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('known_at_semantics_v1')"
         )
-        for model in (current_model_registration(), coverage_aware_shadow_registration()):
+        promotion_applied = connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration_key='coverage_aware_live_promotion_v2'"
+        ).fetchone()
+        if not promotion_applied:
+            connection.execute("UPDATE model_registry SET is_active=0, is_champion=0")
+        for model in (
+            previous_live_model_registration(), coverage_aware_shadow_registration(),
+            current_model_registration(),
+        ):
             existing_model = connection.execute(
                 "SELECT config_hash, config_json FROM model_registry WHERE model_version = ?",
                 (model["model_version"],),
@@ -377,6 +404,42 @@ def init_db(db_path: str | Path | None = None) -> None:
                     "model_version", "config_json", "config_hash", "status", "is_active", "is_champion",
                 )),
             )
+        if not promotion_applied:
+            current = current_model_registration()
+            previous = previous_live_model_registration()
+            connection.execute(
+                """UPDATE model_registry SET is_active=0, is_champion=0,
+                   status=CASE WHEN status='champion' THEN 'retired' ELSE status END
+                   WHERE model_version<>?""",
+                (current["model_version"],),
+            )
+            connection.execute(
+                """UPDATE model_registry SET is_active=1, is_champion=1, status='champion',
+                   promoted_at=CURRENT_TIMESTAMP WHERE model_version=?""",
+                (current["model_version"],),
+            )
+            connection.execute(
+                "UPDATE model_registry SET status='retired' WHERE model_version=?",
+                (previous["model_version"],),
+            )
+            connection.execute(
+                """INSERT OR IGNORE INTO model_promotion_events
+                   (promoted_model_version, previous_model_version, decision_type,
+                    gates_passed, gates_total, override_reason, rollback_model_version)
+                   VALUES (?, ?, 'explicit_human_all_gates', 6, 6, NULL, ?)""",
+                (
+                    current["model_version"], previous["model_version"], previous["model_version"],
+                ),
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (migration_key) VALUES ('coverage_aware_live_promotion_v2')"
+            )
+        connection.execute(
+            """UPDATE model_promotion_events SET superseded_by=?
+               WHERE promoted_model_version='coverage-aware-renormalized-v2-live'
+               AND superseded_by IS NULL""",
+            (current_model_registration()["model_version"],),
+        )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_registry_snapshots_v1')"
         )

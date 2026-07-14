@@ -7,7 +7,10 @@ from typing import Mapping
 
 import pandas as pd
 
-from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
+from src.scoring.decision import (
+    calculate_coverage_aware_entry_score, calculate_exit_review_score,
+    entry_label, exit_review_label,
+)
 from src.scoring.risk import calculate_risk_score
 from src.scoring.technical import calculate_technical_score
 from src.scoring.valuation import calculate_valuation_score
@@ -54,7 +57,9 @@ def reconstruct_signal(
     risk = calculate_risk_score(metrics, trailing)
     usable_fundamentals = fundamentals if evidence_available(fundamentals, as_of) else None
     valuation = calculate_valuation_score(usable_fundamentals)
-    entry = calculate_entry_score(technical, valuation, risk)
+    entry = calculate_coverage_aware_entry_score(
+        technical, valuation, risk, valuation_available=bool(usable_fundamentals),
+    )
     exit_score = calculate_exit_review_score(technical, risk)
     eligible_positioning = [
         row for row in (positioning_history or []) if evidence_available(row, as_of)

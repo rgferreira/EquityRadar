@@ -1,7 +1,7 @@
 # Internal changelog
 
-Current checkpoint: **Phase 3.7 - Decision-aware learning**  
-Latest release commit: `337926b` (`feat: add extended-hours market awareness`, 2026-07-14)
+Current checkpoint: **Phase 3.9 - Coverage-aware live model**
+Latest release: `coverage-aware-renormalized-v3-live` promotion, 2026-07-14
 
 ## Checkpoints and informal phases
 
@@ -16,6 +16,8 @@ Latest release commit: `337926b` (`feat: add extended-hours market awareness`, 2
 | 3.5 - Position-aware decisions | Owned positions receive Add/Hold/Monitor/Trim/Exit actions; unowned securities remain initiation decisions |
 | 3.6 - FINRA refinement | Watchlist-wide historical backfill, cutoff-safe score rebuilds and explicit coverage discipline |
 | 3.7 - Decision-aware learning | Learning-value gate, smart cutoffs, confirmed episodes, accuracy views, simulation markers, model-v4 orthogonality and extended-hours awareness |
+| 3.8 - Scientific hardening | Learning quarantine, known-at semantics, immutable model registry, benchmark-relative outcomes and purged evaluation |
+| 3.9 - Model tuning and promotion | Coverage-aware shadow evidence, six readiness gates, persisted gate universe, explicit promotion and reversible historical materialization |
 
 ## Scoring-model lineage
 
@@ -23,10 +25,11 @@ Latest release commit: `337926b` (`feat: add extended-hours market awareness`, 2
 2. **Industry-calibrated Entry:** 25% Business quality + 30% Peer value + 20% Technical timing + 15% Risk resilience + 10% Analyst sentiment.
 3. **Positioning modifiers:** official FINRA and market evidence are reliability-gated and capped at +/-5 Entry points and +/-7 Exit-review points; missing evidence is neutral.
 4. **Backtested learning v1-v3:** original decisions are evaluated against comparable monthly 1M/3M/6M outcomes weighted 50%/30%/20%; provisional evidence remains visible but cannot train scores.
-5. **Current model - `backtested-learning-v4-orthogonal`:** duplicate drawdown evidence was removed from Technical, analyst actions were removed from Positioning, Technical weights were rescaled, and all saved cutoffs were rebuilt.
+5. **Orthogonal model - `backtested-learning-v4-orthogonal`:** duplicate drawdown evidence was removed from Technical, analyst actions were removed from Positioning, Technical weights were rescaled, and all saved cutoffs were rebuilt.
 6. **Phase 3.8 temporal variant - `backtested-learning-v4-orthogonal-known-at-v1`:** weights remain unchanged, but newly generated historical scores admit non-price evidence only with verified `known_at`; legacy v4 research remains preserved and quarantined.
-7. **Phase 3.8 registered candidate:** the temporal variant now has a deterministic configuration hash; new predictions freeze input references and outputs, while no model is designated champion before purged evaluation.
-6. **Confirmed-episode rule:** only informative independent episodes with matured 3M outcomes train scores; at least three are required; the learning modifier is capped at +/-5 points.
+7. **Phase 3.8 registered policy:** the temporal variant has a deterministic configuration hash and predictions freeze input references and outputs.
+8. **Phase 3.9 champion - `coverage-aware-renormalized-v3-live`:** verified valuation preserves 50/30/20 Technical/Valuation/Risk; unavailable valuation contributes no placeholder and Technical/Risk renormalize to 5/7 and 2/7. Industry-calibrated and Exit-review policies remain unchanged.
+9. **Confirmed-episode rule:** only informative independent episodes with matured 3M outcomes contribute to visible accuracy; backtested-learning score modifiers remain quarantined.
 
 ## Operating principles
 

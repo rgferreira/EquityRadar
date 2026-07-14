@@ -14,6 +14,7 @@ from src.data.database import (
 from src.model_tuning import (
     build_model_tuning_report, cumulative_date_evidence, prepare_shadow_comparisons,
 )
+from src.model_registry import CURRENT_MODEL_VERSION, PREVIOUS_LIVE_MODEL_VERSION
 from src.outcome_labels import RELATIVE_LABEL_VERSION
 from src.ui import inject_app_styles, page_header, style_figure, zebra_table
 
@@ -36,13 +37,17 @@ st.set_page_config(page_title="Model tuning | Personal Equity Radar", page_icon=
 inject_app_styles()
 init_db()
 page_header(
-    "Phase 3.9 research console", "Model tuning",
-    "Confront the active policy with its inactive coverage-aware shadow on identical evidence.",
-    "Read-only · No automatic promotion",
+    "Phase 3.9 promotion archive", "Model tuning",
+    "Review the frozen live-versus-shadow evidence behind the coverage-aware promotion.",
+    "Promoted manually · Reversible",
 )
 st.warning(
-    "Shadow results are experimental evidence, not investment guidance. This page cannot change "
-    "the active model, weights, thresholds, scores, or diagnostics.", icon="⚠️",
+    "Historical comparison evidence is not proof of durable benchmark outperformance. This page "
+    "cannot change the active model, weights, thresholds, scores, or diagnostics.", icon="⚠️",
+)
+st.success(
+    f"{CURRENT_MODEL_VERSION} is live after all 6/6 readiness gates cleared. "
+    f"{PREVIOUS_LIVE_MODEL_VERSION} remains the rollback anchor."
 )
 
 comparisons = prepare_shadow_comparisons(
@@ -50,7 +55,7 @@ comparisons = prepare_shadow_comparisons(
     get_outcome_labels(label_version=RELATIVE_LABEL_VERSION), horizon="3M",
 )
 if not comparisons:
-    st.info("No shadow snapshots have accumulated yet.")
+    st.info("No archived live-versus-promoted comparison snapshots are available yet.")
     st.stop()
 
 tickers = sorted({str(row["ticker"]) for row in comparisons})
@@ -119,8 +124,8 @@ for index, criterion in enumerate(gate["criteria"]):
             st.caption(f"Required: {criterion['required']}")
             st.caption(str(criterion["purpose"]))
 st.caption(
-    "All gates are mandatory. Green means eligible for a deliberate human promotion review—not proven "
-    "alpha, not approval, and never automatic activation."
+    "This frozen 6/6 gate record supported an explicit human promotion decision. It is not proof of "
+    "durable benchmark outperformance and never triggers execution."
 )
 
 metrics = st.columns(6)
@@ -141,13 +146,13 @@ summary_tab, outcomes_tab, drilldown_tab, lineage_tab = st.tabs([
 ])
 
 with summary_tab:
-    st.subheader("Where the shadow differs")
+    st.subheader("Where the promoted policy differed")
     left, right = st.columns(2)
     frame = pd.DataFrame(filtered)
     with left:
         histogram = px.histogram(
             frame, x="score_delta", color="coverage_mode", nbins=24,
-            labels={"score_delta": "Shadow − live Entry score", "count": "Snapshots"},
+            labels={"score_delta": "Promoted − former live Entry score", "count": "Snapshots"},
         )
         st.plotly_chart(style_figure(histogram, height=390), use_container_width=True)
     with right:
@@ -157,7 +162,8 @@ with summary_tab:
         )
         transition_chart = px.bar(
             transitions, x="live_signal", y="snapshots", color="shadow_signal",
-            barmode="stack", labels={"live_signal": "Live signal", "shadow_signal": "Shadow signal"},
+            barmode="stack",
+            labels={"live_signal": "Former live signal", "shadow_signal": "Promoted signal"},
         )
         st.plotly_chart(style_figure(transition_chart, height=390), use_container_width=True)
     timeline = (
@@ -174,7 +180,7 @@ with summary_tab:
         opacity=.35, yaxis="y2",
     ))
     timeline_chart.update_layout(
-        yaxis={"title": "Shadow − live points"},
+        yaxis={"title": "Promoted − former live points"},
         yaxis2={"title": "Changes", "overlaying": "y", "side": "right", "rangemode": "tozero"},
     )
     st.plotly_chart(style_figure(timeline_chart, height=400), use_container_width=True)
@@ -206,7 +212,8 @@ with outcomes_tab:
             var_name="policy", value_name="expanding_utility_pct",
         )
         curve_long["policy"] = curve_long["policy"].map({
-            "live_expanding_utility_pct": "Live", "shadow_expanding_utility_pct": "Shadow",
+            "live_expanding_utility_pct": "Former live",
+            "shadow_expanding_utility_pct": "Promoted policy",
         })
         chart = px.line(
             curve_long, x="as_of_date", y="expanding_utility_pct", color="policy", markers=True,
@@ -270,6 +277,6 @@ with lineage_tab:
 
 st.divider()
 st.caption(
-    "Promotion boundary · This console is observational. Model activation requires an explicit, "
-    "reviewable and reversible decision after preregistered evidence gates are met."
+    f"Promotion record · {CURRENT_MODEL_VERSION} is active and {PREVIOUS_LIVE_MODEL_VERSION} is the "
+    "rollback anchor. Historical evidence remains immutable."
 )

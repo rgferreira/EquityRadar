@@ -2,10 +2,10 @@
 
 ## Phase 3.9 — Model tuning research console
 
-- A dedicated read-only page compares the active decision policy with the inactive coverage-aware shadow model.
+- A dedicated read-only page preserves the former-live versus coverage-aware promotion evidence.
 - Paired 3M benchmark-relative outcomes use identical ticker/cutoff evidence and date-clustered uncertainty intervals.
 - Score deltas, signal transitions, maturity, expanding utility and ticker/regime/source drill-downs are visible without exposing model activation controls.
-- Evidence gates remain advisory and cannot promote or mutate the active model.
+- All six readiness gates cleared; explicit human promotion activated immutable version `coverage-aware-renormalized-v3-live`, with the former live version retained as rollback anchor.
 - Dashboard navigation reuses provider data when a full-watchlist refresh completed less than one minute earlier; explicit refresh remains available and bypasses the cooldown.
 
 This is the detailed implementation record. For the live backlog and phase boundary, see [`next-best-actions.md`](next-best-actions.md); for the compact phase/model narrative, see [`internal-changelog.md`](internal-changelog.md); for all document roles, see [`README.md`](README.md).
@@ -38,7 +38,7 @@ This is the detailed implementation record. For the live backlog and phase bound
 - Phase 3.8 PR-003 governance: explicit active-candidate/champion registry, content-hashed input snapshots, immutable prediction identities and outputs, append-only compatibility outcomes, visible legacy separation, and offline structured replay.
 - Phase 3.8 PR-004 labels: append-only benchmark-relative 1M/3M/6M outcomes with next-session execution, explicit benchmark/cost/timing provenance, missing-evidence states, and six-month drawdown.
 - Phase 3.8 PR-005 evaluator: deterministic offline rolling-origin folds with horizon-aware purge/embargo, decision-date clustering, shared frozen baselines, uncertainty intervals, append-only reports, and no live-score or promotion path.
-- Phase 3.9 shadow foundation: registered inactive coverage-aware candidate, immutable current-versus-shadow snapshots from Dashboard refreshes and new simulations, and strict failure isolation with no visible score or model-activity change.
+- Phase 3.9 promotion: the coverage-aware policy removes unavailable valuation from the composite and renormalizes verified technical/risk evidence; 440 historical runs, predictions and labels were materialized additively under the promoted version while all prior rows remain immutable.
 - Extended-hours continuity: after post-market closes and before the next pre-market opens, Dashboard Price uses the latest after-hours print with a `POST` badge rather than reverting to the regular close.
 - Historical bootstrap completed for the current watchlist, with 129–205 official FINRA observations per ticker. Missing current evidence still produces a zero adjustment.
 - Missing official FINRA history now backfills automatically for every equity added to the Watchlist and when Dashboard or Company detects a coverage gap; the Company chart rerenders when the background job completes. Non-equity instruments remain explicitly without FINRA coverage.

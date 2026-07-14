@@ -3,27 +3,27 @@
 Date: 2026-07-14
 Branch: `phase/3.9-coverage-aware-model`
 
-This note preserves the product-level explanation given at the Phase 3.9 live-model boundary. Phase 3.9 currently introduces an **inactive, coverage-aware shadow model** for observation and validation; it does not activate or promote that model into the live decision policy.
+This note records the Phase 3.9 live-model boundary. The coverage-aware shadow cleared all six readiness gates and was explicitly promoted as `coverage-aware-renormalized-v3-live` on 2026-07-14.
 
 ## How has the visible decision-accuracy level changed, and why?
 
-Visible decision accuracy can change only when additional legacy simulation outcomes become available or existing outcomes mature. The Phase 3.8 purged evaluator and the Phase 3.9 shadow comparison do not feed their research results into the accuracy percentage shown in the UI. Their purpose is to evaluate the model independently without contaminating the live accuracy history or presenting unvalidated evidence as proven skill.
+Visible decision accuracy now selects additive simulations materialized under the active promoted version. Prior runs and outcomes were not rewritten. It will continue changing as new outcomes mature and new simulations add independent episodes.
 
 ## How have visible Entry and Exit scores changed, and why?
 
-The material live-score change occurred in Phase 3.8 PR-001, when backtested-learning modifiers were quarantined because their evidence was not sufficiently independent or reliable. That removed those modifiers from live Entry and Exit decisions. The subsequent Phase 3.8 hardening work and the current Phase 3.9 shadow foundation have not changed the active model's weights, thresholds, visible scores, or diagnostics. The coverage-aware challenger is being calculated and stored alongside the current model, but remains inactive.
+Entry scores now use the promoted coverage-aware policy: verified valuation keeps the 50/30/20 technical/valuation/risk composite, while unavailable valuation contributes nothing and technical/risk weights renormalize to 5/7 and 2/7. Industry-calibrated decisions and Exit-review scoring remain unchanged.
 
 ## How are scores expected to evolve?
 
-Active scores will continue to move with new market prices, fundamentals, industry calibration, technical conditions, risk, analyst evidence, and market-positioning inputs under the current live policy. Shadow scores will accumulate in parallel and will show how a coverage-aware policy would have behaved. They should affect visible decisions only after a preregistered evaluation demonstrates stable improvement across independent dates, relative outcomes, baselines, and downside checks, followed by an explicit promotion decision.
+Active scores continue to move with market prices, verified fundamentals, industry calibration, technical conditions, risk, analyst evidence and positioning. Prospective evidence will show whether the promotion advantage persists. There is no new shadow until a distinct next hypothesis is preregistered.
 
 ## How should simulations work, and are they still useful?
 
-Suggested and custom simulations remain useful, but they are optional research actions rather than a requirement for operating the dashboard. A confirmed simulation should reconstruct only information known at its cutoff date, persist immutable model inputs and predictions, and later attach benchmark-relative outcomes when those horizons mature. Suggested dates help target informative regimes; custom dates support specific hypotheses. Users should avoid repeatedly choosing favorable or highly correlated dates, because that can inflate apparent accuracy. Under Phase 3.9, simulations also create shadow-model comparisons without changing the live decision shown to the user.
+Suggested and custom simulations remain useful optional research actions. They now persist predictions under the promoted live version and later attach benchmark-relative outcomes. They no longer create comparisons for the already-promoted v1 shadow.
 
 ## Practical interpretation
 
-- The UI continues to show the current active model.
-- Phase 3.9 shadow outputs are research evidence, not live recommendations.
+- The UI now shows the promoted coverage-aware live model.
+- Former shadow outputs remain immutable promotion evidence.
 - Simulations enrich the evidence base but do not automatically validate or promote a model.
 - Any live-model activation remains a separate, explicit, reversible decision.

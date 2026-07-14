@@ -4,7 +4,10 @@ from src.scoring.risk import calculate_risk_score, explain_risk_score
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.total import calculate_total_score
 from src.scoring.valuation import calculate_valuation_score, valuation_score_breakdown
-from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
+from src.scoring.decision import (
+    calculate_coverage_aware_entry_score, calculate_entry_score,
+    calculate_exit_review_score, entry_label, exit_review_label,
+)
 
 
 def test_technical_score_for_strong_momentum():
@@ -60,3 +63,12 @@ def test_decision_scores_have_clear_opposing_meaning():
     assert calculate_exit_review_score(80, 70) == 24.0
     assert entry_label(75) == "Buy candidate"
     assert exit_review_label(75) == "Sell review"
+
+
+def test_promoted_entry_policy_renormalizes_only_when_valuation_is_unavailable():
+    assert calculate_coverage_aware_entry_score(
+        80, 50, 60, valuation_available=False,
+    ) == 74.3
+    assert calculate_coverage_aware_entry_score(
+        80, 50, 60, valuation_available=True,
+    ) == 67.0

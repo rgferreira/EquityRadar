@@ -78,7 +78,7 @@ def test_shadow_snapshot_is_immutable_and_models_remain_inactive(tmp_path):
         save_shadow_decision_snapshot({**snapshot, "entry_score_delta": 99}, database)
 
 
-def test_historical_shadow_backfill_is_idempotent(tmp_path):
+def test_promoted_shadow_backfill_is_archived(tmp_path):
     database = tmp_path / "backfill.db"
     model = current_model_registration()
     prediction = build_prediction_snapshot(
@@ -90,6 +90,6 @@ def test_historical_shadow_backfill_is_idempotent(tmp_path):
     first = backfill_shadow_history(database)
     second = backfill_shadow_history(database)
 
-    assert first == {"attempted": 1, "created": 1, "signal_changes": 1}
-    assert second == {"attempted": 1, "created": 0, "signal_changes": 1}
-    assert len(get_shadow_decision_snapshots("SYNTH", database)) == 1
+    assert first == {"attempted": 0, "created": 0, "signal_changes": 0}
+    assert second == first
+    assert get_shadow_decision_snapshots("SYNTH", database) == []

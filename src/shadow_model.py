@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import Mapping
 
 from src.model_registry import (
-    canonical_json, content_hash, coverage_aware_shadow_registration,
+    COVERAGE_AWARE_PROMOTED, canonical_json, content_hash, coverage_aware_shadow_registration,
     current_model_registration,
 )
 from src.scoring.decision import entry_label
@@ -104,6 +104,8 @@ def backfill_shadow_history(db_path: object = None) -> dict[str, int]:
         get_prediction_snapshots, get_shadow_decision_snapshots, save_shadow_decision_snapshot,
     )
 
+    if COVERAGE_AWARE_PROMOTED:
+        return {"attempted": 0, "created": 0, "signal_changes": 0}
     before = len(get_shadow_decision_snapshots(db_path=db_path))
     attempted = changed = 0
     for prediction in get_prediction_snapshots(db_path=db_path):

@@ -4,18 +4,20 @@ import streamlit as st
 
 from src.data.database import acknowledge_model_gate_modal
 from src.model_gate_alerts import process_model_gate_alert
-from src.model_registry import COVERAGE_AWARE_SHADOW_VERSION
+from src.model_registry import COVERAGE_AWARE_PROMOTED, COVERAGE_AWARE_SHADOW_VERSION
 
 st.set_page_config(
     page_title="Personal Equity Radar", page_icon="📈", layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-try:
-    gate_report, gate_alert_state = process_model_gate_alert()
-except Exception:
-    # Alerting is advisory infrastructure and must never prevent app access.
-    gate_report = gate_alert_state = None
+gate_report = gate_alert_state = None
+if not COVERAGE_AWARE_PROMOTED:
+    try:
+        gate_report, gate_alert_state = process_model_gate_alert()
+    except Exception:
+        # Alerting is advisory infrastructure and must never prevent app access.
+        gate_report = gate_alert_state = None
 
 if (
     gate_alert_state

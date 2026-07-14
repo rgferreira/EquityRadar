@@ -6,12 +6,15 @@ import hashlib
 import json
 from typing import Mapping
 
-from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
+from src.scoring.decision import (
+    calculate_coverage_aware_entry_score, calculate_entry_score,
+    calculate_exit_review_score, entry_label, exit_review_label,
+)
 from src.scoring.positioning import apply_positioning_adjustment
 
 
-CURRENT_MODEL_VERSION = "backtested-learning-v4-orthogonal-known-at-v1"
-CURRENT_MODEL_CONFIG: dict[str, object] = {
+PREVIOUS_LIVE_MODEL_VERSION = "backtested-learning-v4-orthogonal-known-at-v1"
+PREVIOUS_LIVE_MODEL_CONFIG: dict[str, object] = {
     "entry_model": "absolute-entry-v1",
     "exit_model": "technical-risk-exit-v1",
     "technical_features": "orthogonal-v4",
@@ -32,6 +35,23 @@ COVERAGE_AWARE_SHADOW_CONFIG: dict[str, object] = {
     "role": "inactive_shadow_only",
 }
 
+CURRENT_MODEL_VERSION = "coverage-aware-renormalized-v3-live"
+COVERAGE_AWARE_PROMOTED = True
+CURRENT_MODEL_CONFIG: dict[str, object] = {
+    **COVERAGE_AWARE_SHADOW_CONFIG,
+    "role": "live_champion",
+    "promoted_from": COVERAGE_AWARE_SHADOW_VERSION,
+    "previous_live": PREVIOUS_LIVE_MODEL_VERSION,
+    "promotion_evidence": {
+        "paired_3m_observations": 378,
+        "live_accuracy_pct": 43.12,
+        "shadow_accuracy_pct": 46.83,
+        "gates_passed": 6,
+        "gates_total": 6,
+        "manual_override": None,
+    },
+}
+
 
 def canonical_json(value: Mapping[str, object] | list[object]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -46,8 +66,19 @@ def current_model_registration() -> dict[str, object]:
         "model_version": CURRENT_MODEL_VERSION,
         "config_json": canonical_json(CURRENT_MODEL_CONFIG),
         "config_hash": content_hash(CURRENT_MODEL_CONFIG),
-        "status": "candidate",
+        "status": "champion",
         "is_active": 1,
+        "is_champion": 1,
+    }
+
+
+def previous_live_model_registration() -> dict[str, object]:
+    return {
+        "model_version": PREVIOUS_LIVE_MODEL_VERSION,
+        "config_json": canonical_json(PREVIOUS_LIVE_MODEL_CONFIG),
+        "config_hash": content_hash(PREVIOUS_LIVE_MODEL_CONFIG),
+        "status": "retired",
+        "is_active": 0,
         "is_champion": 0,
     }
 
@@ -102,8 +133,15 @@ def replay_prediction(snapshot: Mapping[str, object], tolerance: float = 1e-9) -
     valuation = float(features["valuation_score"])
     risk = float(features["risk_score"])
     positioning = inputs.get("positioning_adjustments") or {}
+    promoted = str(snapshot.get("model_version")) == CURRENT_MODEL_VERSION
+    base_entry = (
+        calculate_coverage_aware_entry_score(
+            technical, valuation, risk,
+            valuation_available=(inputs.get("temporal_coverage") or {}).get("fundamentals") == "verified_known_at",
+        ) if promoted else calculate_entry_score(technical, valuation, risk)
+    )
     entry = apply_positioning_adjustment(
-        calculate_entry_score(technical, valuation, risk),
+        base_entry,
         float(positioning.get("entry_adjustment") or 0),
     )
     exit_score = apply_positioning_adjustment(

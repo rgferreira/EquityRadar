@@ -38,7 +38,10 @@ from src.data.extended_hours_refresh import extended_hours_refresh_status, sched
 from src.data.extended_hours import effective_extended_quote
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
-from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
+from src.scoring.decision import (
+    calculate_coverage_aware_entry_score, calculate_exit_review_score,
+    entry_label, exit_review_label,
+)
 from src.scoring.valuation import calculate_valuation_score, explain_valuation_score
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
@@ -53,6 +56,7 @@ from src.data.backtest_refresh import (
 )
 from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
 from src.shadow_model import build_shadow_snapshot, meaningful_valuation_available
+from src.model_registry import COVERAGE_AWARE_PROMOTED
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -395,7 +399,10 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
             calibrated_entry = (
                 float(industry_breakdown["score"])
-                if industry_research else calculate_entry_score(technical, valuation, risk)
+                if industry_research else calculate_coverage_aware_entry_score(
+                    technical, valuation, risk,
+                    valuation_available=meaningful_valuation_available(fundamentals),
+                )
             )
             positioning_modifier = positioning_score_adjustments(
                 get_cached_positioning(ticker), get_positioning_history(ticker), technical,
@@ -421,24 +428,25 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                 "exit_score": calibrated_exit,
                 "exit_signal": exit_review_label(calibrated_exit),
             }
-            try:
-                save_shadow_decision_snapshot(build_shadow_snapshot(
-                    ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
-                    inputs={
-                        "features": {"technical_score": technical, "valuation_score": valuation,
-                                     "risk_score": risk},
-                        "positioning_adjustments": {
-                            "entry_adjustment": positioning_modifier["entry_adjustment"],
-                            "exit_adjustment": positioning_modifier["exit_adjustment"],
+            if not COVERAGE_AWARE_PROMOTED:
+                try:
+                    save_shadow_decision_snapshot(build_shadow_snapshot(
+                        ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
+                        inputs={
+                            "features": {"technical_score": technical, "valuation_score": valuation,
+                                         "risk_score": risk},
+                            "positioning_adjustments": {
+                                "entry_adjustment": positioning_modifier["entry_adjustment"],
+                                "exit_adjustment": positioning_modifier["exit_adjustment"],
+                            },
+                            "valuation_available": meaningful_valuation_available(fundamentals),
+                            "industry_calibrated": bool(industry_research),
                         },
-                        "valuation_available": meaningful_valuation_available(fundamentals),
-                        "industry_calibrated": bool(industry_research),
-                    },
-                    current_outputs=current_outputs,
-                ))
-            except Exception:
-                # Shadow research must never block or alter the live dashboard.
-                pass
+                        current_outputs=current_outputs,
+                    ))
+                except Exception:
+                    # Shadow research must never block or alter the live dashboard.
+                    pass
             rows.append({
                 "Ticker": ticker,
                 "Price": metrics["latest_price"],
@@ -743,7 +751,7 @@ if rows:
             display_frame, set(portfolio_tickers), "historical", price_freshness, company_names,
             daily_changes, extended_quotes, gate_exclusions,
         )
-    st.caption("❌ Excluded from shadow-model promotion gates; data collection remains active.")
+    st.caption("❌ Excluded from model-evolution evidence; data collection remains active.")
     st.html(
         "<div class='industry-legend' style='display:flex;flex-wrap:wrap;gap:.35rem 1rem;"
         "margin:.45rem 0 .8rem;color:#9aa4b2;font-size:.78rem'>"

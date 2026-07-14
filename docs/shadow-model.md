@@ -1,6 +1,6 @@
-# Coverage-aware shadow candidate
+# Coverage-aware shadow promotion archive
 
-Phase 3.9 begins with `coverage-aware-renormalized-v1` registered as an **inactive candidate**. The current `backtested-learning-v4-orthogonal-known-at-v1` model remains the only active model and continues to power every visible score, diagnostic, and portfolio action.
+`coverage-aware-renormalized-v1` began as an inactive candidate and accumulated immutable comparisons. On 2026-07-14 all six readiness gates cleared and the policy was explicitly promoted as `coverage-aware-renormalized-v3-live`. The former `backtested-learning-v4-orthogonal-known-at-v1` model remains the rollback anchor.
 
 ## Shadow contract
 
@@ -11,16 +11,10 @@ Phase 3.9 begins with `coverage-aware-renormalized-v1` registered as an **inacti
 - Exit scores remain unchanged.
 - Shadow failures are isolated and cannot block dashboard rows or historical simulations.
 
-`shadow_decision_snapshots` stores immutable input, current output, candidate output, hashes, delta, label-change flag, surface, and both registered model identities. Dashboard refreshes and new historical simulations write comparisons, but no shadow value is rendered or consumed by live decision code.
+`shadow_decision_snapshots` stores immutable input, former-live output, promoted-policy output, hashes, delta, label-change flag, surface, and both registered model identities. These rows are now a frozen promotion archive; no new comparison is generated for this already-promoted hypothesis.
 
-Existing immutable predictions can be compared without refetching or rewriting them:
+Historical promotion materialization created additive prediction, run and label rows under the new live identity without refetching or rewriting the source evidence.
 
-```bash
-python -m scripts.backfill_shadow_history
-```
+## Promotion and rollback
 
-The operation is idempotent and writes only additive shadow rows.
-
-## Activation gate and rollback
-
-The candidate cannot become active by accumulation, filename, version ordering, or evaluator output. Activation requires an explicit model-registry operation and user approval after evidence review. Rollback removes shadow producers/consumers while preserving append-only snapshots; the Phase 3.8 tag and private SQLite backup remain the full code/data restoration point.
+The model became active only through an explicit user decision after a 6/6 gate record. Rollback reactivates the registered former version and restores its code policy; append-only predictions, labels, runs and shadow snapshots remain preserved. A future shadow requires a distinct, preregistered hypothesis—it is not created automatically by this promotion.

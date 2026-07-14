@@ -17,13 +17,17 @@ from src.data.positioning_refresh import finra_backfill_status, positioning_refr
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.scoring.risk import calculate_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score
-from src.scoring.decision import calculate_exit_review_score, entry_label, exit_review_label
-from src.scoring.valuation import valuation_score_breakdown
+from src.scoring.decision import (
+    calculate_coverage_aware_entry_score, calculate_exit_review_score,
+    entry_label, exit_review_label,
+)
+from src.scoring.valuation import calculate_valuation_score, valuation_score_breakdown
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
 from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, style_figure, zebra_table
+from src.shadow_model import meaningful_valuation_available
 
 st.set_page_config(page_title="Company | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -153,6 +157,7 @@ try:
     learning_modifier = learned_score_adjustments(backtest_runs)
     learning_policy = governed_learning_adjustments(learning_modifier)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
+    absolute_valuation = calculate_valuation_score(fundamentals)
     extended_quote = get_extended_hours_quote(ticker)
 
     if extended_quote:
@@ -270,7 +275,13 @@ try:
     if visible_marker_types:
         st.caption("Simulation markers · blue = manual · purple = completed suggestion · gold = suggested and pending")
 
-    base_entry_score = float(industry_breakdown["score"])
+    base_entry_score = (
+        float(industry_breakdown["score"])
+        if industry_research else calculate_coverage_aware_entry_score(
+            technical, absolute_valuation, risk,
+            valuation_available=meaningful_valuation_available(fundamentals),
+        )
+    )
     base_exit_score = calculate_exit_review_score(technical, risk)
     entry_score = apply_positioning_adjustment(base_entry_score, float(positioning_modifier["entry_adjustment"]))
     exit_score = apply_positioning_adjustment(base_exit_score, float(positioning_modifier["exit_adjustment"]))
@@ -338,32 +349,60 @@ try:
     fundamentals_points = business_quality * .25 + relative_valuation * .30
     market_points = technical_timing * .20 + risk_resilience * .15
     analyst_points = analyst_sentiment * .10
-    entry_card_rows = [
-        (
+    positioning_card = (
+        f"Market positioning modifier ({float(positioning_modifier['entry_adjustment']):+.1f})",
+        ["Reliability-gated · capped at ±5 Entry points",
+         f"Evidence reliability · {float(positioning_modifier['reliability']):.0f}/100"],
+    )
+    if industry_research:
+        entry_card_rows = [
             (
-                f"55% · Fundamentals & valuation (+{fundamentals_points:.2f})",
-                [f"25% Business quality · {business_quality:.1f} (+{business_quality * .25:.2f})",
-                 f"30% Peer value · {relative_valuation:.1f} (+{relative_valuation * .30:.2f})"],
+                (
+                    f"55% · Fundamentals & valuation (+{fundamentals_points:.2f})",
+                    [f"25% Business quality · {business_quality:.1f} (+{business_quality * .25:.2f})",
+                     f"30% Peer value · {relative_valuation:.1f} (+{relative_valuation * .30:.2f})"],
+                ),
+                (
+                    f"35% · Market metrics (+{market_points:.2f})",
+                    [f"20% Technical timing · {technical_timing:.1f} (+{technical_timing * .20:.2f})",
+                     f"15% Risk resilience · {risk_resilience:.1f} (+{risk_resilience * .15:.2f})"],
+                ),
             ),
             (
-                f"35% · Market metrics (+{market_points:.2f})",
-                [f"20% Technical timing · {technical_timing:.1f} (+{technical_timing * .20:.2f})",
-                 f"15% Risk resilience · {risk_resilience:.1f} (+{risk_resilience * .15:.2f})"],
+                (
+                    f"10% · Industry & analysts (+{analyst_points:.2f})",
+                    [f"10% Analyst sentiment · {analyst_sentiment:.1f} (+{analyst_points:.2f})",
+                     "Industry cohort calibrates quality and valuation above"],
+                ),
+                positioning_card,
             ),
-        ),
-        (
+        ]
+    else:
+        valuation_available = meaningful_valuation_available(fundamentals)
+        technical_weight = .50 if valuation_available else 5 / 7
+        risk_weight = .20 if valuation_available else 2 / 7
+        valuation_weight = .30 if valuation_available else 0
+        entry_card_rows = [
             (
-                f"10% · Industry & analysts (+{analyst_points:.2f})",
-                [f"10% Analyst sentiment · {analyst_sentiment:.1f} (+{analyst_points:.2f})",
-                 "Industry cohort calibrates quality and valuation above"],
+                (
+                    f"{technical_weight:.1%} · Technical evidence (+{technical * technical_weight:.2f})",
+                    [f"Technical timing · {technical:.1f}/100",
+                     "Weights renormalized only across available evidence"],
+                ),
+                (
+                    f"{risk_weight:.1%} · Risk resilience (+{risk * risk_weight:.2f})",
+                    [f"Risk resilience · {risk:.1f}/100", "Exit policy remains unchanged"],
+                ),
             ),
             (
-                f"Market positioning modifier ({float(positioning_modifier['entry_adjustment']):+.1f})",
-                ["Reliability-gated · capped at ±5 Entry points",
-                 f"Evidence reliability · {float(positioning_modifier['reliability']):.0f}/100"],
+                (
+                    f"{valuation_weight:.1%} · Valuation (+{absolute_valuation * valuation_weight:.2f})",
+                    [f"Absolute valuation · {absolute_valuation:.1f}/100",
+                     "Unavailable valuation contributes no neutral placeholder"],
+                ),
+                positioning_card,
             ),
-        ),
-    ]
+        ]
     for card_row in entry_card_rows:
         card_columns = st.columns(2)
         for column, (title, details) in zip(card_columns, card_row):

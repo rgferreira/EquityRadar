@@ -8,6 +8,18 @@ def calculate_entry_score(technical: int | float, valuation: int | float, risk: 
     return calculate_total_score(technical, valuation, risk)
 
 
+def calculate_coverage_aware_entry_score(
+    technical: int | float, valuation: int | float, risk: int | float, *,
+    valuation_available: bool,
+) -> float:
+    """Promoted policy: renormalize verified factors when valuation is unavailable."""
+    if valuation_available:
+        score = float(technical) * .50 + float(valuation) * .30 + float(risk) * .20
+    else:
+        score = float(technical) * (5 / 7) + float(risk) * (2 / 7)
+    return round(max(0.0, min(100.0, score)), 1)
+
+
 def calculate_exit_review_score(technical: int | float, risk: int | float) -> float:
     """Higher means the holding deserves more urgent sell/reassess review."""
     return round((100 - technical) * 0.60 + (100 - risk) * 0.40, 1)

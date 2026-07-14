@@ -21,7 +21,10 @@ from src.model_registry import (
     current_model_registration,
     replay_prediction,
 )
-from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
+from src.scoring.decision import (
+    calculate_coverage_aware_entry_score, calculate_exit_review_score,
+    entry_label, exit_review_label,
+)
 
 
 def sample_snapshot():
@@ -32,7 +35,9 @@ def sample_snapshot():
         "temporal_coverage": {"price": "end_of_day_cutoff", "fundamentals": "missing", "finra": "missing"},
         "input_references": {"prices": {"cutoff": "2026-05-08", "observations": 253}},
     }
-    entry = min(100, calculate_entry_score(70, 60, 80) + 1.5)
+    entry = min(100, calculate_coverage_aware_entry_score(
+        70, 60, 80, valuation_available=False,
+    ) + 1.5)
     exit_score = max(0, calculate_exit_review_score(70, 80) - 2.0)
     outputs = {
         "entry_score": entry, "exit_score": exit_score,
@@ -43,17 +48,24 @@ def sample_snapshot():
     )
 
 
-def test_registry_seeds_active_candidate_without_claiming_champion(tmp_path):
+def test_registry_seeds_promoted_champion_and_preserves_rollback_model(tmp_path):
     database = tmp_path / "registry.db"
     init_db(database)
     init_db(database)
     models = get_registered_models(database)
 
-    assert len(models) == 2
+    assert len(models) == 3
     active = next(model for model in models if model["is_active"] == 1)
     shadow = next(model for model in models if model["model_version"] == "coverage-aware-renormalized-v1")
-    assert active["status"] == "candidate"
-    assert active["is_champion"] == 0
+    previous = next(
+        model for model in models
+        if model["model_version"] == "backtested-learning-v4-orthogonal-known-at-v1"
+    )
+    assert active["model_version"] == "coverage-aware-renormalized-v3-live"
+    assert active["status"] == "champion"
+    assert active["is_champion"] == 1
+    assert previous["status"] == "retired"
+    assert previous["is_active"] == 0
     assert shadow["status"] == "candidate"
     assert shadow["is_active"] == 0
     assert shadow["is_champion"] == 0
@@ -129,12 +141,11 @@ def test_simulation_worker_writes_replayable_immutable_prediction(tmp_path, monk
 
     snapshots = get_prediction_snapshots("TEST", database)
     assert len(snapshots) == 1
-    assert snapshots[0]["model_status"] == "candidate"
+    assert snapshots[0]["model_status"] == "champion"
     assert snapshots[0]["is_active"] == 1
     assert replay_prediction(snapshots[0])["status"] == "exact_match"
     shadow = get_shadow_decision_snapshots("TEST", database)
-    assert len(shadow) == 1
-    assert shadow[0]["surface"] == "historical_simulation"
+    assert shadow == []
     compatibility = get_backtest_runs("TEST", database)[0]
     assert compatibility["has_prediction_snapshot"] == 1
 
