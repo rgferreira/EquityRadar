@@ -159,7 +159,8 @@ def decision_outcome(run: Mapping[str, object]) -> dict[str, object]:
     available_weight = sum(LEARNING_WEIGHTS[label] for label in monthly)
     if not monthly:
         return {"composite": None, "decision_utility": None, "verdict": "Pending outcomes",
-                "coverage": 0.0, "should_learn": False, "learning_priority": 0,
+                "coverage": 0.0, "should_evaluate": False, "should_learn": False,
+                "maturity": "Provisional", "learning_priority": 0,
                 "learning_reason": "No 1M/3M/6M outcome has matured"}
     composite = sum(monthly[label] * LEARNING_WEIGHTS[label] for label in monthly) / available_weight
     signal = str(run.get("entry_signal") or "Wait")

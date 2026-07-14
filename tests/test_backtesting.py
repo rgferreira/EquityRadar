@@ -118,6 +118,18 @@ def test_one_month_only_outcome_is_provisional_and_does_not_change_learning():
     assert result["should_learn"] is False
 
 
+def test_pending_outcomes_are_provisional_and_safe_for_evaluation_selection():
+    run = {"as_of_date": "2026-07-13", "entry_signal": "Watch", "entry_score": 60,
+           "outcome_1m": None, "outcome_3m": None, "outcome_6m": None}
+
+    result = decision_outcome(run)
+
+    assert result["maturity"] == "Provisional"
+    assert result["should_evaluate"] is False
+    assert result["should_learn"] is False
+    assert select_learning_observations([run], confirmed_only=False) == []
+
+
 def test_watch_tolerates_modest_upside_but_not_a_large_missed_move():
     modest = decision_outcome({"entry_signal": "Watch", "entry_score": 65,
                                "outcome_1m": 1, "outcome_3m": 3, "outcome_6m": 6})
