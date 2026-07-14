@@ -6,6 +6,7 @@
 - Paired 3M benchmark-relative outcomes use identical ticker/cutoff evidence and date-clustered uncertainty intervals.
 - Score deltas, signal transitions, maturity, expanding utility and ticker/regime/source drill-downs are visible without exposing model activation controls.
 - Evidence gates remain advisory and cannot promote or mutate the active model.
+- Dashboard navigation reuses provider data when a full-watchlist refresh completed less than one minute earlier; explicit refresh remains available and bypasses the cooldown.
 
 This is the detailed implementation record. For the live backlog and phase boundary, see [`next-best-actions.md`](next-best-actions.md); for the compact phase/model narrative, see [`internal-changelog.md`](internal-changelog.md); for all document roles, see [`README.md`](README.md).
 

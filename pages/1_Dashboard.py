@@ -24,6 +24,10 @@ from src.data.database import (
     init_db,
 )
 from src.data.market_data import calculate_metrics, clear_market_data_cache, fetch_price_history, get_price_history_fetched_at
+from src.data.dashboard_refresh import (
+    automatic_dashboard_refresh_due, last_dashboard_provider_refresh_at,
+    record_dashboard_provider_refresh,
+)
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
@@ -348,7 +352,11 @@ if historical_mode and refresh:
 elif not historical_mode and (refresh or initial_refresh or st.session_state.get("dashboard_rows_mode") == "historical"):
     # Set this before fetching so a provider error does not cause a refresh loop.
     st.session_state.dashboard_initial_refresh_done = True
-    clear_market_data_cache()
+    automatic_provider_refresh = not refresh and automatic_dashboard_refresh_due()
+    provider_refresh = refresh or automatic_provider_refresh
+    if provider_refresh:
+        clear_market_data_cache()
+    st.session_state.dashboard_provider_refresh_skipped = initial_refresh and not provider_refresh
     rows, errors = [], []
     progress_text = "Loading fresh market data…" if initial_refresh else "Fetching market data…"
     progress = st.progress(0, text=progress_text)
@@ -458,9 +466,18 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             errors.append(f"{ticker}: {exc}")
         progress.progress(index / len(tickers), text=f"Fetched {index} of {len(tickers)}")
     progress.empty()
+    completed_refresh_at = datetime.now()
+    if provider_refresh:
+        record_dashboard_provider_refresh(completed_refresh_at)
+    provider_refreshed_at = (
+        completed_refresh_at if provider_refresh else last_dashboard_provider_refresh_at()
+    )
     st.session_state.dashboard_rows = rows
     st.session_state.dashboard_errors = errors
-    st.session_state.last_refreshed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.session_state.last_refreshed_at = (
+        provider_refreshed_at.strftime("%Y-%m-%d %H:%M:%S")
+        if provider_refreshed_at else completed_refresh_at.strftime("%Y-%m-%d %H:%M:%S")
+    )
     st.session_state.dashboard_rows_mode = "present"
 
 if historical_mode:
@@ -1019,6 +1036,8 @@ if rows:
             if requested_historical_mode else
             "Prices refresh automatically on first load. Use refresh to request fresh provider data."
         )
+        if not requested_historical_mode and st.session_state.get("dashboard_provider_refresh_skipped"):
+            st.caption("Recent provider data reused · automatic full-watchlist refresh is limited to once per minute.")
 if errors:
     st.error("Some data could not be fetched:")
     for error in errors:
