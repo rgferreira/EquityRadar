@@ -9,6 +9,8 @@ import streamlit as st
 
 from src.backup import create_verified_backup, verify_backup_manifest
 from src.operations import get_operation_runs, provider_health, run_due_maintenance
+from src.data.database import get_positioning_history, get_watchlist
+from src.evidence_monitoring import options_evidence_report
 from src.ui import inject_app_styles, page_header, zebra_table
 
 
@@ -67,3 +69,22 @@ with verify_col:
         (st.success if result["valid"] else st.error)(
             "Backup and manifest are valid." if result["valid"] else "Backup verification failed."
         )
+
+st.subheader("Options evidence continuity")
+st.caption(
+    "Monitoring only. Options evidence remains excluded from live scores until continuity, overlap, "
+    "and a separate purged evaluation all pass."
+)
+options_report = pd.DataFrame(options_evidence_report({
+    ticker: get_positioning_history(ticker) for ticker in get_watchlist()
+}))
+if options_report.empty:
+    st.info("No watchlist options history is available yet.")
+else:
+    options_report["research_ready"] = options_report["research_ready"].map(
+        {True: "🟢 Coverage ready", False: "🔴 Accumulating"}
+    )
+    st.dataframe(zebra_table(options_report), hide_index=True, width="stretch")
+    st.caption(
+        "Coverage-ready means eligible for an offline experiment—not eligible for scoring or promotion."
+    )
