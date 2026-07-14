@@ -12,8 +12,9 @@ The first coverage-aware challenger later accumulated 378 matured paired observa
 
 ## Phase 3.9 operational acceptance — completed
 
-The post-promotion monitor, synthetic all-page UI regression suite, provider-health console, server-lifetime
-scheduler, verified daily backups, options-continuity gate, research alerts and non-executing Scenario lab
+The post-promotion monitor, all-page AppTest and real desktop/phone Chromium regression suites,
+full provider-state console, server-lifetime scheduler, verified daily backups and isolated restore drills,
+options-continuity gate, material research alerts and non-executing Scenario lab
 are implemented. See [`releases/phase-3.9/ACCEPTANCE-2026-07-14.md`](releases/phase-3.9/ACCEPTANCE-2026-07-14.md).
 
 The next model-research action is to continue collecting genuinely prospective evidence. The
@@ -46,7 +47,7 @@ The original Phase 4 list has largely been delivered early through Portfolio and
 | Dividend tracking | Ledger implemented; forecasting/calendar/growth remain Phase 4 |
 | Target allocations and rebalancing | Implemented before Phase 4 |
 | Scheduled refresh and provider health | Server-lifetime scheduling and Operations health view implemented in Phase 3.9 |
-| Automated end-to-end UI tests | Synthetic all-page AppTest suite implemented; targeted real-browser acceptance remains part of releases |
+| Automated end-to-end UI tests | All-page AppTest plus repeatable 16-route/viewport Chromium acceptance implemented |
 
 ## Completed internal phases
 

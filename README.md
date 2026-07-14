@@ -12,7 +12,7 @@ Phase 3.8 also provides immutable prediction snapshots, versioned benchmark-rela
 
 Historical simulations now require verified point-in-time `known_at` metadata for fundamentals, analyst/cohort and positioning evidence. Period ends, settlement dates and legacy fetch timestamps are never silently treated as publication dates; see `docs/temporal-data-contract.md`.
 
-New simulations also create immutable, content-hashed input and prediction snapshots under an explicit model registry. The active research model remains a candidate—not a promoted champion—and legacy runs stay visibly unregistered; see `docs/model-governance.md`.
+New simulations also create immutable, content-hashed input and prediction snapshots under an explicit model registry. The coverage-aware policy is the explicitly promoted live champion; the former live model remains registered as its rollback anchor and legacy runs remain immutable; see `docs/model-governance.md`.
 
 ## Setup
 
@@ -32,12 +32,18 @@ Set `FMP_API_KEY` in `.env` to enable Financial Modeling Prep as the primary fun
 streamlit run app.py
 ```
 
-Add tickers in **Decision dashboard**, value current holdings in **Portfolio**, then use **Company** to inspect one- or three-year charts and target-price upside/downside. Use **Journal** to record, filter, edit, delete, and export thesis entries.
+Add tickers in **Watchlist**, value holdings in **Portfolio**, then use **Company** for single-name research. **Model tuning** monitors prospective model evidence, **Operations** exposes provider/recovery health, and **Scenario lab** evaluates hypothetical allocation changes without execution or persistence.
 
 ## Tests
 
 ```bash
 pytest
+```
+
+With the local server running, render every route at desktop and phone dimensions:
+
+```bash
+python -m scripts.run_ui_acceptance
 ```
 
 ## Scoring
@@ -47,7 +53,7 @@ pytest
 - Risk (0–100): lower drawdown and lower annualized daily volatility produce a higher score.
 - Entry score: 50% technical, 30% valuation, 20% risk. It expresses potential entry/add attractiveness, not a trading instruction.
 - Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
-- Decision-aware backtested learning: historical simulations are stored per ticker and their original decision is judged against subsequent returns. Buy, Watch and Wait have distinct utility: Watch tolerates modest upside while awaiting confirmation, whereas a material rally is a missed opportunity. Comparable monthly 1M/3M/6M returns are combined at 50%/30%/20%. Headline accuracy and score modifiers use only informative, 3M-confirmed independent decision episodes; 1M-only results remain visible as provisional. At least three confirmed episodes are required before a visible modifier capped at ±5 affects Entry (with the opposite Exit-review adjustment).
+- Archived decision-aware learning: historical simulations are stored per ticker and their original decision is judged against subsequent returns. Buy, Watch and Wait have distinct research utility, but the legacy learning modifier is scientifically quarantined and contributes exactly zero to current Entry/Exit scores.
 - Position-aware decision layer: unowned companies use initiation decisions, while holdings translate the same company evidence into Add/Hold/Monitor/Trim/Exit using current weight, optional target weight and concentration. This changes the action, not the underlying company research scores.
 
 ## Time Machine and point-in-time learning
