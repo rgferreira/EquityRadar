@@ -123,6 +123,57 @@ def calculate_rebalance(
     return rows
 
 
+def simulate_allocation_scenario(
+    current_values: Mapping[str, float], proposed_trades: Mapping[str, float], *,
+    current_cash: float = 0.0, external_cash_change: float = 0.0,
+) -> dict[str, object]:
+    """Apply hypothetical dollar trades without changing portfolio persistence."""
+    tickers = sorted(set(current_values) | set(proposed_trades))
+    after_values: dict[str, float] = {}
+    for ticker in tickers:
+        after = float(current_values.get(ticker, 0)) + float(proposed_trades.get(ticker, 0))
+        if after < -1e-9:
+            raise ValueError(f"Hypothetical sale exceeds the {ticker} position value")
+        after_values[ticker] = max(0.0, after)
+    after_cash = float(current_cash) + float(external_cash_change) - sum(
+        float(value) for value in proposed_trades.values()
+    )
+    if after_cash < -1e-9:
+        raise ValueError("Hypothetical purchases exceed available cash plus the external cash change")
+    before_total = sum(float(value) for value in current_values.values()) + float(current_cash)
+    after_total = sum(after_values.values()) + max(0.0, after_cash)
+
+    def weights(values: Mapping[str, float], cash: float, total: float) -> dict[str, float]:
+        result = {ticker: value / total * 100 if total else 0.0 for ticker, value in values.items()}
+        result["Cash"] = cash / total * 100 if total else 0.0
+        return result
+
+    before_weights = weights(current_values, float(current_cash), before_total)
+    after_weights = weights(after_values, max(0.0, after_cash), after_total)
+    rows = [{
+        "ticker": ticker,
+        "current_value": float(current_values.get(ticker, 0)),
+        "proposed_trade": float(proposed_trades.get(ticker, 0)),
+        "after_value": after_values[ticker],
+        "before_weight_pct": before_weights.get(ticker, 0.0),
+        "after_weight_pct": after_weights.get(ticker, 0.0),
+        "weight_change_pp": after_weights.get(ticker, 0.0) - before_weights.get(ticker, 0.0),
+    } for ticker in tickers]
+    investable_after = [value for ticker, value in after_weights.items() if ticker != "Cash"]
+    return {
+        "rows": rows,
+        "before_total": before_total,
+        "after_total": after_total,
+        "after_cash": max(0.0, after_cash),
+        "before_max_weight_pct": max(
+            (value for ticker, value in before_weights.items() if ticker != "Cash"), default=0.0,
+        ),
+        "after_max_weight_pct": max(investable_after, default=0.0),
+        "before_hhi": sum((value / 100) ** 2 for ticker, value in before_weights.items() if ticker != "Cash"),
+        "after_hhi": sum((value / 100) ** 2 for value in investable_after),
+    }
+
+
 def calculate_portfolio_history(
     holdings: list[Mapping[str, object]], histories: Mapping[str, pd.DataFrame],
     currencies: Mapping[str, str] | None = None,

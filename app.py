@@ -58,6 +58,7 @@ pages = [
     st.Page("pages/0_Watchlist.py", title="Watchlist", icon="⚙️", url_path="Watchlist"),
     st.Page("pages/5_Model_Tuning.py", title="Model tuning", icon="🧪", url_path="Model-tuning"),
     st.Page("pages/6_Operations.py", title="Operations", icon="🩺", url_path="Operations"),
+    st.Page("pages/7_Scenario_Lab.py", title="Scenario lab", icon="🧭", url_path="Scenario-lab"),
 ]
 navigation = st.navigation(pages, position="sidebar", expanded=False)
 navigation.run()

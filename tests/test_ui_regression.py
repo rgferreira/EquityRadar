@@ -20,6 +20,7 @@ PAGES = (
     ("pages/0_Watchlist.py", "Watchlist management"),
     ("pages/5_Model_Tuning.py", "Model tuning"),
     ("pages/6_Operations.py", "Operations"),
+    ("pages/7_Scenario_Lab.py", "Scenario lab"),
 )
 
 
