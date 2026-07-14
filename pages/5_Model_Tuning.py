@@ -8,7 +8,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.data.database import (
-    get_outcome_labels, get_prediction_snapshots, get_shadow_decision_snapshots, init_db,
+    get_model_gate_exclusions, get_outcome_labels, get_prediction_snapshots,
+    get_shadow_decision_snapshots, init_db, save_model_gate_exclusions,
 )
 from src.model_tuning import (
     build_model_tuning_report, cumulative_date_evidence, prepare_shadow_comparisons,
@@ -52,9 +53,36 @@ if not comparisons:
     st.info("No shadow snapshots have accumulated yet.")
     st.stop()
 
+tickers = sorted({str(row["ticker"]) for row in comparisons})
+persisted_gate_exclusions = get_model_gate_exclusions()
+gate_universe_options = sorted(set(tickers) | set(persisted_gate_exclusions))
+with st.expander("Promotion gate universe", expanded=True):
+    st.caption(
+        "Excluded tickers retain every snapshot, simulation and outcome, but do not contribute "
+        "to the six promotion-readiness gates or clearance notifications."
+    )
+    pending_gate_exclusions = st.multiselect(
+        "Excluded from promotion gates", gate_universe_options,
+        default=persisted_gate_exclusions,
+        key="pending_model_gate_exclusions",
+    )
+    save_gate_universe = st.button("Save gate universe", type="primary")
+    if save_gate_universe:
+        save_model_gate_exclusions(pending_gate_exclusions)
+        st.success("Promotion gate universe saved. All underlying evidence remains intact.")
+        st.rerun()
+    if persisted_gate_exclusions:
+        st.caption("Currently excluded · " + " · ".join(persisted_gate_exclusions))
+    else:
+        st.caption("No tickers are currently excluded from promotion gates.")
+
+gate_comparisons = [
+    row for row in comparisons if row["ticker"] not in set(persisted_gate_exclusions)
+]
+gate_report = build_model_tuning_report(gate_comparisons)
+
 with st.expander("Filter research evidence", expanded=False):
     filter_cols = st.columns(4)
-    tickers = sorted({str(row["ticker"]) for row in comparisons})
     modes = sorted({str(row["coverage_mode"]) for row in comparisons})
     sources = sorted({str(row["simulation_source"]) for row in comparisons})
     selected_tickers = filter_cols[0].multiselect("Tickers", tickers, default=tickers)
@@ -70,8 +98,8 @@ filtered = [
     and (not changed_only or row["signal_changed"])
 ]
 report = build_model_tuning_report(filtered)
-coverage = report["coverage"]
-gate = report["gate"]
+coverage = gate_report["coverage"]
+gate = gate_report["gate"]
 
 status_color = {
     "Collecting evidence": "blue", "Inconclusive": "orange",
@@ -102,6 +130,11 @@ metrics[2].metric("Matured 3M", int(coverage["matured_observations"]))
 metrics[3].metric("Matured dates", int(coverage["matured_dates"]))
 metrics[4].metric("Signal changes", int(coverage["signal_changes"]))
 metrics[5].metric("Changed dates", int(coverage["changed_dates"]))
+st.caption(
+    f"Gate universe · {coverage['tickers']} included tickers · "
+    f"{len(set(tickers) & set(persisted_gate_exclusions))} excluded with current evidence · "
+    "exploratory filters below do not change the gates."
+)
 
 summary_tab, outcomes_tab, drilldown_tab, lineage_tab = st.tabs([
     "Evidence overview", "Paired outcomes", "Drill-downs", "Lineage & maturity",

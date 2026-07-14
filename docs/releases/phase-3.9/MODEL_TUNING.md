@@ -30,3 +30,9 @@ This gate is deliberately conservative and never promotes a model. Activation re
 When all six gates transition from red/inconclusive to green, the application persists a single clearance event, shows a modal on load until it is acknowledged, and attempts one email notification. A continuously green state does not generate repeated alerts as new observations arrive. If the gates later fall below the threshold and subsequently clear again, a new event is created.
 
 Email delivery is optional infrastructure configured only through local environment variables. Missing or failed email configuration never blocks the application and never changes model activation.
+
+## Persisted gate universe
+
+The Model tuning page stores a default list of tickers excluded only from promotion-readiness calculations and clearance notifications. SPY, BTC-USD and SPCX are the initial defaults. Users can change and persist this universe without repeatedly applying exploratory filters.
+
+Exclusion never removes or rewrites snapshots, simulations, predictions or outcomes. All-ticker exploration remains available; the gate panel explicitly reports the included and excluded counts. Transient chart filters do not alter the promotion gates.

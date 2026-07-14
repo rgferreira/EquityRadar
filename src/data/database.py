@@ -504,6 +504,43 @@ def update_model_gate_email_status(
         )
 
 
+DEFAULT_MODEL_GATE_EXCLUSIONS = ("SPY", "BTC-USD", "SPCX")
+
+
+def get_model_gate_exclusions(db_path: str | Path | None = None) -> list[str]:
+    """Return the persisted gate-only exclusion universe without deleting evidence."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            "SELECT value_json FROM ui_preferences WHERE preference_key='model_gate_exclusions'"
+        ).fetchone()
+        if row is None:
+            value = sorted(DEFAULT_MODEL_GATE_EXCLUSIONS)
+            connection.execute(
+                """INSERT INTO ui_preferences (preference_key, value_json, updated_at)
+                   VALUES ('model_gate_exclusions', ?, CURRENT_TIMESTAMP)""",
+                (json.dumps(value),),
+            )
+            return value
+    return sorted({str(item).strip().upper() for item in json.loads(row["value_json"]) if str(item).strip()})
+
+
+def save_model_gate_exclusions(
+    tickers: list[str], db_path: str | Path | None = None,
+) -> None:
+    """Persist exclusions used only by promotion-readiness calculations."""
+    normalized = sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()})
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT INTO ui_preferences (preference_key, value_json, updated_at)
+               VALUES ('model_gate_exclusions', ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(preference_key) DO UPDATE SET value_json=excluded.value_json,
+                   updated_at=CURRENT_TIMESTAMP""",
+            (json.dumps(normalized),),
+        )
+
+
 def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = None) -> None:
     """Persist a reproducible point-in-time simulation and its separated outcomes."""
     init_db(db_path)

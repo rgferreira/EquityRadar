@@ -32,6 +32,8 @@ from src.data.database import (
     get_active_backtest,
     save_active_backtest,
     init_db,
+    get_model_gate_exclusions,
+    save_model_gate_exclusions,
 )
 
 
@@ -47,6 +49,18 @@ def test_active_backtest_date_persists_and_clears(tmp_path):
     assert get_active_backtest(database) == "2026-05-08"
     save_active_backtest(None, database)
     assert get_active_backtest(database) is None
+
+
+def test_model_gate_exclusions_have_defaults_and_persist_without_touching_watchlist(tmp_path):
+    database = tmp_path / "radar.db"
+    add_ticker("SPY", database)
+    add_ticker("AAPL", database)
+
+    assert get_model_gate_exclusions(database) == ["BTC-USD", "SPCX", "SPY"]
+    save_model_gate_exclusions(["spy", "AAPL", "SPY"], database)
+
+    assert get_model_gate_exclusions(database) == ["AAPL", "SPY"]
+    assert set(get_watchlist(database)) == {"SPY", "AAPL"}
 
 
 def test_watchlist_add_and_remove(tmp_path):

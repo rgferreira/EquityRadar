@@ -11,6 +11,7 @@ from src.data.database import (
     get_cached_industry_research,
     get_cached_extended_hours_quote,
     get_cached_positioning,
+    get_model_gate_exclusions,
     save_dashboard_order,
     get_portfolio_holdings,
     get_portfolio_targets,
@@ -104,6 +105,7 @@ def render_dashboard_table(
     company_names: dict[str, str] | None = None,
     daily_changes: dict[str, float | None] | None = None,
     extended_quotes: dict[str, dict[str, object] | None] | None = None,
+    gate_exclusions: set[str] | None = None,
 ) -> None:
     """Render a responsive decision table with deterministic same-tab links."""
     labels = {
@@ -175,8 +177,13 @@ def render_dashboard_table(
         for column in frame.columns:
             if column == "Ticker":
                 company_name = (company_names or {}).get(ticker, "Company name unavailable")
+                excluded_marker = (
+                    "<span class='gate-excluded' title='Excluded from model-promotion gates' "
+                    "aria-label='Excluded from model-promotion gates'>❌</span> "
+                    if ticker in (gate_exclusions or set()) else ""
+                )
                 value = (
-                    f"<a class='ticker-company' href='/Company?ticker={quote(ticker)}' target='_top' "
+                    f"{excluded_marker}<a class='ticker-company' href='/Company?ticker={quote(ticker)}' target='_top' "
                     f"data-company-name='{html.escape(company_name, quote=True)}' "
                     f"aria-label='Open {html.escape(ticker)} company detail'>{html.escape(ticker)}</a>"
                 )
@@ -713,6 +720,7 @@ if rows:
     extended_quotes = {
         symbol: get_cached_extended_hours_quote(symbol) for symbol in frame["Ticker"].astype(str)
     } if not historical_mode else {}
+    gate_exclusions = set(get_model_gate_exclusions())
     if not historical_mode and portfolio_tickers:
         owned_frame = display_frame[display_frame["Ticker"].isin(portfolio_tickers)].copy()
         watchlist_frame = display_frame[~display_frame["Ticker"].isin(portfolio_tickers)].copy()
@@ -721,20 +729,21 @@ if rows:
             st.caption("Owned positions · sizing-aware Add / Hold / Monitor / Trim / Exit decisions")
             render_dashboard_table(
                 owned_frame, set(portfolio_tickers), "portfolio", price_freshness, company_names,
-                daily_changes, extended_quotes,
+                daily_changes, extended_quotes, gate_exclusions,
             )
         if not watchlist_frame.empty:
             st.markdown("#### Watchlist opportunities")
             st.caption("Unowned securities · potential position-initiation decisions")
             render_dashboard_table(
                 watchlist_frame, set(), "watchlist", price_freshness, company_names,
-                daily_changes, extended_quotes,
+                daily_changes, extended_quotes, gate_exclusions,
             )
     else:
         render_dashboard_table(
             display_frame, set(portfolio_tickers), "historical", price_freshness, company_names,
-            daily_changes, extended_quotes,
+            daily_changes, extended_quotes, gate_exclusions,
         )
+    st.caption("❌ Excluded from shadow-model promotion gates; data collection remains active.")
     st.html(
         "<div class='industry-legend' style='display:flex;flex-wrap:wrap;gap:.35rem 1rem;"
         "margin:.45rem 0 .8rem;color:#9aa4b2;font-size:.78rem'>"

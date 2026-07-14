@@ -104,3 +104,31 @@ def test_clearance_email_is_deduplicated_while_gates_remain_green(tmp_path, monk
     assert first["email_status"] == "sent"
     assert second["email_status"] == "sent"
     assert len(FakeSMTP.messages) == 1
+
+
+def test_gate_evidence_excludes_persisted_tickers_without_deleting_rows(tmp_path, monkeypatch):
+    import src.model_gate_alerts as alerts
+
+    rows = [
+        {"ticker": "SPY", "shadow_snapshot_id": "spy", "label_status": "available",
+         "outcome_end_date": "2026-01-01", "relative_return_pct": 1},
+        {"ticker": "AAPL", "shadow_snapshot_id": "aapl", "label_status": "available",
+         "outcome_end_date": "2026-01-01", "relative_return_pct": 2},
+    ]
+    captured = {}
+    monkeypatch.setattr(alerts, "get_shadow_decision_snapshots", lambda db_path=None: [1])
+    monkeypatch.setattr(alerts, "get_prediction_snapshots", lambda db_path=None: [1])
+    monkeypatch.setattr(alerts, "get_outcome_labels", lambda **kwargs: [1])
+    monkeypatch.setattr(alerts, "prepare_shadow_comparisons", lambda *args: rows)
+    monkeypatch.setattr(alerts, "get_model_gate_exclusions", lambda db_path=None: ["SPY"])
+
+    def capture_report(eligible):
+        captured["eligible"] = list(eligible)
+        return {"gate": {}}
+
+    monkeypatch.setattr(alerts, "build_model_tuning_report", capture_report)
+
+    alerts.current_gate_evidence(tmp_path / "alerts.db")
+
+    assert [row["ticker"] for row in captured["eligible"]] == ["AAPL"]
+    assert len(rows) == 2

@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Callable
 
 from src.data.database import (
-    get_outcome_labels, get_prediction_snapshots, get_shadow_decision_snapshots,
+    get_model_gate_exclusions, get_outcome_labels, get_prediction_snapshots,
+    get_shadow_decision_snapshots,
     sync_model_gate_alert_state, update_model_gate_email_status,
 )
 from src.model_registry import COVERAGE_AWARE_SHADOW_VERSION
@@ -47,15 +48,20 @@ def current_gate_evidence(db_path: str | Path | None = None) -> tuple[dict[str, 
         get_prediction_snapshots(db_path=db_path),
         get_outcome_labels(label_version=RELATIVE_LABEL_VERSION, db_path=db_path),
     )
-    report = build_model_tuning_report(rows)
+    exclusions = set(get_model_gate_exclusions(db_path))
+    gate_rows = [row for row in rows if row["ticker"] not in exclusions]
+    report = build_model_tuning_report(gate_rows)
     signature_rows = [{
         "shadow_snapshot_id": row["shadow_snapshot_id"],
         "label_status": row["label_status"],
         "outcome_end_date": row["outcome_end_date"],
         "relative_return_pct": row["relative_return_pct"],
-    } for row in rows]
+    } for row in gate_rows]
     signature = hashlib.sha256(
-        json.dumps(signature_rows, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(
+            {"excluded_tickers": sorted(exclusions), "evidence": signature_rows},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()
     ).hexdigest()
     return report, signature
 
