@@ -343,6 +343,28 @@ def init_db(db_path: str | Path | None = None) -> None:
                 superseded_by TEXT,
                 promoted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS operation_runs (
+                operation_key TEXT PRIMARY KEY,
+                status TEXT NOT NULL CHECK(status IN ('idle','running','completed','failed')),
+                started_at TEXT,
+                completed_at TEXT,
+                detail_json TEXT NOT NULL DEFAULT '{}',
+                error TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS research_alerts (
+                alert_id TEXT PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                alert_type TEXT NOT NULL,
+                severity TEXT NOT NULL CHECK(severity IN ('info','attention','critical')),
+                title TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                evidence_date TEXT NOT NULL,
+                evidence_json TEXT NOT NULL,
+                acknowledged_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ticker, alert_type, evidence_date)
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -457,6 +479,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_gate_alerts_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('operations_alerts_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -675,6 +700,19 @@ def get_registered_models(db_path: str | Path | None = None) -> list[dict[str, o
         return [dict(row) for row in connection.execute(
             "SELECT * FROM model_registry ORDER BY created_at, model_version"
         ).fetchall()]
+
+
+def get_model_promotion_event(
+    model_version: str, db_path: str | Path | None = None,
+) -> dict[str, object] | None:
+    """Return immutable promotion provenance for one registered model."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            "SELECT * FROM model_promotion_events WHERE promoted_model_version=?",
+            (model_version,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def register_model(model: Mapping[str, object], db_path: str | Path | None = None) -> None:

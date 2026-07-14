@@ -1,8 +1,40 @@
 import json
 
 from src.model_tuning import (
+    build_post_promotion_report,
     build_model_tuning_report, cumulative_date_evidence, prepare_shadow_comparisons,
 )
+
+
+def test_post_promotion_monitor_excludes_materialized_history():
+    predictions = [
+        {
+            "prediction_id": "old", "ticker": "AAA", "as_of_date": "2026-01-01",
+            "model_version": "v3", "created_at": "2026-07-14 10:00:00",
+            "output_json": '{"entry_signal":"Buy candidate"}',
+        },
+        {
+            "prediction_id": "new", "ticker": "AAA", "as_of_date": "2026-07-15",
+            "model_version": "v3", "created_at": "2026-07-15 10:00:00",
+            "output_json": '{"entry_signal":"Buy candidate"}',
+        },
+    ]
+    labels = [
+        {
+            "prediction_id": "old", "status": "available",
+            "outcomes_json": '{"3M":{"relative_return_after_cost_pct":-2}}',
+        },
+        {
+            "prediction_id": "new", "status": "available",
+            "outcomes_json": '{"3M":{"relative_return_after_cost_pct":4}}',
+        },
+    ]
+    report = build_post_promotion_report(
+        predictions, labels, model_version="v3", promoted_at="2026-07-14 12:00:00",
+    )
+    assert report["matured_observations"] == 1
+    assert report["independent_dates"] == 1
+    assert report["accuracy_pct"] == 100.0
 
 
 def shadow(identifier, decision_date, live_signal, candidate_signal, delta, *, ticker="AAA"):

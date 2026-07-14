@@ -5,11 +5,15 @@ import streamlit as st
 from src.data.database import acknowledge_model_gate_modal
 from src.model_gate_alerts import process_model_gate_alert
 from src.model_registry import COVERAGE_AWARE_PROMOTED, COVERAGE_AWARE_SHADOW_VERSION
+from src.operations import start_local_scheduler
 
 st.set_page_config(
     page_title="Personal Equity Radar", page_icon="📈", layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# Server-lifetime maintenance does not depend on a browser page remaining open.
+start_local_scheduler()
 
 gate_report = gate_alert_state = None
 if not COVERAGE_AWARE_PROMOTED:
@@ -53,6 +57,7 @@ pages = [
     st.Page("pages/4_Journal.py", title="Journal", icon="📝", url_path="Journal"),
     st.Page("pages/0_Watchlist.py", title="Watchlist", icon="⚙️", url_path="Watchlist"),
     st.Page("pages/5_Model_Tuning.py", title="Model tuning", icon="🧪", url_path="Model-tuning"),
+    st.Page("pages/6_Operations.py", title="Operations", icon="🩺", url_path="Operations"),
 ]
 navigation = st.navigation(pages, position="sidebar", expanded=False)
 navigation.run()

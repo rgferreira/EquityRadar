@@ -8,11 +8,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.data.database import (
-    get_model_gate_exclusions, get_outcome_labels, get_prediction_snapshots,
+    get_model_gate_exclusions, get_model_promotion_event, get_outcome_labels, get_prediction_snapshots,
     get_shadow_decision_snapshots, init_db, save_model_gate_exclusions,
 )
 from src.model_tuning import (
-    build_model_tuning_report, cumulative_date_evidence, prepare_shadow_comparisons,
+    build_model_tuning_report, build_post_promotion_report, cumulative_date_evidence,
+    prepare_shadow_comparisons,
 )
 from src.model_registry import CURRENT_MODEL_VERSION, PREVIOUS_LIVE_MODEL_VERSION
 from src.outcome_labels import RELATIVE_LABEL_VERSION
@@ -50,9 +51,37 @@ st.success(
     f"{PREVIOUS_LIVE_MODEL_VERSION} remains the rollback anchor."
 )
 
+predictions = get_prediction_snapshots()
+labels = get_outcome_labels(label_version=RELATIVE_LABEL_VERSION)
+promotion = get_model_promotion_event(CURRENT_MODEL_VERSION)
+if promotion:
+    prospective = build_post_promotion_report(
+        predictions, labels, model_version=CURRENT_MODEL_VERSION,
+        promoted_at=str(promotion["promoted_at"]),
+    )
+    with st.expander("Prospective post-promotion monitor", expanded=True):
+        st.caption(
+            "Only predictions created after the promotion timestamp count here. Historical rows "
+            "materialized at promotion remain excluded from this prospective check."
+        )
+        baseline = prospective["frozen_baseline"]
+        monitor_cols = st.columns(4)
+        monitor_cols[0].metric("Matured observations", prospective["matured_observations"])
+        monitor_cols[1].metric("Independent dates", prospective["independent_dates"])
+        monitor_cols[2].metric(
+            "Prospective accuracy",
+            "Collecting" if prospective["accuracy_pct"] is None else f"{prospective['accuracy_pct']:.2f}%",
+        )
+        monitor_cols[3].metric("Frozen promotion accuracy", f"{baseline['accuracy_pct']:.2f}%")
+        if prospective["status"] == "awaiting_maturity":
+            st.info("No genuinely post-promotion 3M outcomes have matured yet. This is expected.")
+        st.caption(
+            f"Frozen anchor · {baseline['observations']} observations · "
+            f"{baseline['independent_dates']} dates · former live {baseline['former_live_accuracy_pct']:.2f}%"
+        )
+
 comparisons = prepare_shadow_comparisons(
-    get_shadow_decision_snapshots(), get_prediction_snapshots(),
-    get_outcome_labels(label_version=RELATIVE_LABEL_VERSION), horizon="3M",
+    get_shadow_decision_snapshots(), predictions, labels, horizon="3M",
 )
 if not comparisons:
     st.info("No archived live-versus-promoted comparison snapshots are available yet.")

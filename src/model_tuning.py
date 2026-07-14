@@ -13,6 +13,12 @@ MIN_CHANGED_DATES = 5
 MIN_POSITIVE_DATE_SHARE = 0.60
 MAX_TICKER_CONCENTRATION = 0.35
 WATCH_TOLERANCE_PCT = 3.0
+PROMOTION_BASELINE = {
+    "observations": 378,
+    "independent_dates": 21,
+    "accuracy_pct": 46.83,
+    "former_live_accuracy_pct": 43.12,
+}
 
 
 def _json(value: object) -> dict[str, object]:
@@ -305,3 +311,55 @@ def cumulative_date_evidence(rows: Sequence[Mapping[str, object]]) -> list[dict[
             "independent_dates": len(live_means),
         })
     return result
+
+
+def build_post_promotion_report(
+    predictions: Sequence[Mapping[str, object]],
+    labels: Sequence[Mapping[str, object]], *, model_version: str, promoted_at: str,
+    horizon: str = "3M",
+) -> dict[str, object]:
+    """Measure only genuinely prospective evidence created after promotion.
+
+    Historical rows materialized during promotion are deliberately excluded by
+    their creation timestamp.  The frozen promotion baseline is a comparison
+    anchor, never recomputed from the mutable application database.
+    """
+    label_index = {str(row["prediction_id"]): row for row in labels}
+    by_date_accuracy: dict[str, list[float]] = defaultdict(list)
+    by_date_utility: dict[str, list[float]] = defaultdict(list)
+    matured = 0
+    for prediction in predictions:
+        if str(prediction.get("model_version")) != model_version:
+            continue
+        if str(prediction.get("created_at") or "") <= promoted_at:
+            continue
+        label = label_index.get(str(prediction.get("prediction_id")))
+        if not label or label.get("status") != "available":
+            continue
+        outcome = _json(label.get("outcomes_json") or label.get("outcomes")).get(horizon)
+        if not isinstance(outcome, Mapping):
+            continue
+        relative = outcome.get("relative_return_after_cost_pct")
+        if not isinstance(relative, (int, float)):
+            continue
+        output = _json(prediction.get("output_json"))
+        utility, correct = _policy_result(str(output.get("entry_signal") or "Wait"), float(relative))
+        decision_date = str(prediction["as_of_date"])
+        by_date_accuracy[decision_date].append(correct)
+        by_date_utility[decision_date].append(utility)
+        matured += 1
+    accuracy = _cluster_summary(by_date_accuracy)
+    utility = _cluster_summary(by_date_utility)
+    return {
+        "status": "monitoring" if matured else "awaiting_maturity",
+        "matured_observations": matured,
+        "independent_dates": accuracy["independent_dates"],
+        "accuracy_pct": (
+            round(float(accuracy["estimate"]) * 100, 2)
+            if accuracy["estimate"] is not None else None
+        ),
+        "utility_pct": utility["estimate"],
+        "accuracy_interval": accuracy,
+        "utility_interval": utility,
+        "frozen_baseline": dict(PROMOTION_BASELINE),
+    }
