@@ -263,6 +263,18 @@ def init_db(db_path: str | Path | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(config_hash, dataset_signature)
             );
+            CREATE TABLE IF NOT EXISTS challenger_experiment_runs (
+                experiment_id TEXT PRIMARY KEY,
+                challenger_version TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                config_hash TEXT NOT NULL,
+                dataset_signature TEXT NOT NULL,
+                report_json TEXT NOT NULL,
+                report_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('evaluated','insufficient_evidence')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(config_hash, dataset_signature)
+            );
             CREATE TABLE IF NOT EXISTS backtest_job_items (
                 as_of_date TEXT NOT NULL,
                 ticker TEXT NOT NULL,
@@ -336,6 +348,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('purged_evaluator_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('offline_challenger_reports_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -652,6 +667,44 @@ def get_evaluation_runs(db_path: str | Path | None = None) -> list[dict[str, obj
     with get_connection(db_path) as connection:
         rows = [dict(row) for row in connection.execute(
             "SELECT * FROM evaluation_runs ORDER BY created_at DESC, evaluation_id"
+        ).fetchall()]
+    for row in rows:
+        row["config"] = json.loads(str(row["config_json"]))
+        row["report"] = json.loads(str(row["report_json"]))
+    return rows
+
+
+def save_challenger_experiment(
+    report: Mapping[str, object], db_path: str | Path | None = None,
+) -> None:
+    """Persist an immutable research report without any model-registry mutation."""
+    init_db(db_path)
+    config_json = json.dumps(report["config"], sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    report_json = json.dumps(dict(report), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    fields = (
+        "experiment_id", "challenger_version", "config_json", "config_hash",
+        "dataset_signature", "report_json", "report_hash", "status",
+    )
+    values = {**dict(report), "config_json": config_json, "report_json": report_json}
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"INSERT OR IGNORE INTO challenger_experiment_runs ({', '.join(fields)}) "
+            f"VALUES ({', '.join('?' for _ in fields)})",
+            tuple(values[field] for field in fields),
+        )
+        stored = connection.execute(
+            "SELECT report_hash FROM challenger_experiment_runs WHERE experiment_id = ?",
+            (report["experiment_id"],),
+        ).fetchone()
+        if stored is None or stored["report_hash"] != report["report_hash"]:
+            raise ValueError("Immutable challenger experiment conflict")
+
+
+def get_challenger_experiments(db_path: str | Path | None = None) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = [dict(row) for row in connection.execute(
+            "SELECT * FROM challenger_experiment_runs ORDER BY created_at DESC, experiment_id"
         ).fetchall()]
     for row in rows:
         row["config"] = json.loads(str(row["config_json"]))

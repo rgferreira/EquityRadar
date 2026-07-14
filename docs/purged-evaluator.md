@@ -23,3 +23,5 @@ Use `--horizon`, `--embargo-days`, `--database`, or `--output` to make an altern
 ## Interpretation and rollback
 
 Small effective samples are expected and are a valid `insufficient_evidence` result. Reports are not evidence of alpha and are not a permission to tune repeatedly. Rollback removes the evaluator consumer/CLI while retaining immutable reports for audit.
+
+The first diagnostic motivated one explicitly pre-registered, offline-only missing-valuation experiment. Its frozen hypothesis and confirmation dates are documented in [`coverage-aware-challenger.md`](coverage-aware-challenger.md); it has no live-model or promotion path.
