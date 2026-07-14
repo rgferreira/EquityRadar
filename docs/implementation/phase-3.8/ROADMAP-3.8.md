@@ -8,7 +8,7 @@ Phase 3.8 converts the forensic audit into five small, reversible implementation
 2. **PR-002 — Known-at semantics — complete.** Source-specific point-in-time rules now exclude unverified legacy timestamps without rewriting them.
 3. **PR-003 — Model registry and immutable snapshots — complete.** Model selection is explicit and new predictions are immutable and replayable.
 4. **PR-004 — Relative outcomes — complete.** Version evaluation labels around benchmark-relative, delayed, cost-aware outcomes.
-5. **PR-005 — Purged evaluator — next.** Evaluate frozen predictions with rolling-origin splits, purge/embargo, baselines, and uncertainty.
+5. **PR-005 — Purged evaluator — complete.** Evaluate frozen predictions with rolling-origin splits, purge/embargo, baselines, and uncertainty.
 
 Dependency chain: PR-001 → PR-002 → PR-003 → PR-004 → PR-005. PR-001 is deliberately first because it reduces current scientific risk without waiting for the full evaluation platform.
 
@@ -29,4 +29,4 @@ Dependency chain: PR-001 → PR-002 → PR-003 → PR-004 → PR-005. PR-001 is 
 - PR-002 production implementation: complete; additive nullable migration, conservative new-snapshot capture, and no legacy-row promotion.
 - PR-003 production implementation: complete; additive registry/snapshot migration and no conversion of legacy rows.
 - PR-004 production implementation: complete; append-only versioned labels preserve benchmark, timing, cost, and downside provenance.
-- PR-005 production implementation: not started.
+- PR-005 production implementation: complete; offline reports use immutable labels, purged rolling-origin windows, date clustering, shared baselines, and no promotion path.

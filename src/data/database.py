@@ -250,6 +250,19 @@ def init_db(db_path: str | Path | None = None) -> None:
                 UNIQUE(prediction_id, label_version),
                 FOREIGN KEY(prediction_id) REFERENCES prediction_snapshots(prediction_id)
             );
+            CREATE TABLE IF NOT EXISTS evaluation_runs (
+                evaluation_id TEXT PRIMARY KEY,
+                evaluator_version TEXT NOT NULL,
+                label_version TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                config_hash TEXT NOT NULL,
+                dataset_signature TEXT NOT NULL,
+                report_json TEXT NOT NULL,
+                report_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('evaluated','insufficient_evidence')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(config_hash, dataset_signature)
+            );
             CREATE TABLE IF NOT EXISTS backtest_job_items (
                 as_of_date TEXT NOT NULL,
                 ticker TEXT NOT NULL,
@@ -320,6 +333,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('relative_outcome_labels_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('purged_evaluator_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -577,6 +593,69 @@ def get_outcome_labels(
         rows = [dict(row) for row in connection.execute(query, params).fetchall()]
     for row in rows:
         row["outcomes"] = json.loads(str(row["outcomes_json"]))
+    return rows
+
+
+def get_evaluation_dataset(
+    label_version: str, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Read immutable predictions joined only to the requested label contract."""
+    init_db(db_path)
+    query = """SELECT predictions.prediction_id, predictions.ticker, predictions.as_of_date,
+        predictions.model_version, predictions.config_hash, predictions.output_json,
+        predictions.output_hash, inputs.input_json, inputs.input_hash,
+        labels.label_version, labels.status AS label_status, labels.outcomes_json,
+        labels.outcome_hash, labels.execution_date, labels.benchmark_ticker,
+        labels.timing_convention, labels.cost_bps, labels.max_drawdown_6m_pct
+        FROM prediction_snapshots AS predictions
+        JOIN prediction_input_snapshots AS inputs USING(input_snapshot_id)
+        JOIN outcome_label_observations AS labels USING(prediction_id)
+        WHERE labels.label_version = ?
+        ORDER BY predictions.as_of_date, predictions.ticker"""
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(query, (label_version,)).fetchall()]
+
+
+def save_evaluation_run(
+    report: Mapping[str, object], db_path: str | Path | None = None,
+) -> None:
+    """Persist an immutable offline report; this has no model-promotion side effect."""
+    init_db(db_path)
+    config_json = json.dumps(
+        report["config"], sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    )
+    report_json = json.dumps(dict(report), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    fields = (
+        "evaluation_id", "evaluator_version", "label_version", "config_json", "config_hash",
+        "dataset_signature", "report_json", "report_hash", "status",
+    )
+    values = {
+        **dict(report), "label_version": report["config"]["label_version"],
+        "config_json": config_json, "report_json": report_json,
+    }
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"INSERT OR IGNORE INTO evaluation_runs ({', '.join(fields)}) "
+            f"VALUES ({', '.join('?' for _ in fields)})",
+            tuple(values[field] for field in fields),
+        )
+        stored = connection.execute(
+            "SELECT report_hash FROM evaluation_runs WHERE evaluation_id = ?",
+            (report["evaluation_id"],),
+        ).fetchone()
+        if stored is None or stored["report_hash"] != report["report_hash"]:
+            raise ValueError("Immutable evaluation report conflict")
+
+
+def get_evaluation_runs(db_path: str | Path | None = None) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = [dict(row) for row in connection.execute(
+            "SELECT * FROM evaluation_runs ORDER BY created_at DESC, evaluation_id"
+        ).fetchall()]
+    for row in rows:
+        row["config"] = json.loads(str(row["config_json"]))
+        row["report"] = json.loads(str(row["report_json"]))
     return rows
 
 

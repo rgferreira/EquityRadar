@@ -8,6 +8,8 @@ Company detail also includes market positioning: short interest, near-term optio
 
 Backtested-learning results are retained as transparent diagnostic research, but Phase 3.8 quarantines them from live Entry/Exit scores by default pending point-in-time and out-of-sample scientific validation.
 
+Phase 3.8 also provides immutable prediction snapshots, versioned benchmark-relative outcome labels, and an offline purged rolling-origin evaluator. These are research-governance tools, not proof of predictive skill or automated model-promotion machinery.
+
 Historical simulations now require verified point-in-time `known_at` metadata for fundamentals, analyst/cohort and positioning evidence. Period ends, settlement dates and legacy fetch timestamps are never silently treated as publication dates; see `docs/temporal-data-contract.md`.
 
 New simulations also create immutable, content-hashed input and prediction snapshots under an explicit model registry. The active research model remains a candidate—not a promoted champion—and legacy runs stay visibly unregistered; see `docs/model-governance.md`.
