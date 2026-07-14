@@ -24,3 +24,9 @@ The console labels evidence as **Collecting evidence**, **Inconclusive**, or **E
 6. evidence spanning at least three tickers, with no ticker contributing more than 35% of matured changed-signal observations.
 
 This gate is deliberately conservative and never promotes a model. Activation remains a separate, explicit and reversible governance decision.
+
+## Clearance notifications
+
+When all six gates transition from red/inconclusive to green, the application persists a single clearance event, shows a modal on load until it is acknowledged, and attempts one email notification. A continuously green state does not generate repeated alerts as new observations arrive. If the gates later fall below the threshold and subsequently clear again, a new event is created.
+
+Email delivery is optional infrastructure configured only through local environment variables. Missing or failed email configuration never blocks the application and never changes model activation.

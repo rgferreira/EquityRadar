@@ -316,6 +316,19 @@ def init_db(db_path: str | Path | None = None) -> None:
                 source_signature TEXT NOT NULL,
                 generated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS model_gate_alert_state (
+                candidate_model_version TEXT PRIMARY KEY,
+                gates_cleared INTEGER NOT NULL CHECK(gates_cleared IN (0,1)),
+                evidence_signature TEXT NOT NULL,
+                modal_acknowledged_at TEXT,
+                email_status TEXT NOT NULL CHECK(email_status IN (
+                    'dormant','pending','configuration_required','sent','failed'
+                )),
+                email_attempted_at TEXT,
+                email_sent_at TEXT,
+                email_error TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -379,6 +392,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('inactive_shadow_snapshots_v1')"
         )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_gate_alerts_v1')"
+        )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
         ).fetchone()
@@ -408,6 +424,84 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute(
                 "INSERT INTO schema_migrations (migration_key) VALUES ('portfolio_holdings_to_lots_v1')"
             )
+
+
+def sync_model_gate_alert_state(
+    candidate_model_version: str, *, gates_cleared: bool, evidence_signature: str,
+    db_path: str | Path | None = None,
+) -> dict[str, object]:
+    """Persist gate transitions without re-alerting for every new observation."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        existing = connection.execute(
+            "SELECT * FROM model_gate_alert_state WHERE candidate_model_version = ?",
+            (candidate_model_version,),
+        ).fetchone()
+        if existing is None:
+            connection.execute(
+                """INSERT INTO model_gate_alert_state
+                    (candidate_model_version, gates_cleared, evidence_signature, email_status)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    candidate_model_version, int(gates_cleared), evidence_signature,
+                    "pending" if gates_cleared else "dormant",
+                ),
+            )
+        elif bool(existing["gates_cleared"]) != gates_cleared:
+            connection.execute(
+                """UPDATE model_gate_alert_state
+                   SET gates_cleared=?, evidence_signature=?, modal_acknowledged_at=NULL,
+                       email_status=?, email_attempted_at=NULL, email_sent_at=NULL,
+                       email_error=NULL, updated_at=CURRENT_TIMESTAMP
+                   WHERE candidate_model_version=?""",
+                (
+                    int(gates_cleared), evidence_signature,
+                    "pending" if gates_cleared else "dormant", candidate_model_version,
+                ),
+            )
+        else:
+            connection.execute(
+                """UPDATE model_gate_alert_state
+                   SET evidence_signature=?, updated_at=CURRENT_TIMESTAMP
+                   WHERE candidate_model_version=?""",
+                (evidence_signature, candidate_model_version),
+            )
+        row = connection.execute(
+            "SELECT * FROM model_gate_alert_state WHERE candidate_model_version = ?",
+            (candidate_model_version,),
+        ).fetchone()
+        return dict(row)
+
+
+def acknowledge_model_gate_modal(
+    candidate_model_version: str, db_path: str | Path | None = None,
+) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """UPDATE model_gate_alert_state SET modal_acknowledged_at=CURRENT_TIMESTAMP,
+               updated_at=CURRENT_TIMESTAMP WHERE candidate_model_version=?""",
+            (candidate_model_version,),
+        )
+
+
+def update_model_gate_email_status(
+    candidate_model_version: str, status: str, *, error: str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    if status not in {"pending", "configuration_required", "sent", "failed"}:
+        raise ValueError(f"Invalid model-gate email status: {status}")
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """UPDATE model_gate_alert_state
+               SET email_status=?, email_attempted_at=CASE
+                       WHEN ? IN ('sent','failed') THEN CURRENT_TIMESTAMP ELSE email_attempted_at END,
+                   email_sent_at=CASE WHEN ?='sent' THEN CURRENT_TIMESTAMP ELSE email_sent_at END,
+                   email_error=?, updated_at=CURRENT_TIMESTAMP
+               WHERE candidate_model_version=?""",
+            (status, status, status, error, candidate_model_version),
+        )
 
 
 def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = None) -> None:
