@@ -9,6 +9,7 @@ Latest release: `coverage-aware-renormalized-v3-live` promotion, 2026-07-14
 |---|---|
 | 1.0 - Before Industry Feature | MVP watchlist, Dashboard, Company, Journal, yfinance prices, FMP fundamentals and transparent absolute scores |
 | 2.0 - Before Trading | Portfolio lots, cost basis, P&L, FX, cash/dividends, benchmarks, allocation, targets and backups |
+| 3.9 - Operational acceptance | Coverage-aware live promotion, prospective monitoring, operations/recovery console, meaningful alerts, options evidence gate and scenario laboratory |
 | 3 / 3.1 - Industry + UX foundations | Peer cohorts, analyst context, self-completing research and responsive Decision Dashboard / Company / Portfolio redesign |
 | 3.2 - Market factoring-in | Official FINRA and market-positioning history became small reliability-gated Entry and Exit-review modifiers |
 | 3.3 - UI polishing | Mobile-first tables, clearer score maps, navigation, FINRA chart pulse and compact decision views |
