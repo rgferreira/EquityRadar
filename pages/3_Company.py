@@ -413,16 +413,15 @@ try:
                         st.caption(detail)
 
     learning_entry_adjustment = float(learning_modifier["entry_adjustment"])
-    learning_entry_color = "#38d996" if learning_entry_adjustment > 0 else "#ff6375" if learning_entry_adjustment < 0 else "#9aa4b2"
     learning_columns = st.columns(2)
     with learning_columns[0]:
         with st.container(border=True):
-            st.markdown(f"**Backtested learning evidence ({learning_entry_adjustment:+.1f})**")
+            st.markdown("**Archived learning diagnostic · excluded from live score**")
             st.markdown(
-                f"<span style='color:{learning_entry_color};font-size:1.35rem;font-weight:700'>"
-                f"{learning_entry_adjustment:+.1f} diagnostic points</span>", unsafe_allow_html=True,
+                f"<span style='color:#9aa4b2;font-size:1.15rem;font-weight:650'>"
+                f"Historical counterfactual {learning_entry_adjustment:+.1f}</span>", unsafe_allow_html=True,
             )
-            st.caption("Diagnostic only · quarantined · not applied to Entry score")
+            st.caption("Research context only · contributes exactly 0.0 points to the live Entry score")
     with learning_columns[1]:
         learning_outcome_text = (
             "Decision-aware evidence still developing" if learning_modifier["decision_accuracy"] is None
@@ -480,12 +479,11 @@ try:
                 for detail in details:
                     st.caption(detail)
     learning_exit_adjustment = float(learning_modifier["exit_adjustment"])
-    learning_exit_color = "#ff6375" if learning_exit_adjustment > 0 else "#38d996" if learning_exit_adjustment < 0 else "#9aa4b2"
     st.markdown(
         f"<div style='color:#9aa4b2;font-size:.88rem'>Base {base_exit_score:.1f} · "
         f"Market positioning {float(positioning_modifier['exit_adjustment']):+.1f} · "
-        f"Backtested learning diagnostic <strong style='color:{learning_exit_color}'>{learning_exit_adjustment:+.1f}</strong> "
-        f"(quarantined · not applied)</div>",
+        f"Archived learning counterfactual {learning_exit_adjustment:+.1f} "
+        f"(research only; live contribution 0.0)</div>",
         unsafe_allow_html=True,
     )
 
@@ -521,11 +519,11 @@ try:
         st.markdown("- **Risk resilience (15%)** — ability to withstand drawdowns and volatility without duplicating the technical signal.")
         st.markdown("- **Analyst sentiment (10%)** — recommendations, estimate revisions, coverage and target-price expectations, confidence-adjusted.")
         st.markdown("- **Market positioning modifier** — a small reliability-gated adjustment from FINRA short interest and available positioning evidence.")
-        st.markdown("- **Backtested learning evidence** — ticker-specific research from completed simulations; it is quarantined and does not alter live scores pending scientific validation.")
+        st.markdown("- **Archived learning diagnostic** — a historical counterfactual retained for research; its live Entry/Exit contribution is exactly zero.")
         st.markdown("- **Exit-review score** — urgency to reassess a holding when technical and market-risk conditions deteriorate; it is not an execution instruction.")
 
     fundamentals_tab, metrics_tab, industry_tab, positioning_tab, learning_tab, journal_tab = st.tabs([
-        "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Backtested learning", "Journal context"
+        "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Archived learning", "Journal context"
     ])
     with fundamentals_tab:
         st.subheader("Fundamentals and valuation")
@@ -664,8 +662,8 @@ try:
             st.info("Positioning coverage is being assembled automatically. Price and company research remain available.")
 
     with learning_tab:
-        st.subheader("Backtested learning")
-        st.caption("Diagnostic research only · quarantined and excluded from live Entry/Exit scores. The legacy outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%.")
+        st.subheader("Archived learning diagnostic")
+        st.caption("Historical research only · live Entry/Exit contribution is exactly 0.0. The legacy outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%.")
         if backtest_runs:
             st.caption(
                 f"Model lineage · {registered_backtests} immutable prediction(s) · "
