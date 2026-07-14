@@ -7,7 +7,7 @@ import json
 import pandas as pd
 import streamlit as st
 
-from src.backup import create_verified_backup, verify_backup_manifest
+from src.backup import create_verified_backup, run_restore_drill, verify_backup_manifest
 from src.operations import get_operation_runs, provider_health, run_due_maintenance
 from src.data.database import (
     acknowledge_research_alert, get_backtest_runs, get_positioning_history,
@@ -75,6 +75,12 @@ with verify_col:
         result = verify_backup_manifest(manifest_path.strip())
         (st.success if result["valid"] else st.error)(
             "Backup and manifest are valid." if result["valid"] else "Backup verification failed."
+        )
+    if st.button("Run isolated restore drill", disabled=not manifest_path.strip()):
+        result = run_restore_drill(manifest_path.strip())
+        (st.success if result["valid"] else st.error)(
+            "Restore drill passed; schema and row counts match and the temporary copy was removed."
+            if result["valid"] else "Restore drill failed. The live database was never touched."
         )
 
 st.subheader("Options evidence continuity")

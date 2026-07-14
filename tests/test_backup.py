@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 
-from src.backup import create_verified_backup, verify_backup_manifest
+from src.backup import create_verified_backup, run_restore_drill, verify_backup_manifest
 
 
 def test_verified_backup_round_trip(tmp_path):
@@ -17,3 +17,7 @@ def test_verified_backup_round_trip(tmp_path):
     assert verified["integrity"] == "ok"
     with sqlite3.connect(verified["database_path"]) as connection:
         assert connection.execute("SELECT value FROM sample").fetchone()[0] == "synthetic"
+    drill = run_restore_drill(result["manifest_path"])
+    assert drill["valid"] is True
+    assert drill["row_counts_match"] is True
+    assert drill["temporary_copy_removed"] is True

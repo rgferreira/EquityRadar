@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -32,11 +33,18 @@ def verify_sqlite_backup(path: str | Path) -> dict[str, object]:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
             ).fetchall()
         ]
+        row_counts = {
+            table: int(connection.execute(
+                f'SELECT COUNT(*) FROM "{table.replace(chr(34), chr(34) * 2)}"'
+            ).fetchone()[0])
+            for table in tables
+        }
         user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
     return {
         "integrity": integrity,
         "tables": tables,
         "table_count": len(tables),
+        "row_counts": row_counts,
         "user_version": user_version,
         "size_bytes": candidate.stat().st_size,
         "sha256": _sha256(candidate),
@@ -73,10 +81,39 @@ def verify_backup_manifest(manifest_path: str | Path) -> dict[str, object]:
     """Verify a backup against its persisted manifest without restoring live data."""
     manifest_file = Path(manifest_path)
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    if "tables" not in manifest or "row_counts" not in manifest:
+        return {"valid": False, "reason": "Manifest predates restore-drill schema metadata"}
     database_path = manifest_file.parent / str(manifest["database_file"])
     verification = verify_sqlite_backup(database_path)
     return {
         "valid": verification["integrity"] == "ok" and verification["sha256"] == manifest["sha256"],
         "database_path": str(database_path),
         **verification,
+    }
+
+
+def run_restore_drill(manifest_path: str | Path) -> dict[str, object]:
+    """Restore into an isolated temporary DB, verify it, then delete it."""
+    manifest_file = Path(manifest_path)
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    backup_path = manifest_file.parent / str(manifest["database_file"])
+    source_verification = verify_backup_manifest(manifest_file)
+    if not source_verification["valid"]:
+        return {"valid": False, "reason": "Source backup or manifest is invalid"}
+    with tempfile.TemporaryDirectory(prefix="equity-radar-restore-") as directory:
+        restored_path = Path(directory) / "restored.db"
+        with sqlite3.connect(backup_path) as source, sqlite3.connect(restored_path) as restored:
+            source.backup(restored)
+        restored_verification = verify_sqlite_backup(restored_path)
+        valid = (
+            restored_verification["integrity"] == "ok"
+            and restored_verification["tables"] == manifest["tables"]
+            and restored_verification["row_counts"] == manifest["row_counts"]
+        )
+    return {
+        "valid": valid,
+        "integrity": restored_verification["integrity"],
+        "table_count": restored_verification["table_count"],
+        "row_counts_match": restored_verification["row_counts"] == manifest["row_counts"],
+        "temporary_copy_removed": not restored_path.exists(),
     }
