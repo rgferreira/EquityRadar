@@ -5,6 +5,7 @@ The documents in this folder have distinct roles so planning, implementation his
 | Document | Purpose | Status |
 |---|---|---|
 | [`releases/phase-3.9/USER_IMPACT.md`](releases/phase-3.9/USER_IMPACT.md) | Phase 3.9 user-visible impact, score evolution and simulation guidance | Current release note |
+| [`releases/phase-3.9/MODEL_TUNING.md`](releases/phase-3.9/MODEL_TUNING.md) | Read-only live-versus-shadow research console and evidence gates | Current release note |
 | [`implementation/AUDIT_TRIAGE.md`](implementation/AUDIT_TRIAGE.md) | Phase 3.8 audit findings reconciled against current HEAD | Current |
 | [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md) | Ordered scientific-hardening slices and delivery gates | Current |
 | [`temporal-data-contract.md`](temporal-data-contract.md) | Source-specific point-in-time fields and conservative availability rules | Current |

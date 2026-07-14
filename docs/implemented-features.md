@@ -1,5 +1,12 @@
 # Implemented features
 
+## Phase 3.9 — Model tuning research console
+
+- A dedicated read-only page compares the active decision policy with the inactive coverage-aware shadow model.
+- Paired 3M benchmark-relative outcomes use identical ticker/cutoff evidence and date-clustered uncertainty intervals.
+- Score deltas, signal transitions, maturity, expanding utility and ticker/regime/source drill-downs are visible without exposing model activation controls.
+- Evidence gates remain advisory and cannot promote or mutate the active model.
+
 This is the detailed implementation record. For the live backlog and phase boundary, see [`next-best-actions.md`](next-best-actions.md); for the compact phase/model narrative, see [`internal-changelog.md`](internal-changelog.md); for all document roles, see [`README.md`](README.md).
 
 ## Phase 3.3 — UI polishing

@@ -13,6 +13,7 @@ pages = [
     st.Page("pages/3_Company.py", title="Company", icon="🏢", url_path="Company"),
     st.Page("pages/4_Journal.py", title="Journal", icon="📝", url_path="Journal"),
     st.Page("pages/0_Watchlist.py", title="Watchlist", icon="⚙️", url_path="Watchlist"),
+    st.Page("pages/5_Model_Tuning.py", title="Model tuning", icon="🧪", url_path="Model-tuning"),
 ]
 navigation = st.navigation(pages, position="sidebar", expanded=False)
 navigation.run()
