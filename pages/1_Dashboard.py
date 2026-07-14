@@ -358,8 +358,17 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
         clear_market_data_cache()
     st.session_state.dashboard_provider_refresh_skipped = initial_refresh and not provider_refresh
     rows, errors = [], []
-    progress_text = "Loading fresh market data…" if initial_refresh else "Fetching market data…"
-    progress = st.progress(0, text=progress_text)
+    progress = (
+        st.progress(
+            0,
+            text="Loading fresh market data…" if initial_refresh else "Fetching market data…",
+        )
+        if provider_refresh else None
+    )
+    cache_status = (
+        None if provider_refresh else
+        st.status("Reading cache from last download…", state="running", expanded=False)
+    )
     for index, ticker in enumerate(tickers, start=1):
         try:
             history = fetch_price_history(ticker)
@@ -464,8 +473,12 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             })
         except Exception as exc:
             errors.append(f"{ticker}: {exc}")
-        progress.progress(index / len(tickers), text=f"Fetched {index} of {len(tickers)}")
-    progress.empty()
+        if progress is not None:
+            progress.progress(index / len(tickers), text=f"Fetched {index} of {len(tickers)}")
+    if progress is not None:
+        progress.empty()
+    if cache_status is not None:
+        cache_status.update(label="Cache loaded from last download.", state="complete")
     completed_refresh_at = datetime.now()
     if provider_refresh:
         record_dashboard_provider_refresh(completed_refresh_at)
