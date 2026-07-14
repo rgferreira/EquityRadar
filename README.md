@@ -48,9 +48,9 @@ python -m scripts.run_ui_acceptance
 
 ## Scoring
 
-- Technical (0–100): price versus 50/100/200-day averages, positive 1/3/6/12-month returns, and proximity to the 52-week high.
-- Valuation (0–100): the average of available component scores for positive trailing/forward P/E, positive price-to-sales TTM, revenue growth, and EPS growth. Invalid or negative multiples are omitted; no usable inputs yields a neutral 50.
-- Risk (0–100): lower drawdown and lower annualized daily volatility produce a higher score.
+- Technical timing (0–100): 20 points for price above each 50/100/200-day moving average and 10 points for each positive 1/3/6/12-month return, capped at 100. The 52-week high/low and drawdown remain visible market context but do not add Technical points.
+- Absolute valuation diagnostic (0–100): the average of available component scores for positive trailing/forward P/E, positive price-to-sales TTM, revenue growth, and EPS growth. Invalid or negative multiples are omitted. No usable inputs displays a neutral 50 diagnostically, but the promoted coverage-aware Entry fallback treats valuation as unavailable, gives it 0% weight, and renormalizes only the verified Technical/Risk evidence.
+- Risk (0–100): the base market-risk score starts at 100 and subtracts up to 40 points for drawdown from the 52-week high plus a transparent annualized-volatility penalty. The fallback Entry score and Exit-review score use this full measure; industry-calibrated Entry uses volatility-only Risk resilience so the price-trend block is not counted twice.
 - Entry score: when industry research is available, the transparent criteria are:
 
   | Criterion | Weight in Entry Score |
@@ -76,7 +76,7 @@ Phase 3.7 adds a learning-value gate. Each saved run shows its weighted outcome,
 
 Time Machine can use either a custom cutoff or an automatically ranked interesting date. Suggestions are persisted and refreshed in the background each day or when watchlist membership changes. Every recommendation identifies its market-regime, watchlist-price, moving-average or FINRA positioning trigger, exposes a learning-value rank, and shows whether it is not run, running or completed. Selecting any date only stages it; simulation always requires explicit confirmation.
 
-The saved-simulation panel includes a score-overlap audit. It maps known shared raw inputs, measures pairwise rank correlation across distinct point-in-time simulations, and estimates each component's incremental outcome information relative to the other available components. Model v4 resolved the two direct duplications: drawdown belongs only to Risk resilience, while analyst actions belong only to Industry & analysts. Technical trend weights were rescaled to preserve its 0–100 range, and positioning continues to use ownership, options and short-interest evidence. All saved ticker/cutoff simulations were rebuilt under the versioned model; older runs remain stored for rollback but are suppressed from normal views.
+The saved-simulation panel includes a score-overlap audit. It maps known shared raw inputs, measures pairwise rank correlation across distinct point-in-time simulations, and estimates each component's incremental outcome information relative to the other available components. Model v4 removed drawdown from industry-calibrated Entry Risk resilience while retaining it in the separate Exit-review market-risk calculation; analyst actions belong only to Industry & analysts. Technical trend weights were rescaled to preserve its 0–100 range, and positioning continues to use ownership, options and short-interest evidence. All saved ticker/cutoff simulations were rebuilt under the versioned model; older runs remain stored for rollback but are suppressed from normal views.
 
 Company score headers add sample-aware context: the exact current Entry and Exit-review diagnostic reports its historical success only after three comparable informative simulations, always with the success fraction, while Entry also shows the ticker's aggregate decision accuracy. Company charts mark simulation cutoffs with fine dotted lines: blue for manual runs, purple for completed system suggestions, and gold for current suggested dates still pending. Simulation provenance and the original suggestion rationale are persisted with each run.
 

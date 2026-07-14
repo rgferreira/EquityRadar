@@ -479,6 +479,14 @@ try:
                 for detail in details:
                     st.caption(detail)
     learning_exit_adjustment = float(learning_modifier["exit_adjustment"])
+    learning_entry_color = (
+        "#38d996" if learning_entry_adjustment > 0
+        else "#ff6375" if learning_entry_adjustment < 0 else "#9aa4b2"
+    )
+    learning_exit_color = (
+        "#ff6375" if learning_exit_adjustment > 0
+        else "#38d996" if learning_exit_adjustment < 0 else "#9aa4b2"
+    )
     st.markdown(
         f"<div style='color:#9aa4b2;font-size:.88rem'>Base {base_exit_score:.1f} · "
         f"Market positioning {float(positioning_modifier['exit_adjustment']):+.1f} · "
@@ -513,14 +521,19 @@ try:
         st.info(f"**Not currently owned · {initiation}.** Entry/Exit evidence is interpreted as a possible new position, not an add/trim decision.")
 
     with st.expander("How these scores were calculated"):
-        st.markdown("- **Business quality (25%)** — profitability, growth, margins and financial durability relative to comparable companies.")
-        st.markdown("- **Peer-relative valuation (30%)** — how valuation multiples compare with a relevant industry cohort; invalid or negative multiples are ignored.")
-        st.markdown("- **Technical timing (20%)** — price trend, moving-average position, recent returns and proximity to the yearly high.")
-        st.markdown("- **Risk resilience (15%)** — ability to withstand drawdowns and volatility without duplicating the technical signal.")
-        st.markdown("- **Analyst sentiment (10%)** — recommendations, estimate revisions, coverage and target-price expectations, confidence-adjusted.")
+        if industry_research:
+            st.markdown("- **Business quality (25%)** — profitability, growth, margins and financial durability relative to comparable companies.")
+            st.markdown("- **Peer-relative valuation (30%)** — positive forward P/E and price/sales relative to the direct-peer medians; invalid or negative multiples are ignored.")
+            st.markdown("- **Technical timing (20%)** — 20 points for price above each 50/100/200-day moving average and 10 points for each positive 1/3/6/12-month return, capped at 100.")
+            st.markdown("- **Risk resilience (15%)** — annualized-volatility resilience only. Drawdown remains visible and contributes to Exit review, not this industry-calibrated Entry block.")
+            st.markdown("- **Analyst sentiment (10%)** — recommendations, estimate revisions, coverage and target-price expectations, confidence-adjusted.")
+        else:
+            st.markdown(f"- **Technical evidence ({technical_weight:.1%})** — the same transparent moving-average and 1/3/6/12-month return score shown in Market metrics.")
+            st.markdown(f"- **Absolute valuation ({valuation_weight:.1%})** — available positive P/E and price/sales multiples plus revenue/EPS growth; unavailable valuation receives 0% rather than a neutral placeholder.")
+            st.markdown(f"- **Risk resilience ({risk_weight:.1%})** — the base market-risk score after transparent drawdown and annualized-volatility penalties.")
         st.markdown("- **Market positioning modifier** — a small reliability-gated adjustment from FINRA short interest and available positioning evidence.")
         st.markdown("- **Archived learning diagnostic** — a historical counterfactual retained for research; its live Entry/Exit contribution is exactly zero.")
-        st.markdown("- **Exit-review score** — urgency to reassess a holding when technical and market-risk conditions deteriorate; it is not an execution instruction.")
+        st.markdown("- **Exit-review score** — 60% Technical deterioration plus 40% full market-risk deterioration (drawdown and volatility), followed by the bounded positioning modifier; it is not an execution instruction.")
 
     fundamentals_tab, metrics_tab, industry_tab, positioning_tab, learning_tab, journal_tab = st.tabs([
         "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Archived learning", "Journal context"

@@ -78,6 +78,24 @@ def test_responsive_breakpoint_contract_covers_phone_density():
     assert "touch.clientX <= 34" in styles
 
 
+def test_company_learning_diagnostic_colors_are_defined_before_rendering():
+    company = Path("pages/3_Company.py").read_text(encoding="utf-8")
+    for variable in ("learning_entry_color", "learning_exit_color"):
+        assignment = company.index(f"{variable} =")
+        rendering = company.index(f"color:{{{variable}}}")
+        assert assignment < rendering
+
+
+def test_scoring_explanations_match_live_feature_semantics():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    company = Path("pages/3_Company.py").read_text(encoding="utf-8")
+    assert "52-week high/low and drawdown remain visible market context but do not add Technical points" in readme
+    assert "gives it 0% weight" in readme
+    assert "industry-calibrated Entry uses volatility-only Risk resilience" in readme
+    assert "Drawdown remains visible and contributes to Exit review" in company
+    assert "60% Technical deterioration plus 40% full market-risk deterioration" in company
+
+
 def test_historical_simulation_requires_explicit_confirmation(isolated_ui_database, monkeypatch):
     add_ticker("AAA", isolated_ui_database)
     index = pd.date_range("2025-01-01", periods=380, freq="D")
