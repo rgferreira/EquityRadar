@@ -64,6 +64,11 @@ def test_navigation_and_simulation_contracts_are_regression_guarded():
     assert '"Present date", "Past date"' in dashboard
     assert "Run historical simulation" in dashboard
     assert "Saved simulations & learning history" in dashboard
+    assert '"1D %": metrics.get("return_1d")' in dashboard
+    tuning = Path("pages/5_Model_Tuning.py").read_text(encoding="utf-8")
+    assert "Current promotion readiness · Awaiting new challenger/data" in tuning
+    assert "Archived promotion result" in tuning
+    assert "it cannot authorize another promotion" in tuning
 
 
 def test_responsive_breakpoint_contract_covers_phone_density():

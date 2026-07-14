@@ -51,7 +51,19 @@ python -m scripts.run_ui_acceptance
 - Technical (0–100): price versus 50/100/200-day averages, positive 1/3/6/12-month returns, and proximity to the 52-week high.
 - Valuation (0–100): the average of available component scores for positive trailing/forward P/E, positive price-to-sales TTM, revenue growth, and EPS growth. Invalid or negative multiples are omitted; no usable inputs yields a neutral 50.
 - Risk (0–100): lower drawdown and lower annualized daily volatility produce a higher score.
-- Entry score: 50% technical, 30% valuation, 20% risk. It expresses potential entry/add attractiveness, not a trading instruction.
+- Entry score: when industry research is available, the transparent criteria are:
+
+  | Criterion | Weight in Entry Score |
+  |---|---:|
+  | Business quality | 25% |
+  | Peer-relative valuation | 30% |
+  | Technical timing | 20% |
+  | Risk resilience | 15% |
+  | Analyst sentiment | 10% |
+  | Market positioning | Modifier: up to +/-5 points |
+  | Backtested learning | Diagnostic evidence only; not applied to the live score |
+
+  If industry research is unavailable, the promoted coverage-aware fallback uses 50% technical, 30% absolute valuation, and 20% risk; when meaningful valuation is also unavailable, its weight is omitted and the verified technical/risk weights are renormalized. The entry diagnostic is assigned from the resulting 0-100 score using predefined thresholds; it has no separate weighting formula. Entry scores express potential entry/add attractiveness, not a trading instruction.
 - Exit-review score: 60% technical deterioration and 40% risk deterioration. It flags when a holding merits reassessment; it never places or recommends an order.
 - Archived decision-aware learning: historical simulations are stored per ticker and their original decision is judged against subsequent returns. Buy, Watch and Wait have distinct research utility, but the legacy learning modifier is scientifically quarantined and contributes exactly zero to current Entry/Exit scores.
 - Position-aware decision layer: unowned companies use initiation decisions, while holdings translate the same company evidence into Add/Hold/Monitor/Trim/Exit using current weight, optional target weight and concentration. This changes the action, not the underlying company research scores.

@@ -517,7 +517,10 @@ if historical_mode:
         historical_positioning = inputs.get("positioning_modifier") or {}
         rows.append({
             "Ticker": run["ticker"], "Cutoff date": run["as_of_date"], "Price": metrics["latest_price"],
-            "1D %": metrics["return_1d"],
+            # Older persisted simulations predate the 1D-return metric. Keep
+            # those immutable research records displayable instead of failing
+            # the whole historical dashboard.
+            "1D %": metrics.get("return_1d"),
             "1M %": metrics["return_1m"], "3M %": metrics["return_3m"], "6M %": metrics["return_6m"],
             "12M %": metrics["return_12m"], "52W High": metrics["high_52w"], "52W Low": metrics["low_52w"],
             "Drawdown %": metrics["drawdown_from_52w_high"], "50D MA": metrics["ma_50"],

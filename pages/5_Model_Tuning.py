@@ -135,27 +135,39 @@ report = build_model_tuning_report(filtered)
 coverage = gate_report["coverage"]
 gate = gate_report["gate"]
 
-status_color = {
-    "Collecting evidence": "blue", "Inconclusive": "orange",
-    "Eligible for human review": "green",
-}.get(str(gate["status"]), "gray")
-st.markdown(f"### Evidence status: :{status_color}[{gate['status']}]")
-st.caption(str(gate["rationale"]))
+st.markdown("### Current challenger: :gray[Awaiting registration and prospective data]")
+st.caption(
+    "The previous challenger has already been promoted and frozen. A new readiness cycle starts "
+    "only after a distinct shadow hypothesis is preregistered and begins collecting evidence."
+)
 
-st.subheader(f"Promotion readiness · {gate['passed']}/{gate['total']} gates green")
+st.subheader("Current promotion readiness · Awaiting new challenger/data")
 criteria_columns = st.columns(2)
 for index, criterion in enumerate(gate["criteria"]):
-    icon = "🟢" if criterion["passed"] else "🔴"
     with criteria_columns[index % 2]:
         with st.container(border=True):
-            st.markdown(f"**{icon} {criterion['criterion']}**")
-            st.markdown(f"**Observed:** {criterion['observed']}  ")
+            st.markdown(f"**⚪ {criterion['criterion']}**")
+            st.markdown("**Observed:** Awaiting a new shadow challenger  ")
             st.caption(f"Required: {criterion['required']}")
             st.caption(str(criterion["purpose"]))
-st.caption(
-    "This frozen 6/6 gate record supported an explicit human promotion decision. It is not proof of "
-    "durable benchmark outperformance and never triggers execution."
-)
+
+with st.expander(
+    f"Archived promotion result · {gate['passed']}/{gate['total']} gates green · already promoted",
+    expanded=False,
+):
+    st.caption(str(gate["rationale"]))
+    archive_columns = st.columns(2)
+    for index, criterion in enumerate(gate["criteria"]):
+        icon = "🟢" if criterion["passed"] else "🔴"
+        with archive_columns[index % 2]:
+            st.markdown(
+                f"{icon} **{criterion['criterion']}** · {criterion['observed']} "
+                f"(required: {criterion['required']})"
+            )
+    st.caption(
+        "This frozen gate record supported the completed human promotion decision. It is retained "
+        "for audit and rollback context; it cannot authorize another promotion."
+    )
 
 metrics = st.columns(6)
 metrics[0].metric("Snapshots", int(coverage["snapshots"]))
