@@ -21,6 +21,17 @@ CURRENT_MODEL_CONFIG: dict[str, object] = {
     "learning_policy": "diagnostic-only",
 }
 
+COVERAGE_AWARE_SHADOW_VERSION = "coverage-aware-renormalized-v1"
+COVERAGE_AWARE_SHADOW_CONFIG: dict[str, object] = {
+    "entry_model": "coverage-aware-renormalized-v1",
+    "verified_weights": {"technical": 0.50, "valuation": 0.30, "risk": 0.20},
+    "missing_valuation_weights": {"technical": 5 / 7, "valuation": 0.0, "risk": 2 / 7},
+    "industry_calibrated_policy": "observe_current_score_unchanged",
+    "positioning": "preserve_frozen_entry_adjustment",
+    "thresholds": {"buy_candidate": 70, "watch": 55},
+    "role": "inactive_shadow_only",
+}
+
 
 def canonical_json(value: Mapping[str, object] | list[object]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -37,6 +48,17 @@ def current_model_registration() -> dict[str, object]:
         "config_hash": content_hash(CURRENT_MODEL_CONFIG),
         "status": "candidate",
         "is_active": 1,
+        "is_champion": 0,
+    }
+
+
+def coverage_aware_shadow_registration() -> dict[str, object]:
+    return {
+        "model_version": COVERAGE_AWARE_SHADOW_VERSION,
+        "config_json": canonical_json(COVERAGE_AWARE_SHADOW_CONFIG),
+        "config_hash": content_hash(COVERAGE_AWARE_SHADOW_CONFIG),
+        "status": "candidate",
+        "is_active": 0,
         "is_champion": 0,
     }
 

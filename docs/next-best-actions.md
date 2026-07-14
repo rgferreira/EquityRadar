@@ -10,6 +10,8 @@ The forensic audit supersedes the former improvised implementation queue. PR-001
 
 The first pre-registered coverage-aware challenger was directionally positive but did not clear the live-model gate: its paired utility and accuracy intervals cross zero on four independent confirmation dates. Do not substitute more favorable historical dates or change thresholds. The next scientific action is prospective evidence accumulation (or a separately governed external-universe validation) before any live-model proposal.
 
+Phase 3.9 has started only in inactive shadow mode. `coverage-aware-renormalized-v1` now records side-by-side differences while the Phase 3.8 model remains the sole live source. Next: accumulate and audit shadow coverage, stability, signal-change frequency, and downstream outcomes; do not activate or expose the candidate before an explicit approval gate.
+
 ## Deferred operational work from Phase 3.7
 
 1. **Automated end-to-end UI regression tests - pending.** Cover the critical Dashboard, Portfolio, Company, Journal, Watchlist, deep-link, simulation and mobile-width flows. The Python suite is extensive, but it does not yet replace browser-level regression coverage.

@@ -8,12 +8,12 @@ import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
-from src.model_registry import canonical_json, content_hash
+from src.model_registry import COVERAGE_AWARE_SHADOW_VERSION, canonical_json, content_hash
 from src.outcome_labels import RELATIVE_LABEL_VERSION
 from src.scoring.decision import entry_label
 
 
-CHALLENGER_VERSION = "coverage-aware-renormalized-v1"
+CHALLENGER_VERSION = COVERAGE_AWARE_SHADOW_VERSION
 CONFIRMATION_DATES = ("2025-02-14", "2025-06-16", "2025-10-16", "2026-02-16")
 CHALLENGER_CONFIG: dict[str, object] = {
     "challenger_version": CHALLENGER_VERSION,

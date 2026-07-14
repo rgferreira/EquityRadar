@@ -18,6 +18,7 @@ from src.data.database import (
     get_backtest_runs,
     get_active_backtest,
     get_simulation_suggestions,
+    save_shadow_decision_snapshot,
     save_active_backtest,
     get_watchlist,
     init_db,
@@ -46,6 +47,7 @@ from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
 from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
+from src.shadow_model import build_shadow_snapshot, meaningful_valuation_available
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -389,6 +391,30 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             calibrated_exit = apply_positioning_adjustment(
                 calibrated_exit, float(learning_policy["applied_exit_adjustment"]),
             )
+            current_outputs = {
+                "entry_score": calibrated_entry,
+                "entry_signal": entry_label(calibrated_entry),
+                "exit_score": calibrated_exit,
+                "exit_signal": exit_review_label(calibrated_exit),
+            }
+            try:
+                save_shadow_decision_snapshot(build_shadow_snapshot(
+                    ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
+                    inputs={
+                        "features": {"technical_score": technical, "valuation_score": valuation,
+                                     "risk_score": risk},
+                        "positioning_adjustments": {
+                            "entry_adjustment": positioning_modifier["entry_adjustment"],
+                            "exit_adjustment": positioning_modifier["exit_adjustment"],
+                        },
+                        "valuation_available": meaningful_valuation_available(fundamentals),
+                        "industry_calibrated": bool(industry_research),
+                    },
+                    current_outputs=current_outputs,
+                ))
+            except Exception:
+                # Shadow research must never block or alter the live dashboard.
+                pass
             rows.append({
                 "Ticker": ticker,
                 "Price": metrics["latest_price"],

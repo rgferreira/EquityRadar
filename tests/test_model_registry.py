@@ -6,6 +6,7 @@ import pytest
 from src.backtesting import latest_model_runs
 from src.data.database import (
     get_prediction_snapshots,
+    get_shadow_decision_snapshots,
     get_backtest_runs,
     get_registered_models,
     init_db,
@@ -48,10 +49,14 @@ def test_registry_seeds_active_candidate_without_claiming_champion(tmp_path):
     init_db(database)
     models = get_registered_models(database)
 
-    assert len(models) == 1
-    assert models[0]["status"] == "candidate"
-    assert models[0]["is_active"] == 1
-    assert models[0]["is_champion"] == 0
+    assert len(models) == 2
+    active = next(model for model in models if model["is_active"] == 1)
+    shadow = next(model for model in models if model["model_version"] == "coverage-aware-renormalized-v1")
+    assert active["status"] == "candidate"
+    assert active["is_champion"] == 0
+    assert shadow["status"] == "candidate"
+    assert shadow["is_active"] == 0
+    assert shadow["is_champion"] == 0
 
 
 def test_arbitrary_model_name_cannot_override_registry_activity(tmp_path):
@@ -127,6 +132,9 @@ def test_simulation_worker_writes_replayable_immutable_prediction(tmp_path, monk
     assert snapshots[0]["model_status"] == "candidate"
     assert snapshots[0]["is_active"] == 1
     assert replay_prediction(snapshots[0])["status"] == "exact_match"
+    shadow = get_shadow_decision_snapshots("TEST", database)
+    assert len(shadow) == 1
+    assert shadow[0]["surface"] == "historical_simulation"
     compatibility = get_backtest_runs("TEST", database)[0]
     assert compatibility["has_prediction_snapshot"] == 1
 

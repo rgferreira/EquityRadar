@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from src.utils.config import DATABASE_PATH
-from src.model_registry import current_model_registration
+from src.model_registry import coverage_aware_shadow_registration, current_model_registration
 
 
 def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
@@ -275,6 +275,30 @@ def init_db(db_path: str | Path | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(config_hash, dataset_signature)
             );
+            CREATE TABLE IF NOT EXISTS shadow_decision_snapshots (
+                shadow_snapshot_id TEXT PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                surface TEXT NOT NULL,
+                current_model_version TEXT NOT NULL,
+                current_config_hash TEXT NOT NULL,
+                challenger_model_version TEXT NOT NULL,
+                challenger_config_hash TEXT NOT NULL,
+                input_json TEXT NOT NULL,
+                input_hash TEXT NOT NULL,
+                current_output_json TEXT NOT NULL,
+                current_output_hash TEXT NOT NULL,
+                challenger_output_json TEXT NOT NULL,
+                challenger_output_hash TEXT NOT NULL,
+                entry_score_delta REAL NOT NULL,
+                signal_changed INTEGER NOT NULL CHECK(signal_changed IN (0,1)),
+                coverage_mode TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(current_model_version, current_config_hash)
+                    REFERENCES model_registry(model_version, config_hash),
+                FOREIGN KEY(challenger_model_version, challenger_config_hash)
+                    REFERENCES model_registry(model_version, config_hash)
+            );
             CREATE TABLE IF NOT EXISTS backtest_job_items (
                 as_of_date TEXT NOT NULL,
                 ticker TEXT NOT NULL,
@@ -322,24 +346,24 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('known_at_semantics_v1')"
         )
-        model = current_model_registration()
-        existing_model = connection.execute(
-            "SELECT config_hash, config_json FROM model_registry WHERE model_version = ?",
-            (model["model_version"],),
-        ).fetchone()
-        if existing_model and (
-            existing_model["config_hash"] != model["config_hash"]
-            or existing_model["config_json"] != model["config_json"]
-        ):
-            raise RuntimeError("Registered model version has a different immutable configuration")
-        connection.execute(
-            """INSERT OR IGNORE INTO model_registry
-                (model_version, config_json, config_hash, status, is_active, is_champion)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            tuple(model[field] for field in (
-                "model_version", "config_json", "config_hash", "status", "is_active", "is_champion",
-            )),
-        )
+        for model in (current_model_registration(), coverage_aware_shadow_registration()):
+            existing_model = connection.execute(
+                "SELECT config_hash, config_json FROM model_registry WHERE model_version = ?",
+                (model["model_version"],),
+            ).fetchone()
+            if existing_model and (
+                existing_model["config_hash"] != model["config_hash"]
+                or existing_model["config_json"] != model["config_json"]
+            ):
+                raise RuntimeError("Registered model version has a different immutable configuration")
+            connection.execute(
+                """INSERT OR IGNORE INTO model_registry
+                    (model_version, config_json, config_hash, status, is_active, is_champion)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                tuple(model[field] for field in (
+                    "model_version", "config_json", "config_hash", "status", "is_active", "is_champion",
+                )),
+            )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_registry_snapshots_v1')"
         )
@@ -351,6 +375,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('offline_challenger_reports_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('inactive_shadow_snapshots_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -710,6 +737,47 @@ def get_challenger_experiments(db_path: str | Path | None = None) -> list[dict[s
         row["config"] = json.loads(str(row["config_json"]))
         row["report"] = json.loads(str(row["report_json"]))
     return rows
+
+
+def save_shadow_decision_snapshot(
+    snapshot: Mapping[str, object], db_path: str | Path | None = None,
+) -> None:
+    """Append an immutable inactive-candidate comparison; never change model activity."""
+    init_db(db_path)
+    fields = (
+        "shadow_snapshot_id", "ticker", "as_of_date", "surface",
+        "current_model_version", "current_config_hash", "challenger_model_version",
+        "challenger_config_hash", "input_json", "input_hash", "current_output_json",
+        "current_output_hash", "challenger_output_json", "challenger_output_hash",
+        "entry_score_delta", "signal_changed", "coverage_mode",
+    )
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"INSERT OR IGNORE INTO shadow_decision_snapshots ({', '.join(fields)}) "
+            f"VALUES ({', '.join('?' for _ in fields)})",
+            tuple(snapshot[field] for field in fields),
+        )
+        stored = connection.execute(
+            "SELECT * FROM shadow_decision_snapshots WHERE shadow_snapshot_id = ?",
+            (snapshot["shadow_snapshot_id"],),
+        ).fetchone()
+        immutable = fields
+        if stored is None or any(stored[field] != snapshot[field] for field in immutable):
+            raise ValueError("Immutable shadow decision conflict")
+
+
+def get_shadow_decision_snapshots(
+    ticker: str | None = None, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    query = "SELECT * FROM shadow_decision_snapshots"
+    params: tuple[object, ...] = ()
+    if ticker:
+        query += " WHERE ticker = ?"
+        params = (ticker.strip().upper(),)
+    query += " ORDER BY as_of_date DESC, created_at DESC, ticker"
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(query, params).fetchall()]
 
 
 def update_backtest_outcomes(

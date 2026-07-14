@@ -9,12 +9,13 @@ import json
 from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_signal
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, get_cached_fundamentals, get_positioning_history,
-    save_backtest_run, save_outcome_label, save_prediction_snapshot, set_backtest_job_item,
-    update_backtest_outcomes,
+    save_backtest_run, save_outcome_label, save_prediction_snapshot, save_shadow_decision_snapshot,
+    set_backtest_job_item, update_backtest_outcomes,
 )
 from src.data.market_data import fetch_price_history
 from src.model_registry import build_prediction_snapshot, current_model_registration
 from src.outcome_labels import benchmark_for_ticker, build_relative_outcome_label
+from src.shadow_model import build_shadow_snapshot
 
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtested-learning")
 _lock = RLock()
@@ -77,6 +78,15 @@ def _run(
                 suggestion_rationale=suggestion_rationale,
             )
             save_prediction_snapshot(snapshot, db_path)
+            try:
+                save_shadow_decision_snapshot(build_shadow_snapshot(
+                    ticker=ticker, as_of_date=as_of_date, surface="historical_simulation",
+                    inputs={**frozen_inputs, "industry_calibrated": False},
+                    current_outputs=frozen_outputs,
+                ), db_path)
+            except Exception:
+                # Shadow research is isolated from the authoritative simulation pipeline.
+                pass
             benchmark_ticker = benchmark_for_ticker(ticker)
             benchmark_history = None
             if benchmark_ticker:

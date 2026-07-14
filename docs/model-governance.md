@@ -35,3 +35,7 @@ Application reads can return to compatibility-only paths without dropping the ad
 ## Evaluation labels
 
 New immutable predictions receive the separately versioned outcome contract described in [`outcome-labels.md`](outcome-labels.md). Legacy absolute returns and benchmark-relative labels are deliberately stored and named separately; they must not be mixed in an evaluation.
+
+## Inactive shadow candidate
+
+The first post-3.8 candidate is documented in [`shadow-model.md`](shadow-model.md). It is registered inactive and records side-by-side comparisons without changing any visible or active decision. Registration is not promotion.
