@@ -1,5 +1,5 @@
 from src.data.database import get_cached_extended_hours_quote, init_db
-from src.data.extended_hours import get_extended_hours_quote
+from src.data.extended_hours import effective_extended_quote, get_extended_hours_quote
 
 
 class FakeProvider:
@@ -31,6 +31,27 @@ def test_extended_hours_quote_is_cached_in_sqlite(tmp_path):
     assert first["active_price"] == second["active_price"] == 102.0
     assert second["provider_name"] == "mock extended"
     assert get_cached_extended_hours_quote("TEST", db)["quote_date"] == "2026-07-13"
+
+
+def test_closed_gap_uses_last_after_hours_quote():
+    effective = effective_extended_quote({
+        "market_state": "closed", "active_session": "closed", "active_price": None,
+        "afterhours_price": 920.8, "afterhours_change_pct": -1.73,
+        "afterhours_timestamp": "2026-07-13T19:55:00-04:00",
+    })
+
+    assert effective == {
+        "price": 920.8, "change_pct": -1.73,
+        "timestamp": "2026-07-13T19:55:00-04:00",
+        "label": "POST", "session": "after-hours close",
+    }
+
+
+def test_regular_session_does_not_override_regular_price():
+    assert effective_extended_quote({
+        "market_state": "regular", "active_session": "regular", "active_price": 101.0,
+        "afterhours_price": 99.0,
+    }) is None
 
 
 def test_provider_failure_preserves_cached_extended_quote(tmp_path):

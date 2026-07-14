@@ -29,6 +29,7 @@ from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
 from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
 from src.data.extended_hours_refresh import extended_hours_refresh_status, schedule_extended_hours_refresh
+from src.data.extended_hours import effective_extended_quote
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.decision import calculate_entry_score, calculate_exit_review_score, entry_label, exit_review_label
@@ -178,12 +179,11 @@ def render_dashboard_table(
                 daily_change = (daily_changes or {}).get(ticker)
                 displayed_price = row[column]
                 extended_quote = (extended_quotes or {}).get(ticker) or {}
-                state = str(extended_quote.get("active_session") or "")
-                if state in {"pre-market", "after-hours", "24/7"} and extended_quote.get("active_price") is not None:
-                    displayed_price = extended_quote["active_price"]
-                    timestamp = str(extended_quote.get("active_timestamp") or extended_quote.get("fetched_at") or timestamp)
-                    label = "PRE" if state == "pre-market" else "POST" if state == "after-hours" else "24/7"
-                    move = move_badge(extended_quote.get("active_change_pct"), label)
+                effective_quote = effective_extended_quote(extended_quote)
+                if effective_quote:
+                    displayed_price = effective_quote["price"]
+                    timestamp = str(effective_quote.get("timestamp") or timestamp)
+                    move = move_badge(effective_quote.get("change_pct"), str(effective_quote["label"]))
                 else:
                     move = move_badge(daily_change)
                 value = (

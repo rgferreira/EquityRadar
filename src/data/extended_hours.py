@@ -108,6 +108,35 @@ def extended_quote_is_fresh(snapshot: dict[str, object] | None) -> bool:
         return False
 
 
+def effective_extended_quote(snapshot: dict[str, object] | None) -> dict[str, object] | None:
+    """Return the quote that should lead the UI outside the regular session.
+
+    After the post-market session closes and before the next pre-market opens,
+    the last post-market print remains the most recent traded value.
+    """
+    if not snapshot:
+        return None
+    session = str(snapshot.get("active_session") or snapshot.get("market_state") or "")
+    if session in {"pre-market", "after-hours", "24/7"} and snapshot.get("active_price") is not None:
+        label = "PRE" if session == "pre-market" else "POST" if session == "after-hours" else "24/7"
+        return {
+            "price": snapshot["active_price"],
+            "change_pct": snapshot.get("active_change_pct"),
+            "timestamp": snapshot.get("active_timestamp") or snapshot.get("fetched_at"),
+            "label": label,
+            "session": session,
+        }
+    if session == "closed" and snapshot.get("afterhours_price") is not None:
+        return {
+            "price": snapshot["afterhours_price"],
+            "change_pct": snapshot.get("afterhours_change_pct"),
+            "timestamp": snapshot.get("afterhours_timestamp") or snapshot.get("fetched_at"),
+            "label": "POST",
+            "session": "after-hours close",
+        }
+    return None
+
+
 def get_extended_hours_quote(
     ticker: str, provider: ExtendedHoursProvider | None = None, force_refresh: bool = False,
     db_path: str | Path | None = None,
