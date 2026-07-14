@@ -9,8 +9,12 @@ import streamlit as st
 
 from src.backup import create_verified_backup, verify_backup_manifest
 from src.operations import get_operation_runs, provider_health, run_due_maintenance
-from src.data.database import get_positioning_history, get_watchlist
+from src.data.database import (
+    acknowledge_research_alert, get_backtest_runs, get_positioning_history,
+    get_research_alerts, get_watchlist, save_research_alerts,
+)
 from src.evidence_monitoring import options_evidence_report
+from src.research_alerts import build_research_alerts
 from src.ui import inject_app_styles, page_header, zebra_table
 
 
@@ -88,3 +92,19 @@ else:
     st.caption(
         "Coverage-ready means eligible for an offline experiment—not eligible for scoring or promotion."
     )
+
+st.subheader("Research alerts")
+save_research_alerts(build_research_alerts(get_backtest_runs()))
+alerts = get_research_alerts()
+if not alerts:
+    st.success("No unacknowledged material research changes.")
+else:
+    st.caption("Alerts report persisted evidence changes; they are not trade instructions.")
+    for alert in alerts[:20]:
+        with st.container(border=True):
+            columns = st.columns([5, 1])
+            columns[0].markdown(f"**{alert['title']}**")
+            columns[0].caption(f"{alert['evidence_date']} · {alert['detail']}")
+            if columns[1].button("Acknowledge", key=f"ack-{alert['alert_id']}"):
+                acknowledge_research_alert(str(alert["alert_id"]))
+                st.rerun()

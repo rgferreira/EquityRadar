@@ -629,6 +629,50 @@ def save_model_gate_exclusions(
         )
 
 
+def save_research_alerts(
+    alerts: list[Mapping[str, object]], db_path: str | Path | None = None,
+) -> int:
+    """Persist deterministic research alerts without duplicating prior evidence."""
+    init_db(db_path)
+    inserted = 0
+    with get_connection(db_path) as connection:
+        for alert in alerts:
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO research_alerts
+                   (alert_id,ticker,alert_type,severity,title,detail,evidence_date,evidence_json)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                tuple(alert[field] for field in (
+                    "alert_id", "ticker", "alert_type", "severity", "title", "detail",
+                    "evidence_date", "evidence_json",
+                )),
+            )
+            inserted += cursor.rowcount
+    return inserted
+
+
+def get_research_alerts(
+    *, include_acknowledged: bool = False, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    query = "SELECT * FROM research_alerts"
+    if not include_acknowledged:
+        query += " WHERE acknowledged_at IS NULL"
+    query += " ORDER BY evidence_date DESC, created_at DESC"
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(query).fetchall()]
+
+
+def acknowledge_research_alert(
+    alert_id: str, db_path: str | Path | None = None,
+) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            "UPDATE research_alerts SET acknowledged_at=CURRENT_TIMESTAMP WHERE alert_id=?",
+            (alert_id,),
+        )
+
+
 def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = None) -> None:
     """Persist a reproducible point-in-time simulation and its separated outcomes."""
     init_db(db_path)
