@@ -365,6 +365,17 @@ def init_db(db_path: str | Path | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(ticker, alert_type, evidence_date)
             );
+            CREATE TABLE IF NOT EXISTS provider_health_state (
+                provider_key TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending','running','healthy','failed')),
+                last_attempt_at TEXT,
+                last_success_at TEXT,
+                last_error TEXT,
+                cooldown_until TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(provider_key, ticker)
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -482,6 +493,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('operations_alerts_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('provider_health_state_v1')"
         )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
@@ -671,6 +685,45 @@ def acknowledge_research_alert(
             "UPDATE research_alerts SET acknowledged_at=CURRENT_TIMESTAMP WHERE alert_id=?",
             (alert_id,),
         )
+
+
+def record_provider_health(
+    provider_key: str, ticker: str, status: str, *, error: str | None = None,
+    cooldown_until: str | None = None, db_path: str | Path | None = None,
+) -> None:
+    """Persist operational provider state without storing provider payloads."""
+    if status not in {"pending", "running", "healthy", "failed"}:
+        raise ValueError(f"Invalid provider health status: {status}")
+    normalized = ticker.strip().upper() or "*"
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT INTO provider_health_state
+               (provider_key,ticker,status,last_attempt_at,last_success_at,last_error,cooldown_until)
+               VALUES (?,?,?,CURRENT_TIMESTAMP,
+                       CASE WHEN ?='healthy' THEN CURRENT_TIMESTAMP END,?,?)
+               ON CONFLICT(provider_key,ticker) DO UPDATE SET
+                 status=excluded.status,last_attempt_at=CURRENT_TIMESTAMP,
+                 last_success_at=CASE WHEN excluded.status='healthy' THEN CURRENT_TIMESTAMP
+                                      ELSE provider_health_state.last_success_at END,
+                 last_error=CASE WHEN excluded.status='failed' THEN excluded.last_error
+                                 WHEN excluded.status='healthy' THEN NULL
+                                 ELSE provider_health_state.last_error END,
+                 cooldown_until=CASE WHEN excluded.status='failed' THEN excluded.cooldown_until
+                                     WHEN excluded.status='healthy' THEN NULL
+                                     ELSE provider_health_state.cooldown_until END,
+                 updated_at=CURRENT_TIMESTAMP""",
+            (provider_key, normalized, status, status, error, cooldown_until),
+        )
+
+
+def get_provider_health_states(
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(
+            "SELECT * FROM provider_health_state ORDER BY provider_key,ticker"
+        ).fetchall()]
 
 
 def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = None) -> None:

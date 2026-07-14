@@ -29,7 +29,10 @@ page_header(
 health = pd.DataFrame(provider_health())
 st.subheader("Provider health")
 if not health.empty:
-    status_icons = {"Healthy": "🟢", "Stale": "🟠", "Missing": "🔴"}
+    status_icons = {
+        "Healthy": "🟢", "Stale": "🟠", "Missing": "🔴", "Failed": "🔴",
+        "Running": "🔵", "Pending": "⚪",
+    }
     health["status"] = health["status"].map(lambda value: f"{status_icons.get(value, '⚪')} {value}")
     st.dataframe(
         zebra_table(health), hide_index=True, width="stretch",

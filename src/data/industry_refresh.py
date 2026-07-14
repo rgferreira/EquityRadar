@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Callable
 
-from src.data.database import get_cached_industry_research, save_industry_research
+from src.data.database import get_cached_industry_research, record_provider_health, save_industry_research
 from src.data.industry import YahooIndustryResearchProvider
 from src.data.temporal import observed_at_fetch
 
@@ -63,13 +63,19 @@ def _refresh(
     return payload
 
 
-def _finished(ticker: str, future: Future[dict[str, object]]) -> None:
+def _finished(ticker: str, future: Future[dict[str, object]], db_path: str | Path | None = None) -> None:
     with _lock:
         try:
             future.result()
             _failures.pop(ticker, None)
+            record_provider_health("industry", ticker, "healthy", db_path=db_path)
         except Exception as exc:
             _failures[ticker] = (datetime.now(), str(exc))
+            record_provider_health(
+                "industry", ticker, "failed", error=str(exc),
+                cooldown_until=(datetime.now() + RETRY_COOLDOWN).isoformat(timespec="seconds"),
+                db_path=db_path,
+            )
         _futures.pop(ticker, None)
 
 
@@ -97,7 +103,8 @@ def schedule_industry_refresh(
                 continue
             future = _executor.submit(_refresh, ticker, provider_factory, db_path)
             _futures[ticker] = future
-            future.add_done_callback(lambda completed, symbol=ticker: _finished(symbol, completed))
+            record_provider_health("industry", ticker, "running", db_path=db_path)
+            future.add_done_callback(lambda completed, symbol=ticker, path=db_path: _finished(symbol, completed, path))
             scheduled.append(ticker)
     return scheduled
 

@@ -6,7 +6,10 @@ from pathlib import Path
 from threading import RLock
 from typing import Callable
 
-from src.data.database import get_cached_positioning, get_positioning_history, save_positioning_snapshot
+from src.data.database import (
+    get_cached_positioning, get_positioning_history, record_provider_health,
+    save_positioning_snapshot,
+)
 from src.data.finra_short_interest import FINRAShortInterestProvider, backfill_finra_short_history
 from src.data.positioning import YahooPositioningProvider
 from src.data.temporal import observed_at_fetch
@@ -42,12 +45,18 @@ def _refresh(ticker: str, provider_factory: Callable[[], YahooPositioningProvide
     return payload
 
 
-def _finished(ticker: str, future: Future[dict[str, object]]) -> None:
+def _finished(ticker: str, future: Future[dict[str, object]], db_path: str | Path | None = None) -> None:
     with _lock:
         try:
             future.result(); _failures.pop(ticker, None)
+            record_provider_health("positioning", ticker, "healthy", db_path=db_path)
         except Exception as exc:
             _failures[ticker] = (datetime.now(), str(exc))
+            record_provider_health(
+                "positioning", ticker, "failed", error=str(exc),
+                cooldown_until=(datetime.now() + RETRY_COOLDOWN).isoformat(timespec="seconds"),
+                db_path=db_path,
+            )
         _futures.pop(ticker, None)
 
 
@@ -68,7 +77,8 @@ def schedule_positioning_refresh(
             if failure and now - failure[0] < RETRY_COOLDOWN: continue
             future = _executor.submit(_refresh, ticker, provider_factory, db_path)
             _futures[ticker] = future
-            future.add_done_callback(lambda completed, symbol=ticker: _finished(symbol, completed))
+            record_provider_health("positioning", ticker, "running", db_path=db_path)
+            future.add_done_callback(lambda completed, symbol=ticker, path=db_path: _finished(symbol, completed, path))
             scheduled.append(ticker)
     return scheduled
 
@@ -100,19 +110,26 @@ def _finra_backfill(
     return backfill_finra_short_history(ticker, provider_factory(), db_path)
 
 
-def _finra_finished(ticker: str, future: Future[int]) -> None:
+def _finra_finished(ticker: str, future: Future[int], db_path: str | Path | None = None) -> None:
     with _lock:
         try:
             count = future.result()
             _finra_failures.pop(ticker, None)
             if count == 0:
                 _finra_attempted_empty.add(ticker)
+                record_provider_health("finra", ticker, "failed", error="No FINRA coverage", db_path=db_path)
             else:
+                record_provider_health("finra", ticker, "healthy", db_path=db_path)
                 # Avoid a module-level cycle; recalculate only after FINRA rows are committed.
                 from src.data.backtest_refresh import schedule_ticker_recalculation
                 schedule_ticker_recalculation(ticker)
         except Exception as exc:
             _finra_failures[ticker] = (datetime.now(), str(exc))
+            record_provider_health(
+                "finra", ticker, "failed", error=str(exc),
+                cooldown_until=(datetime.now() + RETRY_COOLDOWN).isoformat(timespec="seconds"),
+                db_path=db_path,
+            )
         _finra_futures.pop(ticker, None)
 
 
@@ -140,7 +157,8 @@ def schedule_finra_backfill(
                 continue
             future = _executor.submit(_finra_backfill, ticker, provider_factory, db_path)
             _finra_futures[ticker] = future
-            future.add_done_callback(lambda completed, symbol=ticker: _finra_finished(symbol, completed))
+            record_provider_health("finra", ticker, "running", db_path=db_path)
+            future.add_done_callback(lambda completed, symbol=ticker, path=db_path: _finra_finished(symbol, completed, path))
             scheduled.append(ticker)
     return scheduled
 

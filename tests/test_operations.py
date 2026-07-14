@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from src.data.database import init_db
+from src.data.database import init_db, record_provider_health
 from src.operations import get_operation_runs, provider_health, run_due_maintenance
 
 
@@ -9,6 +9,20 @@ def test_provider_health_preserves_missing_as_missing(tmp_path):
     init_db(database)
     rows = provider_health(database, now=datetime(2026, 7, 14, 12, 0))
     assert {row["status"] for row in rows} == {"Missing"}
+
+
+def test_provider_health_exposes_isolated_failure_and_cooldown(tmp_path):
+    database = tmp_path / "health-failure.db"
+    init_db(database)
+    record_provider_health(
+        "market_price", "AAA", "failed", error="synthetic outage",
+        cooldown_until="2026-07-14T12:15:00", db_path=database,
+    )
+    rows = provider_health(database, now=datetime(2026, 7, 14, 12, 0))
+    operational = next(row for row in rows if row["source"] == "Market Price operations")
+    assert operational["status"] == "Failed"
+    assert operational["last_error"] == "synthetic outage"
+    assert operational["cooldown"] == "2026-07-14T12:15:00"
 
 
 def test_due_maintenance_records_verified_backup(tmp_path, monkeypatch):

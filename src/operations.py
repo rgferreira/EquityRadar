@@ -10,7 +10,10 @@ from threading import Event, Lock, Thread
 from typing import Callable
 
 from src.backup import create_verified_backup
-from src.data.database import get_connection, get_watchlist, init_db
+from src.data.database import (
+    get_connection, get_provider_health_states, get_watchlist, init_db,
+    record_provider_health,
+)
 from src.utils.config import DATABASE_PATH
 
 
@@ -93,7 +96,29 @@ def provider_health(db_path: str | Path | None = None, *, now: datetime | None =
                 "last_success": result["last_success"],
                 "age_hours": round(age_hours, 1) if age_hours is not None else None,
                 "providers": result["providers"] or "—",
+                "cooldown": None,
+                "last_error": None,
             })
+    operational = get_provider_health_states(db_path)
+    by_provider: dict[str, list[dict[str, object]]] = {}
+    for state in operational:
+        by_provider.setdefault(str(state["provider_key"]), []).append(state)
+    for key, states in sorted(by_provider.items()):
+        failed = [row for row in states if row["status"] == "failed"]
+        running = [row for row in states if row["status"] == "running"]
+        last_success = max((str(row["last_success_at"]) for row in states if row["last_success_at"]), default=None)
+        last = _parse(last_success)
+        age_hours = _elapsed(current, last).total_seconds() / 3600 if last else None
+        rows.append({
+            "source": f"{key.replace('_', ' ').title()} operations",
+            "status": "Failed" if failed else "Running" if running else "Healthy" if last else "Pending",
+            "records": len(states),
+            "last_success": last_success,
+            "age_hours": round(age_hours, 1) if age_hours is not None else None,
+            "providers": f"{len(failed)} isolated failure(s) · {len(running)} in flight",
+            "cooldown": max((str(row["cooldown_until"]) for row in failed if row["cooldown_until"]), default=None),
+            "last_error": str(failed[-1]["last_error"])[:180] if failed else None,
+        })
     return rows
 
 
@@ -132,12 +157,20 @@ def run_due_maintenance(
             fundamentals_provider = FallbackFundamentalsProvider(providers)
 
             def warm_core(ticker: str) -> None:
+                record_provider_health("market_price", ticker, "running", db_path=database)
                 try:
                     history = fetch_price_history(ticker, period="1y")
                     price = float(history["Close"].dropna().iloc[-1]) if not history.empty else None
-                except Exception:
+                    record_provider_health("market_price", ticker, "healthy", db_path=database)
+                except Exception as exc:
                     price = None
-                get_fundamentals(ticker, fundamentals_provider, price, db_path=database)
+                    record_provider_health("market_price", ticker, "failed", error=str(exc), db_path=database)
+                record_provider_health("fundamentals", ticker, "running", db_path=database)
+                fundamentals = get_fundamentals(ticker, fundamentals_provider, price, db_path=database)
+                record_provider_health(
+                    "fundamentals", ticker, "healthy" if fundamentals else "failed",
+                    error=None if fundamentals else "No fundamentals response", db_path=database,
+                )
 
             pool = ThreadPoolExecutor(max_workers=min(4, max(1, len(tickers))), thread_name_prefix="core-refresh")
             futures = [pool.submit(warm_core, ticker) for ticker in tickers]

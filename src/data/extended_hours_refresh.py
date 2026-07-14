@@ -2,19 +2,24 @@
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
-from src.data.database import get_cached_extended_hours_quote
+from src.data.database import get_cached_extended_hours_quote, record_provider_health
 from src.data.extended_hours import extended_quote_is_fresh, get_extended_hours_quote
 
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="extended-hours")
 _futures: dict[str, Future] = {}
-_lock = Lock()
+_lock = RLock()
 
 
-def _finished(ticker: str, _: Future) -> None:
+def _finished(ticker: str, future: Future, db_path: str | Path | None = None) -> None:
     with _lock:
+        try:
+            future.result()
+            record_provider_health("extended_hours", ticker, "healthy", db_path=db_path)
+        except Exception as exc:
+            record_provider_health("extended_hours", ticker, "failed", error=str(exc), db_path=db_path)
         _futures.pop(ticker, None)
 
 
@@ -32,7 +37,8 @@ def schedule_extended_hours_refresh(
                 continue
             future = _executor.submit(get_extended_hours_quote, normalized, None, True, db_path)
             _futures[normalized] = future
-            future.add_done_callback(lambda completed, symbol=normalized: _finished(symbol, completed))
+            record_provider_health("extended_hours", normalized, "running", db_path=db_path)
+            future.add_done_callback(lambda completed, symbol=normalized, path=db_path: _finished(symbol, completed, path))
             scheduled.append(normalized)
     return scheduled
 
