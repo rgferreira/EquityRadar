@@ -17,6 +17,8 @@ def test_due_maintenance_records_verified_backup(tmp_path, monkeypatch):
     monkeypatch.setattr("src.data.industry_refresh.schedule_industry_refresh", lambda *a, **k: [])
     monkeypatch.setattr("src.data.positioning_refresh.schedule_positioning_refresh", lambda *a, **k: [])
     monkeypatch.setattr("src.data.extended_hours_refresh.schedule_extended_hours_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.backtest_refresh.schedule_outcome_refresh", lambda *a, **k: False)
+    monkeypatch.setattr("src.data.cutoff_suggestions.schedule_cutoff_suggestions", lambda *a, **k: False)
 
     def backup_runner(**_kwargs):
         return {"manifest_path": "synthetic.manifest.json", "sha256": "abc"}
