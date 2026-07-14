@@ -11,7 +11,7 @@ from src.backup import create_verified_backup, verify_backup_manifest
 from src.operations import get_operation_runs, provider_health, run_due_maintenance
 from src.data.database import (
     acknowledge_research_alert, get_backtest_runs, get_positioning_history,
-    get_research_alerts, get_watchlist, save_research_alerts,
+    get_provider_health_transitions, get_research_alerts, get_watchlist, save_research_alerts,
 )
 from src.evidence_monitoring import options_evidence_report
 from src.research_alerts import build_research_alerts
@@ -82,9 +82,8 @@ st.caption(
     "Monitoring only. Options evidence remains excluded from live scores until continuity, overlap, "
     "and a separate purged evaluation all pass."
 )
-options_report = pd.DataFrame(options_evidence_report({
-    ticker: get_positioning_history(ticker) for ticker in get_watchlist()
-}))
+positioning_histories = {ticker: get_positioning_history(ticker) for ticker in get_watchlist()}
+options_report = pd.DataFrame(options_evidence_report(positioning_histories))
 if options_report.empty:
     st.info("No watchlist options history is available yet.")
 else:
@@ -97,7 +96,10 @@ else:
     )
 
 st.subheader("Research alerts")
-save_research_alerts(build_research_alerts(get_backtest_runs()))
+save_research_alerts(build_research_alerts(
+    get_backtest_runs(), positioning_histories=positioning_histories,
+    provider_transitions=get_provider_health_transitions(),
+))
 alerts = get_research_alerts()
 if not alerts:
     st.success("No unacknowledged material research changes.")

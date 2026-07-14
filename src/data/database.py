@@ -376,6 +376,14 @@ def init_db(db_path: str | Path | None = None) -> None:
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(provider_key, ticker)
             );
+            CREATE TABLE IF NOT EXISTS provider_health_transitions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_key TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                previous_status TEXT,
+                new_status TEXT NOT NULL,
+                occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -696,6 +704,10 @@ def record_provider_health(
         raise ValueError(f"Invalid provider health status: {status}")
     normalized = ticker.strip().upper() or "*"
     with get_connection(db_path) as connection:
+        previous = connection.execute(
+            "SELECT status FROM provider_health_state WHERE provider_key=? AND ticker=?",
+            (provider_key, normalized),
+        ).fetchone()
         connection.execute(
             """INSERT INTO provider_health_state
                (provider_key,ticker,status,last_attempt_at,last_success_at,last_error,cooldown_until)
@@ -714,6 +726,13 @@ def record_provider_health(
                  updated_at=CURRENT_TIMESTAMP""",
             (provider_key, normalized, status, status, error, cooldown_until),
         )
+        previous_status = str(previous["status"]) if previous else None
+        if previous_status != status:
+            connection.execute(
+                """INSERT INTO provider_health_transitions
+                   (provider_key,ticker,previous_status,new_status) VALUES (?,?,?,?)""",
+                (provider_key, normalized, previous_status, status),
+            )
 
 
 def get_provider_health_states(
@@ -723,6 +742,16 @@ def get_provider_health_states(
     with get_connection(db_path) as connection:
         return [dict(row) for row in connection.execute(
             "SELECT * FROM provider_health_state ORDER BY provider_key,ticker"
+        ).fetchall()]
+
+
+def get_provider_health_transitions(
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(
+            "SELECT * FROM provider_health_transitions ORDER BY occurred_at,id"
         ).fetchall()]
 
 
