@@ -1,6 +1,6 @@
 # Next best actions
 
-Last reviewed: 2026-07-14. Current internal phase: **3.9 - coverage-aware model promoted**.
+Last reviewed: 2026-07-15. Current internal phase: **3.9 - coverage-aware model promoted**.
 
 This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
 
@@ -20,6 +20,16 @@ are implemented. See [`releases/phase-3.9/ACCEPTANCE-2026-07-14.md`](releases/ph
 The next model-research action is to continue collecting genuinely prospective evidence. The
 [`options-positioning-v1`](experiments/options-positioning-v1.md) hypothesis is preregistered, but no new
 shadow model exists and no score change is authorized.
+
+## Phase 3.9 next step — saved, not implemented
+
+1. **FINRA daily short-volume driver.** Add the same-day consolidated FINRA short-sale-volume files as a
+   separate daily flow-pressure input. Preserve twice-monthly consolidated short interest as the official
+   position anchor: daily short-sale volume is trading flow, not outstanding short positions. Persist raw
+   observations with trade date and acquisition timestamp, expose source freshness and coverage, and build
+   a transparent rolling pressure/z-score feature in shadow mode only. Require a preregistered evaluation
+   window and incremental out-of-sample evidence before authorizing any live score modifier. See
+   [`releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md`](releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md).
 
 ## Phase 4 - saved, not started
 

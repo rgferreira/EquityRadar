@@ -6,3 +6,4 @@
 - [Promotion record](PROMOTION-2026-07-14.md)
 - [Acceptance record](ACCEPTANCE-2026-07-14.md)
 - [macOS launcher](MACOS-LAUNCHER.md)
+- [Next step: FINRA daily short-volume driver](FINRA-DAILY-SHORT-VOLUME-NEXT.md)
