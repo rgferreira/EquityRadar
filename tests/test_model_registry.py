@@ -11,14 +11,15 @@ from src.data.database import (
     get_registered_models,
     init_db,
     register_model,
+    save_backtest_run,
     save_prediction_snapshot,
     set_active_model,
 )
-from src.data.backtest_refresh import _run
+from src.data.backtest_refresh import _run, restate_saved_simulations
 from src.model_registry import (
     build_prediction_snapshot,
-    content_hash,
-    current_model_registration,
+    content_hash, CURRENT_MODEL_VERSION,
+    current_model_registration, evidence_policy_previous_live_registration,
     replay_prediction,
 )
 from src.scoring.decision import (
@@ -54,14 +55,14 @@ def test_registry_seeds_promoted_champion_and_preserves_rollback_model(tmp_path)
     init_db(database)
     models = get_registered_models(database)
 
-    assert len(models) == 4
+    assert len(models) == 6
     active = next(model for model in models if model["is_active"] == 1)
     shadow = next(model for model in models if model["model_version"] == "coverage-aware-renormalized-v1")
     previous = next(
         model for model in models
         if model["model_version"] == "backtested-learning-v4-orthogonal-known-at-v1"
     )
-    assert active["model_version"] == "coverage-aware-renormalized-v3-live"
+    assert active["model_version"] == CURRENT_MODEL_VERSION
     assert active["status"] == "champion"
     assert active["is_champion"] == 1
     assert previous["status"] == "retired"
@@ -71,10 +72,15 @@ def test_registry_seeds_promoted_champion_and_preserves_rollback_model(tmp_path)
     assert shadow["is_champion"] == 0
     technology = next(
         model for model in models
-        if model["model_version"] == "technology-potential-modifier-v1-shadow"
+        if model["model_version"] == "technology-potential-modifier-v2-finra-freshness-shadow"
     )
     assert technology["status"] == "candidate"
     assert technology["is_active"] == technology["is_champion"] == 0
+    retired_technology = next(
+        model for model in models
+        if model["model_version"] == "technology-potential-modifier-v1-shadow"
+    )
+    assert retired_technology["status"] == "retired"
 
 
 def test_arbitrary_model_name_cannot_override_registry_activity(tmp_path):
@@ -152,7 +158,7 @@ def test_simulation_worker_writes_replayable_immutable_prediction(tmp_path, monk
     assert replay_prediction(snapshots[0])["status"] == "exact_match"
     shadow = get_shadow_decision_snapshots("TEST", database)
     assert len(shadow) == 1
-    assert shadow[0]["challenger_model_version"] == "technology-potential-modifier-v1-shadow"
+    assert shadow[0]["challenger_model_version"] == "technology-potential-modifier-v2-finra-freshness-shadow"
     compatibility = get_backtest_runs("TEST", database)[0]
     assert compatibility["has_prediction_snapshot"] == 1
 
@@ -175,3 +181,30 @@ def test_unregistered_legacy_run_remains_explicit_compatibility_data(tmp_path):
     assert row["model_registry_status"] == "legacy_unregistered"
     assert row["has_prediction_snapshot"] == 0
     assert row["entry_score"] == 50
+
+
+def test_finra_freshness_restatement_is_additive_and_selects_corrected_model(tmp_path, monkeypatch):
+    database = tmp_path / "registry.db"
+    history = pd.DataFrame(
+        {"Close": [100 + index * .25 for index in range(420)]},
+        index=pd.date_range("2025-01-02", periods=420, freq="B"),
+    )
+    monkeypatch.setattr("src.data.backtest_refresh.fetch_price_history", lambda *args, **kwargs: history)
+    previous = evidence_policy_previous_live_registration()
+    save_backtest_run({
+        "ticker": "TEST", "as_of_date": "2026-05-08", "coverage": "Price-only reconstruction",
+        "entry_score": 50, "exit_score": 50, "entry_signal": "Wait", "exit_signal": "Reassess",
+        "technical_score": 50, "valuation_score": 50, "risk_score": 50,
+        "outcome_1m": 1, "outcome_3m": 2, "outcome_6m": None, "outcome_12m": None,
+        "inputs_json": "{}", "model_version": previous["model_version"],
+    }, database)
+
+    report = restate_saved_simulations(database)
+    repeated = restate_saved_simulations(database)
+    rows = get_backtest_runs("TEST", database)
+
+    assert report["runs_recalculated"] == 1
+    assert report["legacy_rows_preserved"] is True
+    assert repeated["runs_recalculated"] == 0
+    assert {row["model_version"] for row in rows} == {previous["model_version"], CURRENT_MODEL_VERSION}
+    assert latest_model_runs(rows)[0]["model_version"] == CURRENT_MODEL_VERSION

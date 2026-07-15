@@ -10,4 +10,5 @@ work/*.log
 work/*.json
 work/*.pid
 work/backups/
+work/reports/
 tmp/

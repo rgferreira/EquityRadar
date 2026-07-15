@@ -8,7 +8,8 @@ from pathlib import Path
 from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
 from src.model_registry import (
     coverage_aware_shadow_registration, current_model_registration,
-    previous_live_model_registration, technology_potential_shadow_registration,
+    evidence_policy_previous_live_registration, previous_live_model_registration,
+    previous_technology_potential_shadow_registration, technology_potential_shadow_registration,
 )
 
 
@@ -437,11 +438,16 @@ def init_db(db_path: str | Path | None = None) -> None:
         promotion_applied = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key='coverage_aware_live_promotion_v2'"
         ).fetchone()
-        if not promotion_applied:
+        freshness_correction_applied = connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration_key='finra_report_date_freshness_v1'"
+        ).fetchone()
+        if not promotion_applied or not freshness_correction_applied:
             connection.execute("UPDATE model_registry SET is_active=0, is_champion=0")
         for model in (
             previous_live_model_registration(), coverage_aware_shadow_registration(),
-            current_model_registration(), technology_potential_shadow_registration(),
+            evidence_policy_previous_live_registration(), current_model_registration(),
+            previous_technology_potential_shadow_registration(),
+            technology_potential_shadow_registration(),
         ):
             existing_model = connection.execute(
                 "SELECT config_hash, config_json FROM model_registry WHERE model_version = ?",
@@ -464,8 +470,12 @@ def init_db(db_path: str | Path | None = None) -> None:
             "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
             (coverage_aware_shadow_registration()["model_version"],),
         )
+        connection.execute(
+            "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
+            (previous_technology_potential_shadow_registration()["model_version"],),
+        )
         if not promotion_applied:
-            current = current_model_registration()
+            current = evidence_policy_previous_live_registration()
             previous = previous_live_model_registration()
             connection.execute(
                 """UPDATE model_registry SET is_active=0, is_champion=0,
@@ -498,8 +508,44 @@ def init_db(db_path: str | Path | None = None) -> None:
             """UPDATE model_promotion_events SET superseded_by=?
                WHERE promoted_model_version='coverage-aware-renormalized-v2-live'
                AND superseded_by IS NULL""",
-            (current_model_registration()["model_version"],),
+            (evidence_policy_previous_live_registration()["model_version"],),
         )
+        if not freshness_correction_applied:
+            current = current_model_registration()
+            previous = evidence_policy_previous_live_registration()
+            connection.execute(
+                """UPDATE model_registry SET is_active=0, is_champion=0,
+                   status=CASE WHEN status='champion' THEN 'retired' ELSE status END
+                   WHERE model_version<>?""",
+                (current["model_version"],),
+            )
+            connection.execute(
+                """UPDATE model_registry SET is_active=1, is_champion=1, status='champion',
+                   promoted_at=CURRENT_TIMESTAMP WHERE model_version=?""",
+                (current["model_version"],),
+            )
+            connection.execute(
+                "UPDATE model_registry SET status='retired' WHERE model_version=?",
+                (previous["model_version"],),
+            )
+            connection.execute(
+                """INSERT OR IGNORE INTO model_promotion_events
+                   (promoted_model_version, previous_model_version, decision_type,
+                    gates_passed, gates_total, override_reason, rollback_model_version)
+                   VALUES (?, ?, 'evidence_policy_correction', 0, 0, ?, ?)""",
+                (
+                    current["model_version"], previous["model_version"],
+                    "FINRA report-date freshness integrity correction",
+                    previous["model_version"],
+                ),
+            )
+            connection.execute(
+                "UPDATE model_promotion_events SET superseded_by=? WHERE promoted_model_version=?",
+                (current["model_version"], previous["model_version"]),
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (migration_key) VALUES ('finra_report_date_freshness_v1')"
+            )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_registry_snapshots_v1')"
         )

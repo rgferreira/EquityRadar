@@ -1,12 +1,14 @@
 """Persistent background orchestration for point-in-time simulations."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from collections import defaultdict
 from pathlib import Path
 from threading import RLock
 from datetime import date
 import json
 
 from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_signal
+from src.backtesting import lesson_summary
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, get_cached_fundamentals,
     get_cached_industry_research, get_positioning_history,
@@ -26,89 +28,197 @@ _futures: dict[str, Future[None]] = {}
 _outcome_future: Future[None] | None = None
 
 
+def _persist_reconstruction(
+    *, ticker: str, as_of_date: str, history: object,
+    fundamentals: object, positioning_history: list[object], industry_research: object,
+    db_path: str | Path | None, simulation_source: str,
+    suggestion_rationale: str | None, benchmark_cache: dict[str, object | None],
+) -> dict[str, object]:
+    result = reconstruct_signal(
+        history, as_of_date, fundamentals, positioning_history, industry_research,
+    )
+    outcomes = evaluate_outcomes(history, as_of_date)
+    legacy_run = {
+        "ticker": ticker, "as_of_date": as_of_date, "coverage": result["coverage"],
+        "entry_score": result["entry_score"], "exit_score": result["exit_score"],
+        "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
+        "technical_score": result["technical"], "valuation_score": result["valuation"],
+        "risk_score": result["risk"], "outcome_1m": outcomes["1M"],
+        "outcome_3m": outcomes["3M"], "outcome_6m": outcomes["6M"],
+        "outcome_12m": outcomes["12M"],
+        "inputs_json": json.dumps({"metrics": result["metrics"],
+                                     "fundamentals_used": result["fundamentals_used"],
+                                     "finra_observations_used": result["finra_observations_used"],
+                                     "temporal_coverage": result["temporal_coverage"],
+                                     "positioning_modifier": result["positioning_modifier"],
+                                     "technology_potential": result["technology_potential"]}),
+        "model_version": result["model_version"],
+        "simulation_source": simulation_source,
+        "suggestion_rationale": suggestion_rationale,
+    }
+    save_backtest_run(legacy_run, db_path)
+    model = current_model_registration()
+    frozen_inputs = {
+        "features": {
+            "technical_score": result["technical"],
+            "valuation_score": result["valuation"],
+            "risk_score": result["risk"],
+        },
+        "positioning_adjustments": {
+            "entry_adjustment": result["positioning_modifier"]["entry_adjustment"],
+            "exit_adjustment": result["positioning_modifier"]["exit_adjustment"],
+        },
+        "temporal_coverage": result["temporal_coverage"],
+        "input_references": result["input_references"],
+        "technology_potential": result["technology_potential"],
+    }
+    frozen_outputs = {
+        "entry_score": result["entry_score"], "exit_score": result["exit_score"],
+        "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
+    }
+    snapshot = build_prediction_snapshot(
+        ticker=ticker, as_of_date=as_of_date, model=model, inputs=frozen_inputs,
+        outputs=frozen_outputs, simulation_source=simulation_source,
+        suggestion_rationale=suggestion_rationale,
+    )
+    save_prediction_snapshot(snapshot, db_path)
+    if ACTIVE_SHADOW_ENABLED:
+        try:
+            save_shadow_decision_snapshot(build_shadow_snapshot(
+                ticker=ticker, as_of_date=as_of_date, surface="historical_simulation",
+                inputs={**frozen_inputs, "industry_calibrated": False},
+                current_outputs=frozen_outputs,
+            ), db_path)
+        except Exception:
+            # Shadow research is isolated from the authoritative simulation pipeline.
+            pass
+    benchmark_ticker = benchmark_for_ticker(ticker)
+    if benchmark_ticker not in benchmark_cache:
+        try:
+            benchmark_cache[benchmark_ticker] = (
+                fetch_price_history(benchmark_ticker, period="max") if benchmark_ticker else None
+            )
+        except Exception:
+            benchmark_cache[benchmark_ticker] = None
+    save_outcome_label(build_relative_outcome_label(
+        prediction_id=str(snapshot["prediction_id"]), ticker=ticker,
+        as_of_date=as_of_date, security_history=history,
+        benchmark_history=benchmark_cache.get(benchmark_ticker),
+        benchmark_ticker=benchmark_ticker,
+    ), db_path)
+    return legacy_run
+
+
 def _run(
     as_of_date: str, tickers: list[str], db_path: str | Path | None,
     simulation_source: str = "manual", suggestion_rationale: str | None = None,
 ) -> None:
+    benchmark_cache: dict[str, object | None] = {}
     for ticker in tickers:
         set_backtest_job_item(as_of_date, ticker, "running", db_path=db_path)
         try:
             history = fetch_price_history(ticker, period="max")
-            result = reconstruct_signal(
-                history, as_of_date, get_cached_fundamentals(ticker, db_path),
-                get_positioning_history(ticker, db_path), get_cached_industry_research(ticker, db_path),
+            _persist_reconstruction(
+                ticker=ticker, as_of_date=as_of_date, history=history,
+                fundamentals=get_cached_fundamentals(ticker, db_path),
+                positioning_history=get_positioning_history(ticker, db_path),
+                industry_research=get_cached_industry_research(ticker, db_path),
+                db_path=db_path, simulation_source=simulation_source,
+                suggestion_rationale=suggestion_rationale, benchmark_cache=benchmark_cache,
             )
-            outcomes = evaluate_outcomes(history, as_of_date)
-            legacy_run = {
-                "ticker": ticker, "as_of_date": as_of_date, "coverage": result["coverage"],
-                "entry_score": result["entry_score"], "exit_score": result["exit_score"],
-                "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
-                "technical_score": result["technical"], "valuation_score": result["valuation"],
-                "risk_score": result["risk"], "outcome_1m": outcomes["1M"],
-                "outcome_3m": outcomes["3M"], "outcome_6m": outcomes["6M"],
-                "outcome_12m": outcomes["12M"],
-                "inputs_json": json.dumps({"metrics": result["metrics"],
-                                             "fundamentals_used": result["fundamentals_used"],
-                                             "finra_observations_used": result["finra_observations_used"],
-                                             "temporal_coverage": result["temporal_coverage"],
-                                             "positioning_modifier": result["positioning_modifier"],
-                                             "technology_potential": result["technology_potential"]}),
-                "model_version": result["model_version"],
-                "simulation_source": simulation_source,
-                "suggestion_rationale": suggestion_rationale,
-            }
-            save_backtest_run(legacy_run, db_path)
-            model = current_model_registration()
-            frozen_inputs = {
-                "features": {
-                    "technical_score": result["technical"],
-                    "valuation_score": result["valuation"],
-                    "risk_score": result["risk"],
-                },
-                "positioning_adjustments": {
-                    "entry_adjustment": result["positioning_modifier"]["entry_adjustment"],
-                    "exit_adjustment": result["positioning_modifier"]["exit_adjustment"],
-                },
-                "temporal_coverage": result["temporal_coverage"],
-                "input_references": result["input_references"],
-                "technology_potential": result["technology_potential"],
-            }
-            frozen_outputs = {
-                "entry_score": result["entry_score"], "exit_score": result["exit_score"],
-                "entry_signal": result["entry_signal"], "exit_signal": result["exit_signal"],
-            }
-            snapshot = build_prediction_snapshot(
-                ticker=ticker, as_of_date=as_of_date, model=model, inputs=frozen_inputs,
-                outputs=frozen_outputs, simulation_source=simulation_source,
-                suggestion_rationale=suggestion_rationale,
-            )
-            save_prediction_snapshot(snapshot, db_path)
-            if ACTIVE_SHADOW_ENABLED:
-                try:
-                    save_shadow_decision_snapshot(build_shadow_snapshot(
-                        ticker=ticker, as_of_date=as_of_date, surface="historical_simulation",
-                        inputs={**frozen_inputs, "industry_calibrated": False},
-                        current_outputs=frozen_outputs,
-                    ), db_path)
-                except Exception:
-                    # Shadow research is isolated from the authoritative simulation pipeline.
-                    pass
-            benchmark_ticker = benchmark_for_ticker(ticker)
-            benchmark_history = None
-            if benchmark_ticker:
-                try:
-                    benchmark_history = fetch_price_history(benchmark_ticker, period="max")
-                except Exception:
-                    # The prediction remains valid; the explicit label records unavailable evidence.
-                    benchmark_history = None
-            save_outcome_label(build_relative_outcome_label(
-                prediction_id=str(snapshot["prediction_id"]), ticker=ticker,
-                as_of_date=as_of_date, security_history=history,
-                benchmark_history=benchmark_history, benchmark_ticker=benchmark_ticker,
-            ), db_path)
             set_backtest_job_item(as_of_date, ticker, "completed", db_path=db_path)
         except Exception as exc:
             set_backtest_job_item(as_of_date, ticker, "failed", str(exc), db_path)
+
+
+def restate_saved_simulations(db_path: str | Path | None = None) -> dict[str, object]:
+    """Append a corrected active-model run for every saved cutoff; never rewrite legacy rows."""
+    existing_runs = get_backtest_runs(db_path=db_path)
+    source_runs = latest_model_runs(existing_runs)
+    current_version = str(current_model_registration()["model_version"])
+    already_corrected = {
+        (str(run["ticker"]), str(run["as_of_date"]))
+        for run in existing_runs if str(run["model_version"]) == current_version
+    }
+    by_ticker: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for run in source_runs:
+        key = (str(run["ticker"]), str(run["as_of_date"]))
+        if key not in already_corrected:
+            by_ticker[key[0]].append(dict(run))
+    before_lessons = {
+        ticker: lesson_summary([row for row in existing_runs if str(row["ticker"]) == ticker])
+        for ticker in by_ticker
+    }
+    benchmark_cache: dict[str, object | None] = {}
+    ticker_audit: list[dict[str, object]] = []
+    failed: list[dict[str, str]] = []
+    created = score_changes = signal_changes = stale_exclusions = 0
+    for ticker, runs in sorted(by_ticker.items()):
+        try:
+            history = fetch_price_history(ticker, period="max")
+            fundamentals = get_cached_fundamentals(ticker, db_path)
+            positioning = get_positioning_history(ticker, db_path)
+            industry = get_cached_industry_research(ticker, db_path)
+        except Exception as exc:
+            failed.append({"ticker": ticker, "as_of_date": "all", "error": str(exc)})
+            continue
+        ticker_created = ticker_score_changes = ticker_signal_changes = ticker_stale = 0
+        for source in sorted(runs, key=lambda row: str(row["as_of_date"])):
+            as_of_date = str(source["as_of_date"])
+            set_backtest_job_item(as_of_date, ticker, "running", db_path=db_path)
+            try:
+                corrected = _persist_reconstruction(
+                    ticker=ticker, as_of_date=as_of_date, history=history,
+                    fundamentals=fundamentals, positioning_history=positioning,
+                    industry_research=industry, db_path=db_path,
+                    simulation_source=str(source.get("simulation_source") or "manual"),
+                    suggestion_rationale=source.get("suggestion_rationale"),
+                    benchmark_cache=benchmark_cache,
+                )
+                ticker_created += 1
+                ticker_score_changes += int(
+                    float(corrected["entry_score"]) != float(source["entry_score"])
+                    or float(corrected["exit_score"]) != float(source["exit_score"])
+                )
+                ticker_signal_changes += int(
+                    corrected["entry_signal"] != source["entry_signal"]
+                    or corrected["exit_signal"] != source["exit_signal"]
+                )
+                inputs = json.loads(str(corrected["inputs_json"]))
+                ticker_stale += int(
+                    (inputs.get("temporal_coverage") or {}).get("finra") == "stale_excluded"
+                )
+                set_backtest_job_item(as_of_date, ticker, "completed", db_path=db_path)
+            except Exception as exc:
+                set_backtest_job_item(as_of_date, ticker, "failed", str(exc), db_path)
+                failed.append({"ticker": ticker, "as_of_date": as_of_date, "error": str(exc)})
+        created += ticker_created
+        score_changes += ticker_score_changes
+        signal_changes += ticker_signal_changes
+        stale_exclusions += ticker_stale
+        ticker_audit.append({
+            "ticker": ticker, "runs_recalculated": ticker_created,
+            "score_changes": ticker_score_changes, "signal_changes": ticker_signal_changes,
+            "stale_finra_exclusions": ticker_stale,
+        })
+    refreshed_runs = get_backtest_runs(db_path=db_path)
+    for row in ticker_audit:
+        ticker = str(row["ticker"])
+        after = lesson_summary([run for run in refreshed_runs if str(run["ticker"]) == ticker])
+        before = before_lessons[ticker]
+        row["accuracy_before"] = before.get("decision_accuracy")
+        row["accuracy_after"] = after.get("decision_accuracy")
+        row["accuracy_delta_pp"] = (
+            None if before.get("decision_accuracy") is None or after.get("decision_accuracy") is None
+            else round(float(after["decision_accuracy"]) - float(before["decision_accuracy"]), 1)
+        )
+    return {
+        "model_version": current_version,
+        "legacy_rows_preserved": True,
+        "runs_recalculated": created, "score_changes": score_changes,
+        "signal_changes": signal_changes, "stale_finra_exclusions": stale_exclusions,
+        "failed": failed, "tickers": ticker_audit,
+    }
 
 
 def _finished(key: str, _future: Future[None]) -> None:

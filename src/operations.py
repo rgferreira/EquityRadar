@@ -11,9 +11,11 @@ from typing import Callable
 
 from src.backup import create_verified_backup
 from src.data.database import (
-    get_connection, get_provider_health_states, get_watchlist, init_db,
+    get_cached_positioning, get_connection, get_positioning_history,
+    get_provider_health_states, get_watchlist, init_db,
     record_provider_health,
 )
+from src.scoring.positioning import effective_positioning_snapshot
 from src.utils.config import DATABASE_PATH
 
 
@@ -122,6 +124,32 @@ def provider_health(db_path: str | Path | None = None, *, now: datetime | None =
     return rows
 
 
+def short_interest_evidence_health(
+    db_path: str | Path | None = None, *, now: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Expose report-date freshness separately from provider download freshness."""
+    current = now or datetime.now()
+    rows: list[dict[str, object]] = []
+    for ticker in get_watchlist(db_path):
+        evidence = effective_positioning_snapshot(
+            get_cached_positioning(ticker, db_path), get_positioning_history(ticker, db_path), current,
+        )
+        status = str(evidence["status"])
+        rows.append({
+            "ticker": ticker,
+            "status": {
+                "current": "Current official", "stale": "Stale — excluded",
+                "missing": "Missing — excluded", "future": "Future — excluded",
+            }.get(status, "Missing — excluded"),
+            "report_date": evidence.get("report_date"),
+            "report_age_days": evidence.get("age_days"),
+            "used_in_scores": "Yes" if evidence.get("scoring_eligible") else "No",
+            "source": evidence.get("source") or "—",
+            "reason": evidence.get("reason"),
+        })
+    return rows
+
+
 def run_due_maintenance(
     db_path: str | Path | None = None, *, now: datetime | None = None,
     backup_runner: Callable[..., dict[str, object]] = create_verified_backup,
@@ -139,7 +167,7 @@ def run_due_maintenance(
             tickers = get_watchlist(database)
             from src.data.extended_hours_refresh import schedule_extended_hours_refresh
             from src.data.industry_refresh import schedule_industry_refresh
-            from src.data.positioning_refresh import schedule_positioning_refresh
+            from src.data.positioning_refresh import schedule_finra_backfill, schedule_positioning_refresh
             from src.data.backtest_refresh import schedule_outcome_refresh
             from src.data.cutoff_suggestions import schedule_cutoff_suggestions
             from src.data.market_data import fetch_price_history
@@ -150,6 +178,7 @@ def run_due_maintenance(
             scheduled = sorted(set(
                 schedule_industry_refresh(tickers, max_new=2, db_path=database)
                 + schedule_positioning_refresh(tickers, max_new=2, db_path=database)
+                + schedule_finra_backfill(tickers, max_new=2, db_path=database)
                 + schedule_extended_hours_refresh(tickers, max_new=2, db_path=database)
             ))
             providers = [FMPProvider(FMP_API_KEY)] if FMP_API_KEY else []

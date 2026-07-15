@@ -92,9 +92,11 @@ def test_portfolio_backup_and_profiles_do_not_bloat_normal_page_loads():
 
 def test_company_uses_compact_responsive_chart_legend():
     company = Path("pages/3_Company.py").read_text(encoding="utf-8")
-    assert "figure.update_layout(showlegend=False" in company
+    assert "showlegend=False" in company
     assert "company-chart-legend" in company
     assert "FINRA short Δ" in company and "Suggested pending" in company
+    assert 'hovermode="x unified"' in company
+    assert "exact shared calendar axis" in company
 
 
 def test_macos_launcher_is_idempotent_and_scoped_to_equity_radar():

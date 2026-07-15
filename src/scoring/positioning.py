@@ -1,6 +1,10 @@
 """Transparent positioning scores and capped decision-score modifiers."""
 
 from collections.abc import Mapping
+from datetime import date, datetime
+
+
+SHORT_INTEREST_MAX_AGE_DAYS = 28
 
 
 def _num(value: object) -> float | None:
@@ -9,6 +13,97 @@ def _num(value: object) -> float | None:
 
 def _bounded(value: float) -> float:
     return max(0.0, min(100.0, value))
+
+
+def _as_date(value: object) -> date | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+    except (TypeError, ValueError):
+        return None
+
+
+def short_interest_freshness(
+    record: Mapping[str, object] | None, as_of: date | datetime | str | None = None,
+) -> dict[str, object]:
+    """Classify report-date freshness; fetch time never makes old evidence current."""
+    report_date = _as_date(
+        (record or {}).get("reporting_date") or (record or {}).get("period_end")
+    )
+    cutoff = _as_date(as_of) if as_of is not None else date.today()
+    if report_date is None or cutoff is None:
+        return {
+            "status": "missing", "report_date": None, "age_days": None,
+            "scoring_eligible": False, "reason": "Short-interest report date is unavailable",
+        }
+    age_days = (cutoff - report_date).days
+    if age_days < 0:
+        status, eligible, reason = "future", False, "Short-interest report is after the decision date"
+    elif age_days > SHORT_INTEREST_MAX_AGE_DAYS:
+        status, eligible = "stale", False
+        reason = f"Short-interest report is {age_days} days old and excluded from scores"
+    else:
+        status, eligible = "current", True
+        reason = f"Short-interest report is {age_days} days old and within the {SHORT_INTEREST_MAX_AGE_DAYS}-day gate"
+    return {
+        "status": status, "report_date": report_date.isoformat(), "age_days": age_days,
+        "scoring_eligible": eligible, "reason": reason,
+    }
+
+
+def effective_positioning_snapshot(
+    snapshot: Mapping[str, object] | None,
+    history: list[Mapping[str, object]],
+    as_of: date | datetime | str | None = None,
+) -> dict[str, object]:
+    """Use the freshest dated short report while retaining non-short current evidence."""
+    cutoff = _as_date(as_of) if as_of is not None else date.today()
+    candidates: list[tuple[date, int, Mapping[str, object], str]] = []
+
+    def add_candidate(record: Mapping[str, object], priority: int, source: str) -> None:
+        short = record.get("short")
+        report_date = _as_date(record.get("reporting_date") or record.get("period_end"))
+        if (
+            isinstance(short, Mapping) and report_date is not None
+            and (cutoff is None or report_date <= cutoff)
+            and any(_num(short.get(field)) is not None for field in (
+                "shares_short", "short_percent_float", "short_change_pct", "days_to_cover",
+            ))
+        ):
+            candidates.append((report_date, priority, record, source))
+
+    if snapshot:
+        add_candidate(snapshot, 1, str(snapshot.get("provider_name") or "current positioning"))
+    for row in history:
+        if isinstance(row, Mapping) and row.get("snapshot_type") == "historical_short_interest":
+            add_candidate(row, 2, str(row.get("provider_name") or "FINRA history"))
+
+    effective = dict(snapshot or {})
+    if not candidates:
+        effective["short"] = {}
+        freshness = short_interest_freshness(None, as_of)
+        return {"snapshot": effective, "source": "—", **freshness}
+
+    latest_date = max(item[0] for item in candidates)
+    same_date = sorted((item for item in candidates if item[0] == latest_date), key=lambda item: item[1])
+    merged_short: dict[str, object] = {}
+    sources: list[str] = []
+    representative: Mapping[str, object] = same_date[-1][2]
+    for _, _, record, source in same_date:
+        short = record.get("short")
+        if isinstance(short, Mapping):
+            merged_short.update({key: value for key, value in short.items() if value is not None})
+        if source not in sources:
+            sources.append(source)
+    freshness = short_interest_freshness(representative, as_of)
+    effective["short"] = merged_short if freshness["scoring_eligible"] else {}
+    effective["reporting_date"] = latest_date.isoformat()
+    return {"snapshot": effective, "source": " + ".join(sources), **freshness}
 
 
 def positioning_scores(snapshot: Mapping[str, object] | None) -> dict[str, object]:
@@ -71,20 +166,30 @@ def positioning_scores(snapshot: Mapping[str, object] | None) -> dict[str, objec
 
 def positioning_score_adjustments(
     snapshot: Mapping[str, object] | None, history: list[Mapping[str, object]],
-    technical_score: float,
+    technical_score: float, as_of: date | datetime | str | None = None,
 ) -> dict[str, object]:
     """Return small reliability-gated modifiers for the established decision scores."""
-    current = positioning_scores(snapshot)
-    if not snapshot:
+    short_evidence = effective_positioning_snapshot(snapshot, history, as_of)
+    effective_snapshot = short_evidence["snapshot"]
+    current = positioning_scores(effective_snapshot if isinstance(effective_snapshot, Mapping) else None)
+    if not effective_snapshot:
         return {"entry_adjustment": 0.0, "exit_adjustment": 0.0, "reliability": 0.0,
-                "short_trend_pct": None, "history_points": 0, "notes": ["No current positioning snapshot"]}
+                "short_trend_pct": None, "history_points": 0, "notes": ["No current positioning snapshot"],
+                "short_evidence_status": "missing", "short_report_date": None,
+                "short_age_days": None, "short_scoring_eligible": False,
+                "short_reversal_lever": "Unavailable · no dated short-interest evidence",
+                "short_reversal_confirmed": False}
+    cutoff = _as_date(as_of) if as_of is not None else date.today()
     short_rows = [
         row for row in history
         if isinstance(row, Mapping) and row.get("snapshot_type") == "historical_short_interest"
         and isinstance(row.get("short"), Mapping) and _num(row["short"].get("shares_short")) is not None
+        and (_as_date(row.get("reporting_date") or row.get("period_end")) is not None)
+        and (cutoff is None or _as_date(row.get("reporting_date") or row.get("period_end")) <= cutoff)
     ]
     unique = {str(row.get("reporting_date") or row.get("snapshot_date")): row for row in short_rows}
-    ordered = [unique[key] for key in sorted(unique)]
+    ordered_all = [unique[key] for key in sorted(unique)]
+    ordered = ordered_all if bool(short_evidence["scoring_eligible"]) else []
     trend = None
     if len(ordered) >= 2:
         latest = _num(ordered[-1]["short"].get("shares_short"))
@@ -92,9 +197,8 @@ def positioning_score_adjustments(
         baseline = _num(baseline_row["short"].get("shares_short"))
         if latest is not None and baseline:
             trend = (latest / baseline - 1) * 100
-    latest_change = (
-        _num(ordered[-1]["short"].get("short_change_pct")) if ordered else None
-    )
+    effective_short = effective_snapshot.get("short", {}) if isinstance(effective_snapshot, Mapping) else {}
+    latest_change = _num(effective_short.get("short_change_pct")) if isinstance(effective_short, Mapping) else None
     previous_change = (
         _num(ordered[-2]["short"].get("short_change_pct")) if len(ordered) >= 2 else None
     )
@@ -102,7 +206,11 @@ def positioning_score_adjustments(
         latest_change is not None and previous_change is not None
         and latest_change < 0 <= previous_change and technical_score >= 60
     )
-    if reversal_confirmed:
+    if not short_evidence["scoring_eligible"]:
+        age = short_evidence.get("age_days")
+        suffix = "report date unavailable" if age is None else f"report is {age} days old"
+        reversal_lever = f"Unavailable · {suffix}"
+    elif reversal_confirmed:
         reversal_lever = "Confirmed · shorts falling with technical strength"
     elif latest_change is not None and latest_change > 0:
         reversal_lever = "Armed · short interest is still rising"
@@ -112,7 +220,7 @@ def positioning_score_adjustments(
         reversal_lever = "Neutral · no new short-position reversal"
 
     current_confidence = float(current["confidence"]) / 100
-    history_confidence = min(1.0, len(ordered) / 6)
+    history_confidence = min(1.0, len(ordered) / 6) if short_evidence["scoring_eligible"] else 0.0
     reliability = current_confidence * (.60 + .40 * history_confidence)
     long_signal = (float(current["long_positioning"]) - 50) / 50
     pressure_signal = (float(current["short_pressure"]) - 50) / 50
@@ -129,7 +237,8 @@ def positioning_score_adjustments(
     entry_adjustment = max(-5.0, min(5.0, 5 * entry_raw * reliability))
     exit_adjustment = max(-7.0, min(7.0, 7 * exit_raw * reliability))
     notes = [
-        f"{len(ordered)} official FINRA observations",
+        f"{len(ordered_all)} official FINRA observations",
+        str(short_evidence["reason"]),
         "Six-report short trend unavailable" if trend is None else f"Six-report short-interest trend {trend:+.1f}%",
         f"Current positioning coverage {float(current['confidence']):.0f}/100",
         f"Modifier reliability {reliability:.0%}",
@@ -138,9 +247,14 @@ def positioning_score_adjustments(
     return {
         "entry_adjustment": round(entry_adjustment, 1), "exit_adjustment": round(exit_adjustment, 1),
         "reliability": round(reliability * 100, 1), "short_trend_pct": trend,
-        "history_points": len(ordered), "notes": notes,
+        "history_points": len(ordered_all), "notes": notes,
         "short_latest_change_pct": latest_change, "short_reversal_lever": reversal_lever,
         "short_reversal_confirmed": reversal_confirmed,
+        "short_evidence_status": short_evidence["status"],
+        "short_report_date": short_evidence["report_date"],
+        "short_age_days": short_evidence["age_days"],
+        "short_scoring_eligible": short_evidence["scoring_eligible"],
+        "short_evidence_source": short_evidence["source"],
     }
 
 

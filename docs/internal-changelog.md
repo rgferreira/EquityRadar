@@ -1,7 +1,7 @@
 # Internal changelog
 
 Current checkpoint: **Phase 3.9 - Coverage-aware live model**
-Latest release: `coverage-aware-renormalized-v3-live` promotion, 2026-07-14
+Latest release: `coverage-aware-renormalized-v4-finra-freshness-live` evidence-integrity correction, 2026-07-15
 
 ## Checkpoints and informal phases
 
@@ -30,6 +30,7 @@ Latest release: `coverage-aware-renormalized-v3-live` promotion, 2026-07-14
 6. **Phase 3.8 temporal variant - `backtested-learning-v4-orthogonal-known-at-v1`:** weights remain unchanged, but newly generated historical scores admit non-price evidence only with verified `known_at`; legacy v4 research remains preserved and quarantined.
 7. **Phase 3.8 registered policy:** the temporal variant has a deterministic configuration hash and predictions freeze input references and outputs.
 8. **Phase 3.9 champion - `coverage-aware-renormalized-v3-live`:** verified valuation preserves 50/30/20 Technical/Valuation/Risk; unavailable valuation contributes no placeholder and Technical/Risk renormalize to 5/7 and 2/7. Industry-calibrated and Exit-review policies remain unchanged.
+9. **FINRA freshness correction - `coverage-aware-renormalized-v4-finra-freshness-live`:** short-interest age is measured from the official report date, never download time. Reports older than 28 days and missing/unverified evidence contribute no short-interest directionality. Saved simulations are restated append-only; v3 remains the immediate rollback anchor.
 9. **Confirmed-episode rule:** only informative independent episodes with matured 3M outcomes contribute to visible accuracy; backtested-learning score modifiers remain quarantined.
 
 ## Operating principles

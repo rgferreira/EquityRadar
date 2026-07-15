@@ -40,7 +40,7 @@ def test_reconstruction_uses_only_finra_rows_available_by_cutoff():
          "known_at_status": "verified_observed", "snapshot_type": "historical_short_interest",
          "short": {"shares_short": 300, "short_change_pct": 200, "days_to_cover": 8}},
     ]
-    result = reconstruct_signal(sample_history(), "2023-12-01", positioning_history=positioning)
+    result = reconstruct_signal(sample_history(), "2023-07-20", positioning_history=positioning)
     assert result["finra_observations_used"] == 1
     assert result["positioning_modifier"]["history_points"] == 1
     assert "FINRA" in result["coverage"]

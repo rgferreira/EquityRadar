@@ -7,18 +7,19 @@ from threading import RLock
 from typing import Callable
 
 from src.data.database import (
-    get_cached_positioning, get_positioning_history, record_provider_health,
+    get_cached_positioning, get_positioning_history, get_provider_health_states, record_provider_health,
     save_positioning_snapshot,
 )
 from src.data.finra_short_interest import FINRAShortInterestProvider, backfill_finra_short_history
 from src.data.positioning import YahooPositioningProvider
 from src.data.temporal import observed_at_fetch
+from src.scoring.positioning import effective_positioning_snapshot
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="positioning-refresh")
 _lock = RLock()
 _futures: dict[str, Future[dict[str, object]]] = {}
 _failures: dict[str, tuple[datetime, str]] = {}
-_finra_futures: dict[str, Future[int]] = {}
+_finra_futures: dict[str, Future[dict[str, int]]] = {}
 _finra_failures: dict[str, tuple[datetime, str]] = {}
 _finra_attempted_empty: set[str] = set()
 RETRY_COOLDOWN = timedelta(minutes=15)
@@ -103,26 +104,56 @@ def has_finra_history(ticker: str, db_path: str | Path | None = None) -> bool:
     )
 
 
+def finra_refresh_due(
+    ticker: str, db_path: str | Path | None = None, *, now: datetime | None = None,
+) -> bool:
+    """Refresh official history at most daily, even when earlier rows already exist."""
+    normalized = ticker.strip().upper()
+    current = now or datetime.now()
+    state = next((
+        row for row in get_provider_health_states(db_path)
+        if row["provider_key"] == "finra" and row["ticker"] == normalized
+    ), None)
+    if not state or not state.get("last_attempt_at"):
+        return True
+    try:
+        return datetime.fromisoformat(str(state["last_attempt_at"])).date() < current.date()
+    except ValueError:
+        return True
+
+
 def _finra_backfill(
     ticker: str, provider_factory: Callable[[], FINRAShortInterestProvider],
     db_path: str | Path | None,
-) -> int:
-    return backfill_finra_short_history(ticker, provider_factory(), db_path)
+) -> dict[str, int]:
+    before = {
+        str(row.get("reporting_date")) for row in get_positioning_history(ticker, db_path)
+        if row.get("snapshot_type") == "historical_short_interest" and row.get("reporting_date")
+    }
+    rows_fetched = backfill_finra_short_history(ticker, provider_factory(), db_path)
+    after = {
+        str(row.get("reporting_date")) for row in get_positioning_history(ticker, db_path)
+        if row.get("snapshot_type") == "historical_short_interest" and row.get("reporting_date")
+    }
+    return {"rows_fetched": rows_fetched, "new_reports": len(after - before)}
 
 
-def _finra_finished(ticker: str, future: Future[int], db_path: str | Path | None = None) -> None:
+def _finra_finished(
+    ticker: str, future: Future[dict[str, int]], db_path: str | Path | None = None,
+) -> None:
     with _lock:
         try:
-            count = future.result()
+            result = future.result()
             _finra_failures.pop(ticker, None)
-            if count == 0:
+            if result["rows_fetched"] == 0:
                 _finra_attempted_empty.add(ticker)
                 record_provider_health("finra", ticker, "failed", error="No FINRA coverage", db_path=db_path)
             else:
                 record_provider_health("finra", ticker, "healthy", db_path=db_path)
-                # Avoid a module-level cycle; recalculate only after FINRA rows are committed.
-                from src.data.backtest_refresh import schedule_ticker_recalculation
-                schedule_ticker_recalculation(ticker)
+                if result["new_reports"]:
+                    # Avoid a module-level cycle; recalculate only after a new report is committed.
+                    from src.data.backtest_refresh import schedule_ticker_recalculation
+                    schedule_ticker_recalculation(ticker)
         except Exception as exc:
             _finra_failures[ticker] = (datetime.now(), str(exc))
             record_provider_health(
@@ -148,14 +179,15 @@ def schedule_finra_backfill(
                 break
             ticker = raw.strip().upper()
             if (
-                not ticker or ticker in _finra_futures or ticker in _finra_attempted_empty
-                or has_finra_history(ticker, db_path)
+                not ticker or ticker in _finra_futures
+                or not finra_refresh_due(ticker, db_path, now=now)
             ):
                 continue
             failure = _finra_failures.get(ticker)
             if failure and now - failure[0] < RETRY_COOLDOWN:
                 continue
             future = _executor.submit(_finra_backfill, ticker, provider_factory, db_path)
+            _finra_attempted_empty.discard(ticker)
             _finra_futures[ticker] = future
             record_provider_health("finra", ticker, "running", db_path=db_path)
             future.add_done_callback(lambda completed, symbol=ticker, path=db_path: _finra_finished(symbol, completed, path))
@@ -171,8 +203,10 @@ def finra_backfill_status(ticker: str, db_path: str | Path | None = None) -> str
         if normalized in _finra_attempted_empty:
             return "No FINRA coverage"
         failure = _finra_failures.get(normalized)
+    history = get_positioning_history(normalized, db_path)
     if has_finra_history(normalized, db_path):
-        return "Ready"
+        evidence = effective_positioning_snapshot(None, history)
+        return "Ready" if evidence["scoring_eligible"] else "Stale"
     if failure:
         return "Provider unavailable"
     return "Pending"

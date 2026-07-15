@@ -13,7 +13,7 @@ from src.data.database import (
 )
 from src.model_registry import (
     COVERAGE_AWARE_SHADOW_VERSION, PREVIOUS_LIVE_MODEL_VERSION,
-    build_prediction_snapshot, current_model_registration,
+    build_prediction_snapshot, evidence_policy_previous_live_registration,
 )
 from src.outcome_labels import clone_outcome_label
 
@@ -37,7 +37,7 @@ def materialize_promoted_history(
     labels = {
         str(row["prediction_id"]): row for row in get_outcome_labels(db_path=db_path)
     }
-    model = current_model_registration()
+    model = evidence_policy_previous_live_registration()
     seen: set[tuple[str, str]] = set()
     created_predictions = created_runs = created_labels = 0
     for shadow in get_shadow_decision_snapshots(db_path=db_path):

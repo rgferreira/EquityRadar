@@ -8,7 +8,9 @@ import pandas as pd
 import streamlit as st
 
 from src.backup import create_verified_backup, run_restore_drill, verify_backup_manifest
-from src.operations import get_operation_runs, provider_health, run_due_maintenance
+from src.operations import (
+    get_operation_runs, provider_health, run_due_maintenance, short_interest_evidence_health,
+)
 from src.data.database import (
     acknowledge_research_alert, get_backtest_runs, get_positioning_history,
     get_provider_health_transitions, get_research_alerts, get_watchlist, save_research_alerts,
@@ -39,6 +41,32 @@ if not health.empty:
         column_config={"age_hours": st.column_config.NumberColumn("Age (hours)", format="%.1f")},
     )
 st.caption("Provider failures remain isolated: missing or stale evidence never becomes directional evidence.")
+
+st.subheader("Short-interest evidence freshness")
+st.caption(
+    "Download time and report time are different. FINRA short interest is normally published twice monthly; "
+    "only a dated report inside the scoring freshness gate may affect Entry/Exit scores."
+)
+short_health = pd.DataFrame(short_interest_evidence_health())
+if short_health.empty:
+    st.info("No watchlist short-interest evidence is available.")
+else:
+    short_icons = {
+        "Current official": "🟢", "Stale — excluded": "🔴",
+        "Missing — excluded": "🔴", "Future — excluded": "🔴",
+    }
+    short_health["status"] = short_health["status"].map(
+        lambda value: f"{short_icons.get(value, '🔴')} {value}"
+    )
+    st.dataframe(
+        zebra_table(short_health), hide_index=True, width="stretch",
+        column_config={
+            "ticker": "Ticker", "status": "Evidence status",
+            "report_date": st.column_config.DateColumn("Official report date", format="YYYY-MM-DD"),
+            "report_age_days": st.column_config.NumberColumn("Report age (days)", format="%d"),
+            "used_in_scores": "Used in scores", "source": "Evidence source", "reason": "Rule",
+        },
+    )
 
 st.subheader("Background maintenance")
 runs = get_operation_runs()

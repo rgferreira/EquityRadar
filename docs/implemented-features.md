@@ -14,6 +14,7 @@
 - Paired 3M benchmark-relative outcomes use identical ticker/cutoff evidence and date-clustered uncertainty intervals.
 - Score deltas, signal transitions, maturity, expanding utility and ticker/regime/source drill-downs are visible without exposing model activation controls.
 - All six readiness gates cleared; explicit human promotion activated immutable version `coverage-aware-renormalized-v3-live`, with the former live version retained as rollback anchor.
+- Evidence-integrity correction `coverage-aware-renormalized-v4-finra-freshness-live` supersedes v3 without changing factor weights or thresholds. It gates FINRA evidence by official report date and preserves v3 plus all earlier simulation rows as immutable rollback/audit evidence.
 - Dashboard navigation reuses provider data when a full-watchlist refresh completed less than one minute earlier; explicit refresh remains available and bypasses the cooldown.
 
 This is the detailed implementation record. For the live backlog and phase boundary, see [`next-best-actions.md`](next-best-actions.md); for the compact phase/model narrative, see [`internal-changelog.md`](internal-changelog.md); for all document roles, see [`README.md`](README.md).
@@ -26,7 +27,7 @@ This is the detailed implementation record. For the live backlog and phase bound
 - Company includes an explicit back link, respects the current Decision dashboard order, and accepts ticker deep links.
 - Entry cards now map one-to-one to the detailed tabs: Fundamentals & valuation, Market metrics, Industry & analysts, and Market positioning.
 - Exit-review now mirrors Entry visually with a centered severity-colored score and a two-column deterioration breakdown.
-- The main Company chart includes a synchronized FINRA pressure pulse: coral/teal short-interest change bars and a gold days-to-cover line beneath price and moving averages.
+- The main Company chart includes a synchronized FINRA pressure pulse: coral/teal short-interest change bars and a gold days-to-cover line beneath price and moving averages. Price and FINRA timestamps are normalized to the same calendar axis with unified cross-panel hover; the hover distinguishes report date from the date the app observed the evidence.
 - Watchlist removal now uses live controls outside a form, confirms the exact selected ticker, and retains the Portfolio ownership guard.
 - Decision dashboard drill-down uses same-tab row selection, eliminating the tab proliferation caused by link columns.
 - Diagnostics show both sides (`Entry / Exit`) consistently; their width follows the longest current value.
@@ -40,7 +41,7 @@ This is the detailed implementation record. For the live backlog and phase bound
 - Automatic stale-while-refresh loading on Company selection; provider errors preserve the last successful snapshot.
 - Yahoo short interest, three nearest option expiries, ownership, insider transactions, and 90-day analyst actions, plus FMP Basic float validation where available.
 - Transparent 0–100 Long positioning, Short pressure, Squeeze potential, and Confidence outputs with evidence and explicit options-data caveats.
-- Phase 3.2 integration: official FINRA history provides six-report trend context; reliability-gated modifiers are capped at ±5 Entry points and ±7 Exit-review points and are shown explicitly in Company and Dashboard.
+- Phase 3.2 integration: official FINRA history provides six-report trend context; reliability-gated modifiers are capped at ±5 Entry points and ±7 Exit-review points and are shown explicitly in Company and Dashboard. Report-date freshness is mandatory: evidence older than 28 days is shown as stale but contributes exactly zero short-interest directionality.
 - Phase 3.8 PR-001 quarantine: backtested-learning evidence, confidence and historical accuracy remain visible, while a centralized default-off policy prevents those research modifiers from changing live Entry/Exit scores.
 - Phase 3.8 PR-002 temporal contract: additive `period_end`/`published_at`/`known_at`/status metadata, conservative observed-at-fetch rules for new snapshots, unverified legacy exclusion, and cutoff-auditable simulation coverage.
 - Phase 3.8 PR-003 governance: explicit active-candidate/champion registry, content-hashed input snapshots, immutable prediction identities and outputs, append-only compatibility outcomes, visible legacy separation, and offline structured replay.
@@ -50,8 +51,8 @@ This is the detailed implementation record. For the live backlog and phase bound
 - Phase 3.9 promotion: the coverage-aware policy removes unavailable valuation from the composite and renormalizes verified technical/risk evidence; 440 historical runs, predictions and labels were materialized additively under the promoted version while all prior rows remain immutable.
 - Extended-hours continuity: after post-market closes and before the next pre-market opens, Dashboard Price uses the latest after-hours print with a `POST` badge rather than reverting to the regular close.
 - Historical bootstrap completed for the current watchlist, with 129–205 official FINRA observations per ticker. Missing current evidence still produces a zero adjustment.
-- Missing official FINRA history now backfills automatically for every equity added to the Watchlist and when Dashboard or Company detects a coverage gap; the Company chart rerenders when the background job completes. Non-equity instruments remain explicitly without FINRA coverage.
-- Saved simulations are rebuilt with a versioned point-in-time model after FINRA backfill. Each cutoff uses only reports published on or before that date, stores the exact observation count and modifier, and cannot see later FINRA reports.
+- Official FINRA history now refreshes daily—even after initial backfill—through page triggers and the server-lifetime Operations scheduler. The Company chart rerenders when background work completes; non-equity instruments remain explicitly without FINRA coverage.
+- Saved simulations are rebuilt append-only with a versioned point-in-time model after FINRA backfill or evidence-policy correction. Each cutoff uses only reports published on or before that date and still inside the 28-day report-age gate, stores the exact observation count and modifier, and cannot see later FINRA reports. Derived accuracy selects the active corrected version while legacy rows remain immutable.
 
 ## Phase 3.4 · Backtested Learning
 

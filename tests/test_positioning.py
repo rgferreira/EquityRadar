@@ -4,14 +4,21 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from src.data.database import get_cached_positioning, get_positioning_history, save_positioning_snapshot
+from src.data.database import (
+    get_cached_positioning, get_positioning_history, init_db, record_provider_health,
+    save_positioning_snapshot,
+)
 from src.data.positioning import YahooPositioningProvider
-from src.data.positioning_refresh import _refresh, positioning_is_fresh
-from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
+from src.data.positioning_refresh import _refresh, finra_refresh_due, positioning_is_fresh
+from src.scoring.positioning import (
+    apply_positioning_adjustment, effective_positioning_snapshot,
+    positioning_score_adjustments, positioning_scores, short_interest_freshness,
+)
 
 
 def sample_snapshot():
     return {
+        "reporting_date": "2026-06-30",
         "short": {"short_percent_float": .12, "short_change_pct": 20, "days_to_cover": 6},
         "options": {"put_call_oi_ratio": .6, "put_call_volume_ratio": .7},
         "ownership": {"institutional_percent": .75},
@@ -43,7 +50,7 @@ def test_historical_short_trend_produces_small_capped_decision_modifiers():
         "reporting_date": f"2026-0{month}-15", "snapshot_type": "historical_short_interest",
         "short": {"shares_short": 100 + month * 10},
     } for month in range(1, 7)]
-    result = positioning_score_adjustments(sample_snapshot(), history, technical_score=70)
+    result = positioning_score_adjustments(sample_snapshot(), history, technical_score=70, as_of="2026-07-15")
     assert -5 <= result["entry_adjustment"] <= 5
     assert -7 <= result["exit_adjustment"] <= 7
     assert result["entry_adjustment"] < 0
@@ -65,11 +72,48 @@ def test_short_reversal_lever_requires_falling_shorts_and_technical_confirmation
         {"reporting_date": "2026-06-15", "snapshot_type": "historical_short_interest", "short": {"shares_short": 108, "short_change_pct": 8}},
         {"reporting_date": "2026-06-30", "snapshot_type": "historical_short_interest", "short": {"shares_short": 102, "short_change_pct": -5.6}},
     ]
-    confirmed = positioning_score_adjustments(sample_snapshot(), history, technical_score=70)
-    unconfirmed = positioning_score_adjustments(sample_snapshot(), history, technical_score=50)
+    confirmed = positioning_score_adjustments(sample_snapshot(), history, technical_score=70, as_of="2026-07-15")
+    unconfirmed = positioning_score_adjustments(sample_snapshot(), history, technical_score=50, as_of="2026-07-15")
     assert confirmed["short_reversal_confirmed"] is True
     assert confirmed["entry_adjustment"] > unconfirmed["entry_adjustment"]
     assert confirmed["exit_adjustment"] < unconfirmed["exit_adjustment"]
+
+
+def test_stale_short_interest_is_visible_but_cannot_change_scores():
+    stale = {
+        "reporting_date": "2026-05-31",
+        "short": {"short_percent_float": .25, "short_change_pct": 40, "days_to_cover": 10},
+    }
+    result = positioning_score_adjustments(stale, [], technical_score=70, as_of="2026-07-15")
+    assert result["short_evidence_status"] == "stale"
+    assert result["short_scoring_eligible"] is False
+    assert result["entry_adjustment"] == 0
+    assert result["exit_adjustment"] == 0
+    assert "excluded" in " ".join(result["notes"])
+
+
+def test_freshest_official_report_overrides_older_cached_short_fields():
+    cached = {
+        **sample_snapshot(), "reporting_date": "2026-06-13",
+        "short": {"shares_short": 100, "short_change_pct": 20},
+    }
+    official = [{
+        "reporting_date": "2026-06-30", "snapshot_type": "historical_short_interest",
+        "provider_name": "FINRA", "short": {"shares_short": 80, "short_change_pct": -20},
+    }]
+    result = effective_positioning_snapshot(cached, official, "2026-07-15")
+    assert result["report_date"] == "2026-06-30"
+    assert result["snapshot"]["short"]["shares_short"] == 80
+    assert result["scoring_eligible"] is True
+    assert short_interest_freshness(official[0], "2026-08-01")["scoring_eligible"] is False
+
+
+def test_finra_refresh_is_due_daily_even_with_existing_history(tmp_path):
+    database = tmp_path / "radar.db"
+    init_db(database)
+    assert finra_refresh_due("MU", database, now=datetime(2026, 7, 15, 9, 0)) is True
+    record_provider_health("finra", "MU", "healthy", db_path=database)
+    assert finra_refresh_due("MU", database, now=datetime.now()) is False
 
 
 def test_positioning_cache_round_trip(tmp_path):

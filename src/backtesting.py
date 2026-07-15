@@ -73,11 +73,13 @@ def reconstruct_signal(
     ]
     positioning_modifier = positioning_score_adjustments(
         eligible_positioning[-1] if eligible_positioning else None, eligible_positioning, technical,
+        as_of=as_of,
     )
     entry = apply_positioning_adjustment(entry, float(positioning_modifier["entry_adjustment"]))
     exit_score = apply_positioning_adjustment(exit_score, float(positioning_modifier["exit_adjustment"]))
+    finra_used = bool(positioning_modifier.get("short_scoring_eligible"))
     coverage_parts = ["fundamentals" if usable_fundamentals else None,
-                      "FINRA" if eligible_positioning else None]
+                      "FINRA" if finra_used else None]
     coverage = "Partial coverage · " + " + ".join(part for part in coverage_parts if part) if any(coverage_parts) else "Price-only reconstruction"
     temporal_coverage = {
         "price": "end_of_day_cutoff",
@@ -86,7 +88,8 @@ def reconstruct_signal(
             "missing" if not fundamentals else "unverified_or_after_cutoff"
         ),
         "finra": (
-            "verified_known_at" if eligible_positioning else
+            "verified_known_at" if finra_used else
+            "stale_excluded" if eligible_positioning else
             "missing" if not positioning_history else "unverified_or_after_cutoff"
         ),
         "technology_potential": (
@@ -119,7 +122,7 @@ def reconstruct_signal(
         "entry_signal": entry_label(entry), "exit_signal": exit_review_label(exit_score),
         "coverage": coverage, "fundamentals_used": bool(usable_fundamentals),
         "positioning_modifier": positioning_modifier,
-        "finra_observations_used": len(eligible_positioning),
+        "finra_observations_used": len(eligible_positioning) if finra_used else 0,
         "temporal_coverage": temporal_coverage,
         "input_references": input_references,
         "technology_potential": technology_evidence,

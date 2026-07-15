@@ -35,9 +35,8 @@ COVERAGE_AWARE_SHADOW_CONFIG: dict[str, object] = {
     "role": "inactive_shadow_only",
 }
 
-CURRENT_MODEL_VERSION = "coverage-aware-renormalized-v3-live"
-COVERAGE_AWARE_PROMOTED = True
-CURRENT_MODEL_CONFIG: dict[str, object] = {
+EVIDENCE_POLICY_PREVIOUS_LIVE_VERSION = "coverage-aware-renormalized-v3-live"
+EVIDENCE_POLICY_PREVIOUS_LIVE_CONFIG: dict[str, object] = {
     **COVERAGE_AWARE_SHADOW_CONFIG,
     "role": "live_champion",
     "promoted_from": COVERAGE_AWARE_SHADOW_VERSION,
@@ -52,9 +51,24 @@ CURRENT_MODEL_CONFIG: dict[str, object] = {
     },
 }
 
-TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v1-shadow"
-TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
-    "base_model": CURRENT_MODEL_VERSION,
+CURRENT_MODEL_VERSION = "coverage-aware-renormalized-v4-finra-freshness-live"
+COVERAGE_AWARE_PROMOTED = True
+CURRENT_MODEL_CONFIG: dict[str, object] = {
+    **EVIDENCE_POLICY_PREVIOUS_LIVE_CONFIG,
+    "previous_live": EVIDENCE_POLICY_PREVIOUS_LIVE_VERSION,
+    "positioning_evidence_policy": {
+        "version": "finra-report-date-freshness-v1",
+        "freshness_clock": "official_reporting_date",
+        "maximum_age_days": 28,
+        "missing_or_stale": "excluded_from_directional_scores",
+        "fetched_at_is_not_freshness": True,
+    },
+    "correction_reason": "Prevent stale short-interest reports from influencing decisions",
+}
+
+PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v1-shadow"
+PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+    "base_model": EVIDENCE_POLICY_PREVIOUS_LIVE_VERSION,
     "hypothesis": "industry-relative technology potential improves selective entry decisions",
     "components": {
         "r_and_d_intensity": 0.35,
@@ -71,6 +85,13 @@ TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
     "thresholds": {"buy_candidate": 70, "watch": 55},
     "evaluation": "prospective_purged_benchmark_relative_3m",
     "role": "inactive_shadow_only",
+}
+
+TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v2-finra-freshness-shadow"
+TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+    **PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG,
+    "base_model": CURRENT_MODEL_VERSION,
+    "evidence_policy": "finra-report-date-freshness-v1",
 }
 ACTIVE_SHADOW_ENABLED = True
 
@@ -91,6 +112,17 @@ def current_model_registration() -> dict[str, object]:
         "status": "champion",
         "is_active": 1,
         "is_champion": 1,
+    }
+
+
+def evidence_policy_previous_live_registration() -> dict[str, object]:
+    return {
+        "model_version": EVIDENCE_POLICY_PREVIOUS_LIVE_VERSION,
+        "config_json": canonical_json(EVIDENCE_POLICY_PREVIOUS_LIVE_CONFIG),
+        "config_hash": content_hash(EVIDENCE_POLICY_PREVIOUS_LIVE_CONFIG),
+        "status": "retired",
+        "is_active": 0,
+        "is_champion": 0,
     }
 
 
@@ -122,6 +154,17 @@ def technology_potential_shadow_registration() -> dict[str, object]:
         "config_json": canonical_json(TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
         "config_hash": content_hash(TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
         "status": "candidate",
+        "is_active": 0,
+        "is_champion": 0,
+    }
+
+
+def previous_technology_potential_shadow_registration() -> dict[str, object]:
+    return {
+        "model_version": PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+        "config_json": canonical_json(PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
+        "config_hash": content_hash(PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
+        "status": "retired",
         "is_active": 0,
         "is_champion": 0,
     }
@@ -166,7 +209,9 @@ def replay_prediction(snapshot: Mapping[str, object], tolerance: float = 1e-9) -
     valuation = float(features["valuation_score"])
     risk = float(features["risk_score"])
     positioning = inputs.get("positioning_adjustments") or {}
-    promoted = str(snapshot.get("model_version")) == CURRENT_MODEL_VERSION
+    promoted = str(snapshot.get("model_version")) in {
+        EVIDENCE_POLICY_PREVIOUS_LIVE_VERSION, CURRENT_MODEL_VERSION,
+    }
     base_entry = (
         calculate_coverage_aware_entry_score(
             technical, valuation, risk,

@@ -1,7 +1,9 @@
 from datetime import datetime
 
-from src.data.database import init_db, record_provider_health
-from src.operations import get_operation_runs, provider_health, run_due_maintenance
+from src.data.database import add_ticker, init_db, record_provider_health, save_positioning_snapshot
+from src.operations import (
+    get_operation_runs, provider_health, run_due_maintenance, short_interest_evidence_health,
+)
 
 
 def test_provider_health_preserves_missing_as_missing(tmp_path):
@@ -23,6 +25,22 @@ def test_provider_health_exposes_isolated_failure_and_cooldown(tmp_path):
     assert operational["status"] == "Failed"
     assert operational["last_error"] == "synthetic outage"
     assert operational["cooldown"] == "2026-07-14T12:15:00"
+
+
+def test_operations_uses_report_date_not_fetch_date_for_short_freshness(tmp_path):
+    database = tmp_path / "health-short.db"
+    add_ticker("MU", database)
+    payload = {
+        "reporting_date": "2026-05-31",
+        "short": {"shares_short": 100, "short_change_pct": 5},
+    }
+    save_positioning_snapshot(
+        "MU", payload, "synthetic", "2026-05-31", "2026-07-15T09:00:00", database,
+    )
+    row = short_interest_evidence_health(database, now=datetime(2026, 7, 15, 12, 0))[0]
+    assert row["status"] == "Stale — excluded"
+    assert row["report_age_days"] == 45
+    assert row["used_in_scores"] == "No"
 
 
 def test_due_maintenance_records_verified_backup(tmp_path, monkeypatch):

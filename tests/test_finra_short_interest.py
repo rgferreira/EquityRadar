@@ -1,5 +1,6 @@
 from src.data.database import get_cached_positioning, get_positioning_history
 from src.data.finra_short_interest import backfill_finra_short_history
+from src.data.positioning_refresh import _finra_backfill
 
 
 def test_finra_backfill_adds_history_without_replacing_current_cache(tmp_path):
@@ -46,3 +47,21 @@ def test_finra_backfill_does_not_rewrite_existing_historical_observation(tmp_pat
     backfill_finra_short_history("NVDA", provider, database)
 
     assert get_positioning_history("NVDA", database)[0] == first
+
+
+def test_daily_finra_refresh_distinguishes_new_reports_from_unchanged_history(tmp_path):
+    class StubProvider:
+        name = "FINRA stub"
+
+        def fetch_history(self, ticker):
+            return [{
+                "ticker": ticker, "reporting_date": "2026-06-30",
+                "short": {"shares_short": 100},
+                "snapshot_type": "historical_short_interest",
+            }]
+
+    database = tmp_path / "radar.db"
+    first = _finra_backfill("MU", StubProvider, database)
+    second = _finra_backfill("MU", StubProvider, database)
+    assert first == {"rows_fetched": 1, "new_reports": 1}
+    assert second == {"rows_fetched": 1, "new_reports": 0}

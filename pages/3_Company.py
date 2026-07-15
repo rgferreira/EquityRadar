@@ -24,7 +24,10 @@ from src.scoring.decision import (
 )
 from src.scoring.valuation import calculate_valuation_score, valuation_score_breakdown
 from src.scoring.industry import industry_entry_score
-from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments, positioning_scores
+from src.scoring.positioning import (
+    apply_positioning_adjustment, effective_positioning_snapshot,
+    positioning_score_adjustments, positioning_scores, short_interest_freshness,
+)
 from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, style_figure, zebra_table
@@ -117,6 +120,8 @@ def render_positioning_refresh_status() -> None:
         st.caption("Positioning provider unavailable; the last successful snapshot is preserved.")
     if finra_status == "Backfilling":
         st.caption("Official FINRA short-interest history is backfilling automatically…")
+    elif finra_status == "Stale":
+        st.error("Official short-interest history is stale and excluded from scores while refresh retries automatically.")
     elif finra_status == "Provider unavailable":
         st.caption("FINRA history is temporarily unavailable; retry is automatic after cooldown.")
     key = f"company_positioning_status_{ticker}"
@@ -149,8 +154,10 @@ try:
     industry_research = get_cached_industry_research(ticker)
     technology_evidence = technology_potential_evidence(industry_research)
     positioning = get_cached_positioning(ticker)
-    positioning_breakdown = positioning_scores(positioning)
     positioning_history = get_positioning_history(ticker)
+    effective_positioning = effective_positioning_snapshot(positioning, positioning_history)
+    scoring_positioning = effective_positioning["snapshot"]
+    positioning_breakdown = positioning_scores(scoring_positioning)
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
     backtest_runs = latest_model_runs(get_backtest_runs(ticker))
     registered_backtests = sum(
@@ -192,19 +199,23 @@ try:
         rows=2, cols=1, shared_xaxes=True, vertical_spacing=.04,
         row_heights=[.78, .22], specs=[[{}], [{"secondary_y": True}]],
     )
-    figure.add_scatter(x=history.index, y=history["Close"], name="Close", row=1, col=1)
+    chart_dates = pd.DatetimeIndex(pd.to_datetime(history.index))
+    if chart_dates.tz is not None:
+        chart_dates = chart_dates.tz_localize(None)
+    chart_dates = chart_dates.normalize()
+    figure.add_scatter(x=chart_dates, y=history["Close"], name="Close", row=1, col=1)
     for window, label in ((50, "50-day MA"), (100, "100-day MA"), (200, "200-day MA")):
         moving_average = history["Close"].rolling(window).mean()
         if moving_average.notna().any():
             figure.add_scatter(
-                x=history.index,
+                x=chart_dates,
                 y=moving_average,
                 name=label,
                 line={"dash": "dot"},
                 row=1, col=1,
             )
     finra_rows = []
-    history_start = history.index.min().tz_localize(None) if getattr(history.index, "tz", None) else history.index.min()
+    history_start = chart_dates.min()
     for observation in positioning_history:
         if observation.get("snapshot_type") != "historical_short_interest":
             continue
@@ -212,7 +223,7 @@ try:
         short_data = observation.get("short", {})
         if not reported or not isinstance(short_data, dict):
             continue
-        reported_at = pd.Timestamp(str(reported))
+        reported_at = pd.Timestamp(str(reported)).normalize()
         if reported_at < history_start:
             continue
         finra_rows.append({
@@ -220,13 +231,18 @@ try:
             "change": short_data.get("short_change_pct"),
             "days": short_data.get("days_to_cover"),
             "shares": short_data.get("shares_short"),
+            "known_at": observation.get("known_at"),
+            "known_at_status": observation.get("known_at_status"),
+            "age": short_interest_freshness(observation).get("age_days"),
         })
     if finra_rows:
-        finra_frame = pd.DataFrame(finra_rows).sort_values("date")
+        finra_frame = pd.DataFrame(finra_rows).sort_values("date").drop_duplicates("date", keep="last")
         colors = ["#ff6375" if float(value or 0) > 0 else "#35d0ba" for value in finra_frame["change"]]
         hover = [
-            f"FINRA report {row.date:%Y-%m-%d}<br>Short change {float(row.change or 0):+.2f}%"
+            f"FINRA settlement date {row.date:%Y-%m-%d}<br>Short change {float(row.change or 0):+.2f}%"
             f"<br>Shares short {float(row.shares or 0):,.0f}<br>Days to cover {float(row.days or 0):.2f}"
+            f"<br>Observed by app: {row.known_at or 'unverified legacy'}"
+            f"<br>Current report age: {row.age if row.age is not None else 'unknown'} days"
             for row in finra_frame.itertuples()
         ]
         figure.add_bar(
@@ -239,8 +255,8 @@ try:
             mode="lines+markers", line={"color": "#f5c26b", "width": 1.5},
             marker={"size": 4}, row=2, col=1, secondary_y=True,
         )
-    chart_start = pd.Timestamp(history.index.min()).tz_localize(None) if getattr(history.index, "tz", None) else pd.Timestamp(history.index.min())
-    chart_end = pd.Timestamp(history.index.max()).tz_localize(None) if getattr(history.index, "tz", None) else pd.Timestamp(history.index.max())
+    chart_start = chart_dates.min()
+    chart_end = chart_dates.max()
     completed_dates = {str(run["as_of_date"]): run for run in backtest_runs}
     simulation_markers: list[tuple[pd.Timestamp, str, str]] = []
     for cutoff, run in completed_dates.items():
@@ -274,7 +290,14 @@ try:
     # Plotly's horizontal legend becomes a tall, narrow stack on phones. A
     # compact semantic legend keeps all series discoverable without consuming
     # a large part of the chart viewport.
-    figure.update_layout(showlegend=False, margin={"l": 12, "r": 12, "t": 12, "b": 12})
+    figure.update_layout(
+        showlegend=False, hovermode="x unified",
+        margin={"l": 12, "r": 12, "t": 12, "b": 12},
+    )
+    figure.update_xaxes(
+        showspikes=True, spikemode="across", spikesnap="cursor",
+        spikecolor="#94a3b8", spikethickness=1,
+    )
     legend_items = [
         ("line close", "Close"), ("line ma50", "MA 50"),
         ("line ma100", "MA 100"), ("line ma200", "MA 200"),
@@ -297,7 +320,12 @@ try:
     )
     st.plotly_chart(figure, width="stretch")
     if finra_rows:
-        st.caption("FINRA pressure pulse · coral = rising short interest · teal = falling · gold = days to cover")
+        eligibility = "included in scores" if positioning_modifier["short_scoring_eligible"] else "excluded from scores"
+        st.caption(
+            "FINRA pressure pulse · exact shared calendar axis · bars use official settlement dates · "
+            f"latest report {positioning_modifier.get('short_report_date') or 'unknown'} "
+            f"({positioning_modifier.get('short_age_days') if positioning_modifier.get('short_age_days') is not None else 'unknown'} days old; {eligibility})"
+        )
     if visible_marker_types:
         st.caption("Simulation markers · blue = manual · purple = completed suggestion · gold = suggested and pending")
 
@@ -676,6 +704,16 @@ try:
         st.subheader("Market positioning")
         st.caption("Factored into decisions through small, reliability-gated modifiers")
         if positioning:
+            if positioning_modifier["short_scoring_eligible"]:
+                st.success(
+                    f"Short-interest report {positioning_modifier['short_report_date']} · "
+                    f"{positioning_modifier['short_age_days']} days old · eligible for scoring"
+                )
+            else:
+                st.error(
+                    f"Short-interest evidence {positioning_modifier['short_evidence_status']} · "
+                    "excluded from Entry/Exit scores; missing evidence is not interpreted as low short interest."
+                )
             score_columns = st.columns(4)
             score_columns[0].metric("Long positioning", f"{positioning_breakdown['long_positioning']:.1f}/100")
             score_columns[1].metric("Short pressure", f"{positioning_breakdown['short_pressure']:.1f}/100")
@@ -691,12 +729,13 @@ try:
             else:
                 st.caption(f"Short reversal lever · {positioning_modifier['short_reversal_lever']}")
             st.caption(
-                f"Provider: {positioning.get('provider_name')} · Short-interest report: "
-                f"{positioning.get('reporting_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')} · "
+                f"Provider: {positioning_modifier.get('short_evidence_source') or positioning.get('provider_name')} · Short-interest report: "
+                f"{positioning_modifier.get('short_report_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')} · "
                 f"Historical status: {positioning.get('known_at_status') or 'unverified legacy'}"
             )
-            short, options = positioning.get("short", {}), positioning.get("options", {})
-            ownership = positioning.get("ownership", {})
+            short = scoring_positioning.get("short", {}) if isinstance(scoring_positioning, dict) else {}
+            options = scoring_positioning.get("options", {}) if isinstance(scoring_positioning, dict) else {}
+            ownership = scoring_positioning.get("ownership", {}) if isinstance(scoring_positioning, dict) else {}
             rows = [
                 {"Signal": "Short float", "Value": "—" if short.get("short_percent_float") is None else f"{float(short['short_percent_float']):.2%}"},
                 {"Signal": "Short-interest change", "Value": "—" if short.get("short_change_pct") is None else f"{float(short['short_change_pct']):+.2f}%"},
