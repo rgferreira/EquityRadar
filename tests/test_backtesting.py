@@ -74,6 +74,7 @@ def test_unverified_evidence_is_reported_without_breaking_price_reconstruction()
         "fundamentals": "unverified_or_after_cutoff",
         "finra": "unverified_or_after_cutoff",
         "technology_potential": "missing",
+        "daily_short_flow": "missing",
     }
 
 

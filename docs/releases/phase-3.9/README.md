@@ -7,3 +7,4 @@
 - [Acceptance record](ACCEPTANCE-2026-07-14.md)
 - [macOS launcher](MACOS-LAUNCHER.md)
 - [Next step: FINRA daily short-volume driver](FINRA-DAILY-SHORT-VOLUME-NEXT.md)
+- [Daily short-flow slope shadow component](DAILY-SHORT-FLOW-SHADOW-V1.md)

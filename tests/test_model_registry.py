@@ -55,7 +55,7 @@ def test_registry_seeds_promoted_champion_and_preserves_rollback_model(tmp_path)
     init_db(database)
     models = get_registered_models(database)
 
-    assert len(models) == 6
+    assert len(models) == 7
     active = next(model for model in models if model["is_active"] == 1)
     shadow = next(model for model in models if model["model_version"] == "coverage-aware-renormalized-v1")
     previous = next(
@@ -72,10 +72,15 @@ def test_registry_seeds_promoted_champion_and_preserves_rollback_model(tmp_path)
     assert shadow["is_champion"] == 0
     technology = next(
         model for model in models
-        if model["model_version"] == "technology-potential-modifier-v2-finra-freshness-shadow"
+        if model["model_version"] == "technology-daily-short-flow-v3-shadow"
     )
     assert technology["status"] == "candidate"
     assert technology["is_active"] == technology["is_champion"] == 0
+    previous_technology = next(
+        model for model in models
+        if model["model_version"] == "technology-potential-modifier-v2-finra-freshness-shadow"
+    )
+    assert previous_technology["status"] == "retired"
     retired_technology = next(
         model for model in models
         if model["model_version"] == "technology-potential-modifier-v1-shadow"
@@ -158,7 +163,7 @@ def test_simulation_worker_writes_replayable_immutable_prediction(tmp_path, monk
     assert replay_prediction(snapshots[0])["status"] == "exact_match"
     shadow = get_shadow_decision_snapshots("TEST", database)
     assert len(shadow) == 1
-    assert shadow[0]["challenger_model_version"] == "technology-potential-modifier-v2-finra-freshness-shadow"
+    assert shadow[0]["challenger_model_version"] == "technology-daily-short-flow-v3-shadow"
     compatibility = get_backtest_runs("TEST", database)[0]
     assert compatibility["has_prediction_snapshot"] == 1
 

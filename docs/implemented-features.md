@@ -4,10 +4,10 @@
 
 - FINRA consolidated daily short-sale volume now refreshes watchlist-wide into immutable, revision-aware
   point-in-time observations and appears as a separate daily-flow band in Company charts. It is explicitly a
-  transaction-flow proxy, remains excluded from Entry/Exit scores, and does not replace official twice-monthly
-  short interest.
+  transaction-flow proxy and does not replace official twice-monthly short interest. Its 10-session mean slope
+  is now a point-in-time, confidence-gated component of the inactive shadow challenger; live scores are unchanged.
 
-- Registered `technology-potential-modifier-v1-shadow` as an inactive, reversible challenger based on the current live champion.
+- Registered `technology-daily-short-flow-v3-shadow` as the inactive, reversible challenger based on the current live champion; earlier technology-only versions are archived.
 - Computes a transparent industry-relative Technology Potential proxy from R&D intensity, revenue growth, gross margin, free-cash-flow margin and balance-sheet funding capacity.
 - Applies a confidence-gated Entry modifier capped at +/-5 shadow points; missing evidence is neutral and the live model remains unchanged.
 - Persists only verified point-in-time technology evidence in new simulation snapshots; archived promotion evidence remains separate.

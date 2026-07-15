@@ -16,6 +16,7 @@ from src.scoring.technical import calculate_technical_score
 from src.scoring.valuation import calculate_valuation_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.scoring.technology import technology_potential_evidence
+from src.scoring.daily_short_flow import daily_short_flow_evidence
 from src.data.market_data import calculate_metrics
 from src.data.temporal import evidence_known_by
 from src.model_registry import CURRENT_MODEL_VERSION
@@ -47,6 +48,7 @@ def reconstruct_signal(
     fundamentals: Mapping[str, object] | None = None,
     positioning_history: list[Mapping[str, object]] | None = None,
     industry_research: Mapping[str, object] | None = None,
+    daily_short_flow_history: list[Mapping[str, object]] | None = None,
 ) -> dict[str, object]:
     """Rebuild the price/risk decision using only data known at the cutoff."""
     point_in_time = history_as_of(history, as_of)
@@ -62,6 +64,7 @@ def reconstruct_signal(
         industry_research if evidence_available(industry_research, as_of) else None
     )
     technology_evidence = technology_potential_evidence(usable_industry_research)
+    daily_flow_evidence = daily_short_flow_evidence(daily_short_flow_history, as_of=as_of)
     valuation = calculate_valuation_score(usable_fundamentals)
     entry = calculate_coverage_aware_entry_score(
         technical, valuation, risk, valuation_available=bool(usable_fundamentals),
@@ -96,6 +99,11 @@ def reconstruct_signal(
             "verified_known_at" if usable_industry_research else
             "missing" if not industry_research else "unverified_or_after_cutoff"
         ),
+        "daily_short_flow": (
+            "verified_known_at" if float(daily_flow_evidence["confidence"]) > 0 else
+            "stale_excluded" if daily_flow_evidence["coverage"] == "stale" else
+            "missing" if not daily_short_flow_history else "unverified_or_after_cutoff"
+        ),
     }
     input_references = {
         "fundamentals": ({
@@ -114,6 +122,11 @@ def reconstruct_signal(
                 "provider_name", "period_end", "published_at", "known_at", "known_at_status",
             )
         } if usable_industry_research else None),
+        "daily_short_flow": {
+            "latest_trade_date": daily_flow_evidence.get("latest_trade_date"),
+            "observations": daily_flow_evidence.get("observations", 0),
+            "known_at_policy": "verified_observed_by_cutoff",
+        },
         "prices": {"cutoff": str(as_of), "observations": len(point_in_time), "policy": "end_of_day"},
     }
     return {
@@ -126,6 +139,7 @@ def reconstruct_signal(
         "temporal_coverage": temporal_coverage,
         "input_references": input_references,
         "technology_potential": technology_evidence,
+        "daily_short_flow": daily_flow_evidence,
         "observations": len(point_in_time), "model_version": MODEL_VERSION,
     }
 

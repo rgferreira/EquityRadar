@@ -1,6 +1,6 @@
 # Phase 3.9 next step — FINRA daily short-volume driver
 
-Status: **provider, persistence and Company-chart flow layer implemented; no live-model change authorized**.
+Status: **provider, persistence and Company-chart flow layer implemented; slope is now an inactive shadow-model component; no live-model change authorized**.
 
 ## Purpose
 
@@ -25,12 +25,14 @@ trade date.
    **Implemented with immutable revision-aware observations.**
 3. Build transparent features such as daily short-volume share, rolling baseline, z-score, persistence and
    coverage confidence; do not infer net short positions.
-   **Daily share and 10-session mean implemented; broader research features remain pending.**
+   **Daily share, 10-session mean, its 10-session slope, persistence and coverage confidence implemented.**
 4. Show the daily flow layer separately from the twice-monthly FINRA position pulse in Company and Operations.
    **Implemented as a third aligned Company-chart band plus provider-health rows.**
 5. Backfill a bounded history, then accumulate 60–90 genuinely prospective trading sessions.
+   **Historical display backfill is complete; shadow evaluation begins only with verified point-in-time snapshots.**
 6. Evaluate incremental utility against the current live model and subsequent official short-interest changes
    using the existing purged, versioned evaluator.
+   **Preregistered under `technology-daily-short-flow-v3-shadow`; awaiting prospective maturity.**
 
 ## Acceptance boundary
 

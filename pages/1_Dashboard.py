@@ -11,6 +11,7 @@ from src.data.database import (
     get_cached_industry_research,
     get_cached_extended_hours_quote,
     get_cached_positioning,
+    get_finra_daily_short_volume,
     get_model_gate_exclusions,
     save_dashboard_order,
     get_portfolio_holdings,
@@ -39,6 +40,7 @@ from src.data.extended_hours import effective_extended_quote
 from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.technology import technology_potential_evidence
+from src.scoring.daily_short_flow import daily_short_flow_evidence
 from src.scoring.decision import (
     calculate_coverage_aware_entry_score, calculate_exit_review_score,
     entry_label, exit_review_label,
@@ -440,6 +442,9 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             if ACTIVE_SHADOW_ENABLED:
                 try:
                     technology_evidence = technology_potential_evidence(industry_research)
+                    daily_flow_evidence = daily_short_flow_evidence(
+                        get_finra_daily_short_volume(ticker), as_of=date.today(),
+                    )
                     save_shadow_decision_snapshot(build_shadow_snapshot(
                         ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
                         inputs={
@@ -452,6 +457,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                             "valuation_available": meaningful_valuation_available(fundamentals),
                             "industry_calibrated": bool(industry_research),
                             "technology_potential": technology_evidence,
+                            "daily_short_flow": daily_flow_evidence,
                         },
                         current_outputs=current_outputs,
                     ))

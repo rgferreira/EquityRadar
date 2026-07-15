@@ -21,6 +21,7 @@ from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.scoring.risk import calculate_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score
 from src.scoring.technology import technology_potential_evidence
+from src.scoring.daily_short_flow import daily_short_flow_evidence
 from src.scoring.decision import (
     calculate_coverage_aware_entry_score, calculate_exit_review_score,
     entry_label, exit_review_label,
@@ -163,6 +164,8 @@ try:
     industry_risk = min(100, risk + int(risk_details["drawdown_penalty"] or 0))
     industry_research = get_cached_industry_research(ticker)
     technology_evidence = technology_potential_evidence(industry_research)
+    daily_volume_all = get_finra_daily_short_volume(ticker)
+    daily_flow_evidence = daily_short_flow_evidence(daily_volume_all)
     positioning = get_cached_positioning(ticker)
     positioning_history = get_positioning_history(ticker)
     effective_positioning = effective_positioning_snapshot(positioning, positioning_history)
@@ -211,7 +214,7 @@ try:
     chart_dates = chart_dates.normalize()
     history_start = chart_dates.min()
     daily_volume_rows = [
-        row for row in get_finra_daily_short_volume(ticker)
+        row for row in daily_volume_all
         if pd.Timestamp(str(row["trade_date"])).normalize() >= history_start
         and float(row.get("total_volume") or 0) > 0
     ]
@@ -537,7 +540,7 @@ try:
             "#38d996" if technology_modifier > 0
             else "#ff6375" if technology_modifier < 0 else "#9aa4b2"
         )
-        st.markdown("**Technology Potential · active shadow modifier**")
+        st.markdown("**Technology Potential · active shadow component**")
         st.markdown(
             f"<span style='color:{technology_color};font-size:1.15rem;font-weight:700'>"
             f"{float(technology_evidence['score']):.1f}/100 · {technology_modifier:+.1f} shadow Entry points"
@@ -548,6 +551,27 @@ try:
             f"{technology_evidence['coverage']} coverage · live contribution exactly 0.0"
         )
         st.caption(str(technology_evidence["rationale"]))
+
+    with st.container(border=True):
+        flow_entry_modifier = float(daily_flow_evidence["entry_modifier"])
+        flow_color = (
+            "#38d996" if flow_entry_modifier > 0
+            else "#ff6375" if flow_entry_modifier < 0 else "#9aa4b2"
+        )
+        st.markdown("**FINRA daily short-flow slope · active shadow component**")
+        st.markdown(
+            f"<span style='color:{flow_color};font-size:1.15rem;font-weight:700'>"
+            f"{float(daily_flow_evidence['slope_pp_per_session']):+.3f} pp/session · "
+            f"{flow_entry_modifier:+.1f} Entry / "
+            f"{float(daily_flow_evidence['exit_modifier']):+.1f} Exit shadow points"
+            f"</span>", unsafe_allow_html=True,
+        )
+        st.caption(
+            f"10-session mean {daily_flow_evidence.get('rolling_share_pct') or 0:.2f}% · "
+            f"confidence {float(daily_flow_evidence['confidence']):.0%} · "
+            f"{daily_flow_evidence['coverage']} coverage · live contribution exactly 0.0"
+        )
+        st.caption(str(daily_flow_evidence["rationale"]))
 
     learning_entry_adjustment = float(learning_modifier["entry_adjustment"])
     learning_columns = st.columns(2)

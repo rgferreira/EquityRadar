@@ -9,7 +9,7 @@ from src.model_registry import (
     COVERAGE_AWARE_PROMOTED, canonical_json, content_hash, coverage_aware_shadow_registration,
     current_model_registration, technology_potential_shadow_registration,
 )
-from src.scoring.decision import entry_label
+from src.scoring.decision import entry_label, exit_review_label
 from src.scoring.positioning import apply_positioning_adjustment
 
 
@@ -66,28 +66,52 @@ def coverage_aware_shadow_output(
 def technology_potential_shadow_output(
     inputs: Mapping[str, object], current_outputs: Mapping[str, object],
 ) -> dict[str, object]:
-    """Apply only the preregistered, frozen Technology Potential modifier."""
+    """Apply the preregistered Technology and daily short-flow shadow modifiers."""
     evidence = dict(inputs.get("technology_potential") or {})
+    daily_flow = dict(inputs.get("daily_short_flow") or {})
     current_entry = float(current_outputs["entry_score"])
     current_signal = str(current_outputs["entry_signal"])
-    modifier = float(evidence.get("entry_modifier") or 0.0)
+    technology_modifier = float(evidence.get("entry_modifier") or 0.0)
     if not evidence or float(evidence.get("confidence") or 0.0) <= 0:
-        modifier = 0.0
-        mode = "technology_evidence_unavailable_neutral"
+        technology_modifier = 0.0
+        technology_mode = "technology_unavailable"
     else:
-        modifier = max(-5.0, min(5.0, modifier))
-        mode = f"technology_potential_{evidence.get('coverage') or 'limited'}"
-    score = round(max(0.0, min(100.0, current_entry + modifier)), 1)
+        technology_modifier = max(-5.0, min(5.0, technology_modifier))
+        technology_mode = f"technology_{evidence.get('coverage') or 'limited'}"
+    flow_entry_modifier = float(daily_flow.get("entry_modifier") or 0.0)
+    flow_exit_modifier = float(daily_flow.get("exit_modifier") or 0.0)
+    if not daily_flow or float(daily_flow.get("confidence") or 0.0) <= 0:
+        flow_entry_modifier = flow_exit_modifier = 0.0
+        flow_mode = "daily_flow_unavailable"
+    else:
+        flow_entry_modifier = max(-2.0, min(2.0, flow_entry_modifier))
+        flow_exit_modifier = max(-2.0, min(2.0, flow_exit_modifier))
+        flow_mode = f"daily_flow_{daily_flow.get('coverage') or 'limited'}"
+    score = round(max(
+        0.0, min(100.0, current_entry + technology_modifier + flow_entry_modifier)
+    ), 1)
     signal = entry_label(score)
+    current_exit = current_outputs.get("exit_score")
+    exit_score = (
+        round(max(0.0, min(100.0, float(current_exit) + flow_exit_modifier)), 1)
+        if isinstance(current_exit, (int, float)) else current_exit
+    )
     return {
         "entry_score": score,
         "entry_signal": signal,
-        "exit_score": current_outputs.get("exit_score"),
-        "exit_signal": current_outputs.get("exit_signal"),
-        "coverage_mode": mode,
+        "exit_score": exit_score,
+        "exit_signal": (
+            exit_review_label(float(exit_score))
+            if isinstance(exit_score, (int, float)) else current_outputs.get("exit_signal")
+        ),
+        "coverage_mode": f"{technology_mode}+{flow_mode}",
         "technology_score": float(evidence.get("score") or 50.0),
         "technology_confidence": float(evidence.get("confidence") or 0.0),
-        "technology_entry_modifier": round(modifier, 1),
+        "technology_entry_modifier": round(technology_modifier, 1),
+        "daily_short_flow_slope": float(daily_flow.get("slope_pp_per_session") or 0.0),
+        "daily_short_flow_confidence": float(daily_flow.get("confidence") or 0.0),
+        "daily_short_flow_entry_modifier": round(flow_entry_modifier, 1),
+        "daily_short_flow_exit_modifier": round(flow_exit_modifier, 1),
         "entry_score_delta": round(score - current_entry, 1),
         "signal_changed": signal != current_signal,
     }

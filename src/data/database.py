@@ -9,6 +9,7 @@ from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
 from src.model_registry import (
     coverage_aware_shadow_registration, current_model_registration,
     evidence_policy_previous_live_registration, previous_live_model_registration,
+    legacy_technology_potential_shadow_registration,
     previous_technology_potential_shadow_registration, technology_potential_shadow_registration,
 )
 
@@ -473,6 +474,7 @@ def init_db(db_path: str | Path | None = None) -> None:
         for model in (
             previous_live_model_registration(), coverage_aware_shadow_registration(),
             evidence_policy_previous_live_registration(), current_model_registration(),
+            legacy_technology_potential_shadow_registration(),
             previous_technology_potential_shadow_registration(),
             technology_potential_shadow_registration(),
         ):
@@ -500,6 +502,10 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
             (previous_technology_potential_shadow_registration()["model_version"],),
+        )
+        connection.execute(
+            "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
+            (legacy_technology_potential_shadow_registration()["model_version"],),
         )
         if not promotion_applied:
             current = evidence_policy_previous_live_registration()
@@ -590,6 +596,9 @@ def init_db(db_path: str | Path | None = None) -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('technology_potential_shadow_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('daily_short_flow_shadow_v1')"
         )
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('model_gate_alerts_v1')"

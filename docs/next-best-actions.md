@@ -26,9 +26,9 @@ shadow model exists and no score change is authorized.
 1. **FINRA daily short-volume driver.** The consolidated FINRA short-sale-volume files now populate a
    separate daily flow-pressure input. Preserve twice-monthly consolidated short interest as the official
    position anchor: daily short-sale volume is trading flow, not outstanding short positions. Raw observations,
-   point-in-time provenance, provider health, daily share and a 10-session visual baseline are implemented as
-   display-only shadow evidence. A preregistered evaluation window and incremental out-of-sample evidence remain
-   required before authorizing any live score modifier. See
+   point-in-time provenance, provider health, daily share and a 10-session visual baseline are implemented. The
+   baseline slope is now a bounded component of `technology-daily-short-flow-v3-shadow`; prospective, incremental
+   out-of-sample evidence remains required before authorizing any live score modifier. See
    [`releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md`](releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md).
 
 ## Phase 4 - saved, not started

@@ -66,8 +66,8 @@ CURRENT_MODEL_CONFIG: dict[str, object] = {
     "correction_reason": "Prevent stale short-interest reports from influencing decisions",
 }
 
-PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v1-shadow"
-PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+LEGACY_TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v1-shadow"
+LEGACY_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
     "base_model": EVIDENCE_POLICY_PREVIOUS_LIVE_VERSION,
     "hypothesis": "industry-relative technology potential improves selective entry decisions",
     "components": {
@@ -87,11 +87,33 @@ PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
     "role": "inactive_shadow_only",
 }
 
-TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v2-finra-freshness-shadow"
-TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
-    **PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG,
+PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-potential-modifier-v2-finra-freshness-shadow"
+PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+    **LEGACY_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG,
     "base_model": CURRENT_MODEL_VERSION,
     "evidence_policy": "finra-report-date-freshness-v1",
+}
+
+TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-daily-short-flow-v3-shadow"
+TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+    **PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG,
+    "hypothesis": (
+        "technology potential plus a rising 10-session FINRA daily short-flow slope "
+        "improves selective entry decisions"
+    ),
+    "daily_short_flow": {
+        "metric": "OLS slope of the 10-session short-volume-share mean over 10 sessions",
+        "entry_direction": "rising_flow_is_caution_falling_flow_is_easing",
+        "exit_direction": "rising_flow_is_deterioration_falling_flow_is_easing",
+        "deadband_pp_per_session": 0.05,
+        "full_strength_pp_per_session": 0.25,
+        "modifier_cap": 2.0,
+        "minimum_observations": 20,
+        "maximum_age_days": 7,
+        "missing_or_stale": "neutral_zero_modifier",
+        "point_in_time": "verified_known_at_required",
+    },
+    "evaluation": "prospective_purged_benchmark_relative_3m_new_version_only",
 }
 ACTIVE_SHADOW_ENABLED = True
 
@@ -164,6 +186,17 @@ def previous_technology_potential_shadow_registration() -> dict[str, object]:
         "model_version": PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
         "config_json": canonical_json(PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
         "config_hash": content_hash(PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
+        "status": "retired",
+        "is_active": 0,
+        "is_champion": 0,
+    }
+
+
+def legacy_technology_potential_shadow_registration() -> dict[str, object]:
+    return {
+        "model_version": LEGACY_TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+        "config_json": canonical_json(LEGACY_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
+        "config_hash": content_hash(LEGACY_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
         "status": "retired",
         "is_active": 0,
         "is_champion": 0,

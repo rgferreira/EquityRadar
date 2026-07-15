@@ -87,7 +87,27 @@ def test_technology_modifier_is_bounded_confidence_gated_and_shadow_only():
     assert CURRENT == original
     assert challenger["entry_score"] == 69.0
     assert challenger["technology_entry_modifier"] == 3.0
-    assert challenger["coverage_mode"] == "technology_potential_ready"
+    assert challenger["coverage_mode"] == "technology_ready+daily_flow_unavailable"
+
+
+def test_daily_short_flow_slope_is_additive_bounded_and_shadow_only():
+    original = dict(CURRENT)
+    challenger = technology_potential_shadow_output(inputs(
+        technology_potential={
+            "score": 90, "confidence": .75, "entry_modifier": 3.0, "coverage": "ready",
+        },
+        daily_short_flow={
+            "slope_pp_per_session": .3, "confidence": .8,
+            "entry_modifier": -1.5, "exit_modifier": 1.5, "coverage": "ready",
+        },
+    ), CURRENT)
+
+    assert CURRENT == original
+    assert challenger["entry_score"] == 67.5
+    assert challenger["exit_score"] == 31.5
+    assert challenger["technology_entry_modifier"] == 3.0
+    assert challenger["daily_short_flow_entry_modifier"] == -1.5
+    assert challenger["daily_short_flow_exit_modifier"] == 1.5
 
 
 def test_promoted_shadow_backfill_is_archived(tmp_path):

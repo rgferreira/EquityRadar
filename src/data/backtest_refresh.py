@@ -11,7 +11,7 @@ from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_si
 from src.backtesting import lesson_summary
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, get_cached_fundamentals,
-    get_cached_industry_research, get_positioning_history,
+    get_cached_industry_research, get_finra_daily_short_volume, get_positioning_history,
     save_backtest_run, save_outcome_label, save_prediction_snapshot, save_shadow_decision_snapshot,
     set_backtest_job_item, update_backtest_outcomes,
 )
@@ -31,11 +31,13 @@ _outcome_future: Future[None] | None = None
 def _persist_reconstruction(
     *, ticker: str, as_of_date: str, history: object,
     fundamentals: object, positioning_history: list[object], industry_research: object,
+    daily_short_flow_history: list[object],
     db_path: str | Path | None, simulation_source: str,
     suggestion_rationale: str | None, benchmark_cache: dict[str, object | None],
 ) -> dict[str, object]:
     result = reconstruct_signal(
         history, as_of_date, fundamentals, positioning_history, industry_research,
+        daily_short_flow_history,
     )
     outcomes = evaluate_outcomes(history, as_of_date)
     legacy_run = {
@@ -51,7 +53,8 @@ def _persist_reconstruction(
                                      "finra_observations_used": result["finra_observations_used"],
                                      "temporal_coverage": result["temporal_coverage"],
                                      "positioning_modifier": result["positioning_modifier"],
-                                     "technology_potential": result["technology_potential"]}),
+                                     "technology_potential": result["technology_potential"],
+                                     "daily_short_flow": result["daily_short_flow"]}),
         "model_version": result["model_version"],
         "simulation_source": simulation_source,
         "suggestion_rationale": suggestion_rationale,
@@ -71,6 +74,7 @@ def _persist_reconstruction(
         "temporal_coverage": result["temporal_coverage"],
         "input_references": result["input_references"],
         "technology_potential": result["technology_potential"],
+        "daily_short_flow": result["daily_short_flow"],
     }
     frozen_outputs = {
         "entry_score": result["entry_score"], "exit_score": result["exit_score"],
@@ -123,6 +127,7 @@ def _run(
                 fundamentals=get_cached_fundamentals(ticker, db_path),
                 positioning_history=get_positioning_history(ticker, db_path),
                 industry_research=get_cached_industry_research(ticker, db_path),
+                daily_short_flow_history=get_finra_daily_short_volume(ticker, db_path),
                 db_path=db_path, simulation_source=simulation_source,
                 suggestion_rationale=suggestion_rationale, benchmark_cache=benchmark_cache,
             )
@@ -159,6 +164,7 @@ def restate_saved_simulations(db_path: str | Path | None = None) -> dict[str, ob
             fundamentals = get_cached_fundamentals(ticker, db_path)
             positioning = get_positioning_history(ticker, db_path)
             industry = get_cached_industry_research(ticker, db_path)
+            daily_short_flow = get_finra_daily_short_volume(ticker, db_path)
         except Exception as exc:
             failed.append({"ticker": ticker, "as_of_date": "all", "error": str(exc)})
             continue
@@ -170,7 +176,8 @@ def restate_saved_simulations(db_path: str | Path | None = None) -> dict[str, ob
                 corrected = _persist_reconstruction(
                     ticker=ticker, as_of_date=as_of_date, history=history,
                     fundamentals=fundamentals, positioning_history=positioning,
-                    industry_research=industry, db_path=db_path,
+                    industry_research=industry, daily_short_flow_history=daily_short_flow,
+                    db_path=db_path,
                     simulation_source=str(source.get("simulation_source") or "manual"),
                     suggestion_rationale=source.get("suggestion_rationale"),
                     benchmark_cache=benchmark_cache,

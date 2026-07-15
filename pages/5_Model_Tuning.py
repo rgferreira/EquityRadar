@@ -42,7 +42,7 @@ inject_app_styles()
 init_db()
 page_header(
     "Phase 3.9 shadow decision center", "Model tuning",
-    "Evaluate the active Technology Potential challenger without changing the live model.",
+    "Evaluate the active Technology Potential + FINRA daily-flow challenger without changing the live model.",
     "Shadow only · Reversible",
 )
 st.warning(
@@ -102,7 +102,8 @@ if not comparisons:
     st.markdown(f"### Active challenger: `{TECHNOLOGY_POTENTIAL_SHADOW_VERSION}`")
     st.info(
         "Registered and awaiting its first immutable prospective snapshot. Load or refresh the "
-        "Decision dashboard; no historical evidence will be invented or reused."
+        "Decision dashboard; backfilled daily flow is not treated as historically known, and no "
+        "legacy outcome evidence will be invented or reused."
     )
     st.subheader("Current promotion readiness · Awaiting new challenger/data")
     for criterion in (
