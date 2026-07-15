@@ -8,5 +8,6 @@ __pycache__/
 .DS_Store
 work/*.log
 work/*.json
+work/*.pid
 work/backups/
 tmp/

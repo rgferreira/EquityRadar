@@ -97,6 +97,15 @@ def test_company_uses_compact_responsive_chart_legend():
     assert "FINRA short Δ" in company and "Suggested pending" in company
 
 
+def test_macos_launcher_is_idempotent_and_scoped_to_equity_radar():
+    control = Path("scripts/macos/equity-radar-control.zsh").read_text(encoding="utf-8")
+    launcher = Path("scripts/macos/Equity Radar Launcher.applescript").read_text(encoding="utf-8")
+    assert "running_pid" in control and "is_equity_radar_pid" in control
+    assert '"streamlit"' in control and '"app.py"' in control
+    assert '/_stcore/health' in control
+    assert 'buttons {"Stop everything", "Start everything"}' in launcher
+
+
 def test_company_learning_diagnostic_colors_are_defined_before_rendering():
     company = Path("pages/3_Company.py").read_text(encoding="utf-8")
     for variable in ("learning_entry_color", "learning_exit_color"):
