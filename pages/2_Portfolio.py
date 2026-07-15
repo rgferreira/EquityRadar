@@ -16,6 +16,7 @@ from src.data.database import (
     get_portfolio_sales,
     get_portfolio_targets,
     get_cash_transactions,
+    get_cached_industry_research,
     get_watchlist,
     init_db,
     record_portfolio_sale,
@@ -24,7 +25,7 @@ from src.data.database import (
     update_portfolio_lot,
 )
 from src.data.market_data import (
-    clear_market_data_cache, fetch_asset_profile, fetch_fx_rate, fetch_price_history, fetch_quote_currency,
+    clear_market_data_cache, fetch_fx_rate, fetch_price_history, fetch_quote_currency,
 )
 from src.portfolio import (
     calculate_flow_adjusted_benchmark, calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
@@ -248,9 +249,14 @@ with st.expander("Portfolio exports"):
         download_link("Sales CSV", pd.DataFrame(sales).to_csv(index=False), "portfolio-sales.csv", "text/csv"),
         download_link("Cash CSV", pd.DataFrame(cash_transactions).to_csv(index=False), "portfolio-cash.csv", "text/csv"),
     ]
-    if DATABASE_PATH.exists():
-        export_links.append(download_link("SQLite database backup", DATABASE_PATH.read_bytes(), "personal-equity-radar-backup.db", "application/x-sqlite3"))
     st.markdown("  \n".join(export_links))
+    st.caption("The SQLite backup is prepared only on request so normal page loads stay lightweight.")
+    if DATABASE_PATH.exists() and st.button("Prepare SQLite database backup", key="prepare_portfolio_backup"):
+        st.download_button(
+            "Download SQLite database backup", data=DATABASE_PATH.read_bytes(),
+            file_name="personal-equity-radar-backup.db", mime="application/x-sqlite3",
+            on_click="ignore",
+        )
 save_portfolio_snapshot(
     date.today().isoformat(), total_value, len(known_values), len(holdings), PORTFOLIO_BASE_CURRENCY
 )
@@ -439,7 +445,11 @@ st.subheader("Allocation and concentration")
 allocation_rows = [row for row in valued_holdings if row["market_value"] is not None]
 if allocation_rows:
     allocation_frame = pd.DataFrame(allocation_rows)
-    profiles = {ticker: fetch_asset_profile(ticker) for ticker in allocation_frame["ticker"]}
+    profiles = {}
+    for ticker in allocation_frame["ticker"]:
+        research = get_cached_industry_research(str(ticker)) or {}
+        profile = research.get("profile") or {}
+        profiles[ticker] = profile if isinstance(profile, dict) else {}
     allocation_frame["sector"] = [profiles[ticker].get("sector") or "Unknown" for ticker in allocation_frame["ticker"]]
     allocation_frame["country"] = [profiles[ticker].get("country") or "Unknown" for ticker in allocation_frame["ticker"]]
     allocation_tabs = st.tabs(["Position", "Sector", "Country", "Currency"])

@@ -80,6 +80,21 @@ def test_responsive_breakpoint_contract_covers_phone_density():
     assert "@media (max-width: 700px)" in styles
     assert "@media (min-width: 1100px)" in styles
     assert "touch.clientX <= 34" in styles
+    assert ".company-chart-legend" in styles
+
+
+def test_portfolio_backup_and_profiles_do_not_bloat_normal_page_loads():
+    portfolio = Path("pages/2_Portfolio.py").read_text(encoding="utf-8")
+    assert "Prepare SQLite database backup" in portfolio
+    assert "fetch_asset_profile" not in portfolio
+    assert portfolio.index("st.button(\"Prepare SQLite database backup\"") < portfolio.index("DATABASE_PATH.read_bytes()")
+
+
+def test_company_uses_compact_responsive_chart_legend():
+    company = Path("pages/3_Company.py").read_text(encoding="utf-8")
+    assert "figure.update_layout(showlegend=False" in company
+    assert "company-chart-legend" in company
+    assert "FINRA short Δ" in company and "Suggested pending" in company
 
 
 def test_company_learning_diagnostic_colors_are_defined_before_rendering():

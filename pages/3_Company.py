@@ -271,6 +271,30 @@ try:
     figure.update_yaxes(title_text="Short Δ %", row=2, col=1, secondary_y=False, zeroline=True)
     figure.update_yaxes(title_text="Days", row=2, col=1, secondary_y=True, showgrid=False)
     style_figure(figure, height=560)
+    # Plotly's horizontal legend becomes a tall, narrow stack on phones. A
+    # compact semantic legend keeps all series discoverable without consuming
+    # a large part of the chart viewport.
+    figure.update_layout(showlegend=False, margin={"l": 12, "r": 12, "t": 12, "b": 12})
+    legend_items = [
+        ("line close", "Close"), ("line ma50", "MA 50"),
+        ("line ma100", "MA 100"), ("line ma200", "MA 200"),
+    ]
+    if finra_rows:
+        legend_items.extend([("bar finra", "FINRA short Δ"), ("line cover", "Days to cover")])
+    marker_labels = {
+        "Manual simulation": ("line manual", "Manual sim."),
+        "Suggested simulation": ("line suggested", "Suggested sim."),
+        "Suggested · pending": ("line pending", "Suggested pending"),
+    }
+    legend_items.extend(marker_labels[item] for item in visible_marker_types if item in marker_labels)
+    st.html(
+        "<div class='company-chart-legend' aria-label='Chart legend'>"
+        + "".join(
+            f"<span class='legend-item'><i class='{kind}'></i>{label}</span>"
+            for kind, label in legend_items
+        )
+        + "</div>"
+    )
     st.plotly_chart(figure, width="stretch")
     if finra_rows:
         st.caption("FINRA pressure pulse · coral = rising short interest · teal = falling · gold = days to cover")

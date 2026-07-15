@@ -63,12 +63,36 @@ button[data-testid="stExpandSidebarButton"] {
 button[data-testid="stExpandSidebarButton"]:hover {
      border-color: #70a5ff !important; transform: scale(1.04);
 }
+.company-chart-legend {
+     display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+     gap: .3rem .8rem; margin: .1rem 0 .45rem; color: #93a4b8;
+     font-size: .72rem; line-height: 1.15;
+}
+.company-chart-legend .legend-item { display: inline-flex; align-items: center; white-space: nowrap; }
+.company-chart-legend i { display: inline-block; width: 1.25rem; height: 0; margin-right: .3rem; border-top: 2px solid; }
+.company-chart-legend i.close { border-color: #39d0b3; }
+.company-chart-legend i.ma50 { border-color: #70a5ff; border-top-style: dotted; }
+.company-chart-legend i.ma100 { border-color: #f0b36a; border-top-style: dotted; }
+.company-chart-legend i.ma200 { border-color: #c18cff; border-top-style: dotted; }
+.company-chart-legend i.cover { border-color: #f5c26b; }
+.company-chart-legend i.manual { border-color: #7aa2f7; border-top-style: dotted; }
+.company-chart-legend i.suggested { border-color: #c792ea; border-top-style: dotted; }
+.company-chart-legend i.pending { border-color: #f5c26b; border-top-style: dotted; }
+.company-chart-legend i.bar {
+     width: .62rem; height: .62rem; margin-right: .38rem; border: 0;
+     background: linear-gradient(90deg, #35d0ba 0 50%, #ff6375 50% 100%);
+}
 @media (max-width: 700px) {
      div[data-testid="stElementContainer"]:has(h1) { top: 2.45rem; }
      h1 { font-size: 1.65rem !important; }
      [data-testid="stSidebarCollapsedControl"] button,
      button[data-testid="stExpandSidebarButton"] {
           width: 2.85rem !important; height: 2.85rem !important; }
+     .company-chart-legend {
+          justify-content: flex-start; gap: .28rem .58rem; margin-bottom: .35rem;
+          font-size: .66rem;
+     }
+     .company-chart-legend i { width: .9rem; margin-right: .22rem; }
 }
 </style>""",
         unsafe_allow_html=True,
