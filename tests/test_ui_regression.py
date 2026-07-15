@@ -65,6 +65,10 @@ def test_navigation_and_simulation_contracts_are_regression_guarded():
     assert "Run historical simulation" in dashboard
     assert "Saved simulations & learning history" in dashboard
     assert '"1D %": metrics.get("return_1d")' in dashboard
+    # The model-lineage query is deliberately bulk-loaded once per render. A
+    # per-ticker query adds several seconds after provider fetching completes.
+    assert dashboard.count("get_backtest_runs()") == 1
+    assert "backtest_runs_by_ticker" in dashboard
     tuning = Path("pages/5_Model_Tuning.py").read_text(encoding="utf-8")
     assert "Current promotion readiness · Awaiting new challenger/data" in tuning
     assert "Archived promotion result" in tuning

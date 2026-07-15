@@ -98,7 +98,7 @@ def suggestion_run_status(as_of_date: str) -> str:
         return f"Running · {status['completed']}/{max(expected, int(status['total']))}"
     if expected and status["completed"] + status["failed"] >= expected:
         return "Completed" if not status["failed"] else "Completed with exclusions"
-    completed_runs = {run["ticker"] for run in get_backtest_runs() if run["as_of_date"] == as_of_date}
+    completed_runs = {run["ticker"] for run in all_backtest_runs if run["as_of_date"] == as_of_date}
     if completed_runs:
         return f"Partial · {len(completed_runs)}/{expected}"
     return "Not run"
@@ -292,6 +292,14 @@ def non_wrapping_signal_labels(frame: pd.DataFrame) -> pd.DataFrame:
     })
 
 tickers = get_watchlist()
+# Simulation history is a governed point-in-time snapshot for this render. The
+# underlying query joins immutable outcomes and model lineage, so running it per
+# ticker is needlessly expensive and can also make one page render internally
+# inconsistent if an outcome refresh completes halfway through.
+all_backtest_runs = get_backtest_runs()
+backtest_runs_by_ticker: dict[str, list[dict[str, object]]] = {}
+for stored_run in all_backtest_runs:
+    backtest_runs_by_ticker.setdefault(str(stored_run["ticker"]), []).append(stored_run)
 schedule_cutoff_suggestions(tickers)
 suggestions = get_simulation_suggestions()
 persisted_backtest_date = get_active_backtest()
@@ -415,7 +423,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             calibrated_exit = apply_positioning_adjustment(
                 base_exit, float(positioning_modifier["exit_adjustment"]),
             )
-            learned = learned_score_adjustments(get_backtest_runs(ticker))
+            learned = learned_score_adjustments(backtest_runs_by_ticker.get(ticker, []))
             learning_policy = governed_learning_adjustments(learned)
             calibrated_entry = apply_positioning_adjustment(
                 calibrated_entry, float(learning_policy["applied_entry_adjustment"]),
@@ -512,7 +520,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
     st.session_state.dashboard_rows_mode = "present"
 
 if historical_mode:
-    runs = [run for run in latest_model_runs(get_backtest_runs()) if run["as_of_date"] == simulation_key]
+    runs = [run for run in latest_model_runs(all_backtest_runs) if run["as_of_date"] == simulation_key]
     rows, errors = [], []
     for run in runs:
         inputs = json.loads(str(run["inputs_json"]))
@@ -615,7 +623,7 @@ if rows:
             row["Entry score"] = apply_positioning_adjustment(float(calibrated["score"]), float(modifier["entry_adjustment"]))
             base_exit = calculate_exit_review_score(float(row["Technical"]), float(row["Risk"]))
             row["Exit-review score"] = apply_positioning_adjustment(base_exit, float(modifier["exit_adjustment"]))
-            learned = learned_score_adjustments(get_backtest_runs(str(row["Ticker"])))
+            learned = learned_score_adjustments(backtest_runs_by_ticker.get(str(row["Ticker"]), []))
             learning_policy = governed_learning_adjustments(learned)
             row["Learning entry adj"] = learned["entry_adjustment"]
             row["Learning exit adj"] = learned["exit_adjustment"]
@@ -667,7 +675,7 @@ if rows:
                 )
         frame = pd.DataFrame(rows)
     frame["Overall decision accuracy"] = frame["Ticker"].map(
-        lambda ticker: lesson_summary(get_backtest_runs(str(ticker))).get("decision_accuracy")
+        lambda ticker: lesson_summary(backtest_runs_by_ticker.get(str(ticker), [])).get("decision_accuracy")
     )
     above_50 = int((frame["Price"] > frame["50D MA"]).sum())
     above_200 = int((frame["Price"] > frame["200D MA"]).sum())
@@ -792,7 +800,7 @@ if rows:
     if historical_mode:
         st.subheader("Backtested learning")
         st.caption(f"Cutoff date · {simulation_key} · Outcomes are judged against the old decision, never used to calculate it. Composite = 50% 1M + 30% 3M + 20% 6M after monthly normalization.")
-        analyses = {str(run["ticker"]): decision_outcome(run) for run in latest_model_runs(get_backtest_runs())
+        analyses = {str(run["ticker"]): decision_outcome(run) for run in latest_model_runs(all_backtest_runs)
                     if run["as_of_date"] == simulation_key}
         outcome_view = frame[["Ticker", "Cutoff date", "Entry signal", "Entry score", "Outcome 1M %", "Outcome 3M %", "Outcome 6M %"]].copy()
         for horizon, sessions in (("1M", 21), ("3M", 63), ("6M", 126)):
@@ -809,7 +817,7 @@ if rows:
         st.dataframe(zebra_table(outcome_view), hide_index=True, width="stretch")
         lesson_rows = []
         for ticker in frame["Ticker"]:
-            lesson = lesson_summary(get_backtest_runs(str(ticker)))
+            lesson = lesson_summary(backtest_runs_by_ticker.get(str(ticker), []))
             lesson_rows.append({"Ticker": ticker, "Confirmed / saved": f"{lesson['sample_size']}/{lesson['total_runs']}",
                                 "Confirmed accuracy": lesson["decision_accuracy"],
                                 "Weighted monthly %": lesson["average_composite"], "Confidence": lesson["confidence"]})
@@ -962,7 +970,7 @@ if rows:
             st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
 
     with st.expander("Saved simulations & learning history"):
-        saved_runs = latest_model_runs(get_backtest_runs())
+        saved_runs = latest_model_runs(all_backtest_runs)
         registered_saved_runs = sum(
             int(run.get("has_prediction_snapshot") or 0) for run in saved_runs
         )
