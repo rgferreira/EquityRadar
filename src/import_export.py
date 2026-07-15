@@ -27,6 +27,7 @@ def import_transactions_csv(content: str, db_path: str | Path | None = None) -> 
                     "ticker": row.get("ticker"), "sale_date": row.get("date"),
                     "shares": row.get("shares"), "price_per_share": row.get("price_per_share"),
                     "fees": row.get("fees") or 0, "notes": row.get("notes"),
+                    "currency": row.get("currency") or "USD",
                 }, db_path)
             elif kind == "cash":
                 add_cash_transaction({

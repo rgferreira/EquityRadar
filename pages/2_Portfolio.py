@@ -178,6 +178,7 @@ if holdings_before_sale:
                 record_portfolio_sale({
                     "ticker": sale_ticker, "sale_date": sale_date.isoformat(), "shares": sale_shares,
                     "price_per_share": sale_price, "fees": sale_fees, "notes": sale_notes,
+                    "currency": fetch_quote_currency(sale_ticker) or PORTFOLIO_BASE_CURRENCY,
                 })
                 st.success(f"Sale recorded for {sale_ticker} using FIFO lots.")
                 st.rerun()
@@ -345,6 +346,10 @@ if sales:
 if cash_transactions:
     st.subheader("Cash ledger")
     cash_frame = pd.DataFrame(cash_transactions)
+    cash_frame["transaction_type"] = cash_frame.apply(
+        lambda row: "sale proceeds" if pd.notna(row.get("source_sale_id")) else row["transaction_type"],
+        axis=1,
+    )
     cash_frame["transaction_date"] = pd.to_datetime(cash_frame["transaction_date"])
     cash_frame["amount_base"] = [
         float(item["amount"]) * (1.0 if item["currency"] == PORTFOLIO_BASE_CURRENCY else fx_rates.get(str(item["currency"]), 0) or 0)
@@ -358,16 +363,20 @@ if cash_transactions:
             "amount_base": st.column_config.NumberColumn(f"Amount ({PORTFOLIO_BASE_CURRENCY})", format="%.2f"),
         },
     )
+    deletable_cash_transactions = [item for item in cash_transactions if item.get("source_sale_id") is None]
     cash_labels = {
         f"#{item['id']} · {item['transaction_date']} · {item['transaction_type']} · {item['amount']} {item['currency']}": item
-        for item in cash_transactions
+        for item in deletable_cash_transactions
     }
-    cash_to_delete = st.selectbox("Cash transaction to delete", list(cash_labels))
-    confirm_cash_delete = st.checkbox("I understand this permanently deletes the selected cash transaction")
-    if st.button("Delete cash transaction", disabled=not confirm_cash_delete):
-        delete_cash_transaction(int(cash_labels[cash_to_delete]["id"]))
-        st.success("Cash transaction deleted.")
-        st.rerun()
+    if cash_labels:
+        cash_to_delete = st.selectbox("Cash transaction to delete", list(cash_labels))
+        confirm_cash_delete = st.checkbox("I understand this permanently deletes the selected cash transaction")
+        if st.button("Delete cash transaction", disabled=not confirm_cash_delete):
+            delete_cash_transaction(int(cash_labels[cash_to_delete]["id"]))
+            st.success("Cash transaction deleted.")
+            st.rerun()
+    if len(deletable_cash_transactions) != len(cash_transactions):
+        st.caption("Sale-proceeds entries are linked to their sale record and cannot be deleted independently.")
 
 portfolio_history = calculate_portfolio_history(
     holdings, histories, currencies, fx_rates, PORTFOLIO_BASE_CURRENCY, lots, cash_transactions

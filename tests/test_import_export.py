@@ -17,7 +17,9 @@ unknown,2026-02-03,,,,,,,,bad row
     assert len(result["errors"]) == 1
     assert get_portfolio_holdings(database)[0]["shares"] == 3
     assert get_portfolio_sales(db_path=database)[0]["realized_pl"] == pytest.approx(38.6)
-    assert get_cash_transactions(database)[0]["amount"] == 10
+    cash = get_cash_transactions(database)
+    assert [item["amount"] for item in cash] == [10, 239]
+    assert cash[1]["source_sale_id"] is not None
 
 
 def test_csv_import_requires_transaction_kind_header(tmp_path):

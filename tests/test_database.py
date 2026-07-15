@@ -19,6 +19,7 @@ from src.data.database import (
     update_portfolio_lot,
     delete_portfolio_lot,
     record_portfolio_sale,
+    ensure_sale_cash_transaction,
     get_portfolio_sales,
     save_portfolio_snapshot,
     get_portfolio_snapshots,
@@ -169,6 +170,11 @@ def test_portfolio_sale_consumes_fifo_lots_and_calculates_realized_pl(tmp_path):
     assert sale["id"] == sale_id
     assert sale["cost_basis"] == pytest.approx(323)  # first lot 202 + one share of second lot 121
     assert sale["realized_pl"] == pytest.approx(124)  # proceeds 447 less cost 323
+    cash = get_cash_transactions(database)
+    assert len(cash) == 1
+    assert cash[0]["amount"] == pytest.approx(447)
+    assert cash[0]["currency"] == "USD"
+    assert cash[0]["source_sale_id"] == sale_id
     assert get_portfolio_holdings(database)[0]["shares"] == 2
     remaining = get_portfolio_lots("AAPL", database)
     assert len(remaining) == 1
@@ -186,6 +192,28 @@ def test_sale_of_unknown_legacy_cost_keeps_realized_pl_unknown(tmp_path):
     sale = get_portfolio_sales("NVDA", database)[0]
     assert sale["cost_basis"] is None
     assert sale["realized_pl"] is None
+    assert get_cash_transactions(database)[0]["amount"] == pytest.approx(149)
+
+
+def test_existing_sale_cash_reconciliation_is_idempotent_and_protected(tmp_path):
+    database = tmp_path / "radar.db"
+    add_portfolio_lot({
+        "ticker": "GLNG", "purchase_date": "2026-01-01", "shares": 2,
+        "price_per_share": 40, "fees": 0,
+    }, database)
+    sale_id = record_portfolio_sale({
+        "ticker": "GLNG", "sale_date": "2026-07-14", "shares": 1,
+        "price_per_share": 55, "fees": 1, "currency": "USD",
+    }, database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("DELETE FROM cash_transactions WHERE source_sale_id = ?", (sale_id,))
+    cash_id = ensure_sale_cash_transaction(sale_id, "usd", database)
+    assert ensure_sale_cash_transaction(sale_id, "USD", database) == cash_id
+    cash = get_cash_transactions(database)
+    assert len(cash) == 1
+    assert cash[0]["amount"] == pytest.approx(54)
+    with pytest.raises(ValueError, match="cannot be deleted independently"):
+        delete_cash_transaction(cash_id, database)
 
 
 def test_daily_portfolio_snapshot_upserts_same_date(tmp_path):

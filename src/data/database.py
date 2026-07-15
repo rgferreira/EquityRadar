@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from src.utils.config import DATABASE_PATH
+from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
 from src.model_registry import (
     coverage_aware_shadow_registration, current_model_registration,
     previous_live_model_registration, technology_potential_shadow_registration,
@@ -143,6 +143,7 @@ def init_db(db_path: str | Path | None = None) -> None:
                 currency TEXT NOT NULL,
                 ticker TEXT,
                 notes TEXT,
+                source_sale_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS portfolio_targets (
@@ -388,6 +389,20 @@ def init_db(db_path: str | Path | None = None) -> None:
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
         }
+        cash_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(cash_transactions)")
+        }
+        if "source_sale_id" not in cash_columns:
+            connection.execute("ALTER TABLE cash_transactions ADD COLUMN source_sale_id INTEGER")
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS cash_transactions_source_sale_unique
+                ON cash_transactions(source_sale_id) WHERE source_sale_id IS NOT NULL
+            """
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('sale_cash_link_v1')"
+        )
         promotion_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(model_promotion_events)")
         }
@@ -1466,9 +1481,10 @@ def record_portfolio_sale(
     shares_to_sell = float(sale.get("shares", 0) or 0)
     sale_price = float(sale.get("price_per_share", 0) or 0)
     fees = float(sale.get("fees", 0) or 0)
+    currency = str(sale.get("currency", PORTFOLIO_BASE_CURRENCY)).strip().upper()
     sale_date = str(sale.get("sale_date", "")).strip()
-    if not normalized or not sale_date:
-        raise ValueError("Ticker and sale date are required")
+    if not normalized or not sale_date or not currency:
+        raise ValueError("Ticker, sale date, and currency are required")
     if shares_to_sell <= 0 or sale_price <= 0 or fees < 0:
         raise ValueError("Sale shares/price must be positive and fees cannot be negative")
     init_db(db_path)
@@ -1517,7 +1533,55 @@ def record_portfolio_sale(
             """,
             (normalized, sale_date, shares_to_sell, sale_price, fees, known_cost, realized_pl, sale.get("notes")),
         )
+        sale_id = int(cursor.lastrowid)
+        connection.execute(
+            """
+            INSERT INTO cash_transactions
+                (transaction_date, transaction_type, amount, currency, ticker, notes, source_sale_id)
+            VALUES (?, 'adjustment', ?, ?, ?, ?, ?)
+            """,
+            (
+                sale_date, proceeds, currency, normalized,
+                "Automatically posted net proceeds from recorded sale.", sale_id,
+            ),
+        )
         _sync_portfolio_holding(normalized, connection)
+        return sale_id
+
+
+def ensure_sale_cash_transaction(
+    sale_id: int,
+    currency: str = PORTFOLIO_BASE_CURRENCY,
+    db_path: str | Path | None = None,
+) -> int:
+    """Create the missing net-proceeds cash entry for an existing sale exactly once."""
+    normalized_currency = currency.strip().upper()
+    if not normalized_currency:
+        raise ValueError("Sale currency is required")
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        sale = connection.execute(
+            "SELECT * FROM portfolio_sales WHERE id = ?", (sale_id,),
+        ).fetchone()
+        if not sale:
+            raise ValueError(f"Portfolio sale {sale_id} does not exist")
+        existing = connection.execute(
+            "SELECT id FROM cash_transactions WHERE source_sale_id = ?", (sale_id,),
+        ).fetchone()
+        if existing:
+            return int(existing["id"])
+        proceeds = float(sale["shares"]) * float(sale["price_per_share"]) - float(sale["fees"])
+        cursor = connection.execute(
+            """
+            INSERT INTO cash_transactions
+                (transaction_date, transaction_type, amount, currency, ticker, notes, source_sale_id)
+            VALUES (?, 'adjustment', ?, ?, ?, ?, ?)
+            """,
+            (
+                sale["sale_date"], proceeds, normalized_currency, sale["ticker"],
+                "Reconciled net proceeds from recorded sale.", sale_id,
+            ),
+        )
         return int(cursor.lastrowid)
 
 
@@ -1620,6 +1684,11 @@ def get_cash_transactions(db_path: str | Path | None = None) -> list[dict[str, o
 def delete_cash_transaction(transaction_id: int, db_path: str | Path | None = None) -> None:
     init_db(db_path)
     with get_connection(db_path) as connection:
+        linked_sale = connection.execute(
+            "SELECT source_sale_id FROM cash_transactions WHERE id = ?", (transaction_id,),
+        ).fetchone()
+        if linked_sale and linked_sale["source_sale_id"] is not None:
+            raise ValueError("Automatic sale-proceeds entries cannot be deleted independently")
         cursor = connection.execute("DELETE FROM cash_transactions WHERE id = ?", (transaction_id,))
         if cursor.rowcount == 0:
             raise ValueError(f"Cash transaction {transaction_id} does not exist")
