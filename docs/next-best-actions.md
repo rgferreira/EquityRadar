@@ -21,14 +21,14 @@ The next model-research action is to continue collecting genuinely prospective e
 [`options-positioning-v1`](experiments/options-positioning-v1.md) hypothesis is preregistered, but no new
 shadow model exists and no score change is authorized.
 
-## Phase 3.9 next step — saved, not implemented
+## Phase 3.9 next step — visual evidence layer implemented; research validation pending
 
-1. **FINRA daily short-volume driver.** Add the same-day consolidated FINRA short-sale-volume files as a
+1. **FINRA daily short-volume driver.** The consolidated FINRA short-sale-volume files now populate a
    separate daily flow-pressure input. Preserve twice-monthly consolidated short interest as the official
-   position anchor: daily short-sale volume is trading flow, not outstanding short positions. Persist raw
-   observations with trade date and acquisition timestamp, expose source freshness and coverage, and build
-   a transparent rolling pressure/z-score feature in shadow mode only. Require a preregistered evaluation
-   window and incremental out-of-sample evidence before authorizing any live score modifier. See
+   position anchor: daily short-sale volume is trading flow, not outstanding short positions. Raw observations,
+   point-in-time provenance, provider health, daily share and a 10-session visual baseline are implemented as
+   display-only shadow evidence. A preregistered evaluation window and incremental out-of-sample evidence remain
+   required before authorizing any live score modifier. See
    [`releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md`](releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md).
 
 ## Phase 4 - saved, not started

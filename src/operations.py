@@ -81,6 +81,7 @@ def provider_health(db_path: str | Path | None = None, *, now: datetime | None =
         ("Industry & analysts", "industry_research_cache", "provider_name"),
         ("Positioning", "positioning_cache", "provider_name"),
         ("FINRA history", "positioning_history", "provider_name"),
+        ("FINRA daily short flow", "finra_daily_short_volume_observations", "provider_name"),
         ("Extended hours", "extended_hours_cache", "provider_name"),
     )
     rows = []
@@ -184,6 +185,7 @@ def run_due_maintenance(
             from src.data.extended_hours_refresh import schedule_extended_hours_refresh
             from src.data.industry_refresh import schedule_industry_refresh
             from src.data.positioning_refresh import schedule_finra_backfill, schedule_positioning_refresh
+            from src.data.finra_daily_volume_refresh import schedule_finra_daily_volume_refresh
             from src.data.backtest_refresh import schedule_outcome_refresh
             from src.data.cutoff_suggestions import schedule_cutoff_suggestions
             from src.data.market_data import fetch_price_history
@@ -197,6 +199,8 @@ def run_due_maintenance(
                 + schedule_finra_backfill(tickers, max_new=2, db_path=database)
                 + schedule_extended_hours_refresh(tickers, max_new=2, db_path=database)
             ))
+            if schedule_finra_daily_volume_refresh(tickers, db_path=database):
+                scheduled.append("FINRA daily short flow")
             providers = [FMPProvider(FMP_API_KEY)] if FMP_API_KEY else []
             providers.append(YFinanceFundamentalsProvider())
             fundamentals_provider = FallbackFundamentalsProvider(providers)

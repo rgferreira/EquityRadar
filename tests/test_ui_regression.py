@@ -95,6 +95,7 @@ def test_company_uses_compact_responsive_chart_legend():
     assert "showlegend=False" in company
     assert "company-chart-legend" in company
     assert "FINRA short Δ" in company and "Suggested pending" in company
+    assert "Daily short flow" in company and "10D flow avg" in company
     assert 'hovermode="x unified"' in company
     assert "exact shared calendar axis" in company
 

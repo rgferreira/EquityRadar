@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import streamlit as st
 
-from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
+from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_finra_daily_short_volume, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
 from src.backtesting import decision_accuracy_history, diagnostic_success_rate, decision_outcome, latest_model_runs, learned_score_adjustments
 from src.model_policy import governed_learning_adjustments
 from src.data.fmp import FMPProvider
@@ -14,6 +14,9 @@ from src.data.market_data import calculate_metrics, fetch_price_history
 from src.data.extended_hours import get_extended_hours_quote
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
 from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
+from src.data.finra_daily_volume_refresh import (
+    finra_daily_volume_status, schedule_finra_daily_volume_refresh,
+)
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.scoring.risk import calculate_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score
@@ -85,6 +88,7 @@ if company_name != ticker:
 schedule_industry_refresh([ticker], max_new=1)
 schedule_positioning_refresh([ticker], max_new=1)
 schedule_finra_backfill([ticker], max_new=1)
+schedule_finra_daily_volume_refresh(tickers)
 
 @st.fragment(run_every=4)
 def render_selected_company_refresh_status() -> None:
@@ -110,8 +114,10 @@ render_selected_company_refresh_status()
 def render_positioning_refresh_status() -> None:
     schedule_positioning_refresh([ticker], max_new=1)
     schedule_finra_backfill([ticker], max_new=1)
+    schedule_finra_daily_volume_refresh(tickers)
     status = positioning_refresh_status(ticker)
     finra_status = finra_backfill_status(ticker)
+    daily_flow_status = finra_daily_volume_status(ticker)
     if status == "Updating":
         st.caption("Market positioning is updating automatically in the background…")
     elif status == "Stale":
@@ -124,9 +130,13 @@ def render_positioning_refresh_status() -> None:
         st.error("Official short-interest history is stale and excluded from scores while refresh retries automatically.")
     elif finra_status == "Provider unavailable":
         st.caption("FINRA history is temporarily unavailable; retry is automatic after cooldown.")
+    if daily_flow_status == "Backfilling":
+        st.caption("Daily FINRA short-sale flow is backfilling in the background…")
+    elif daily_flow_status == "Provider unavailable":
+        st.caption("Daily FINRA short-sale flow is temporarily unavailable; official short interest is unaffected.")
     key = f"company_positioning_status_{ticker}"
     previous = st.session_state.get(key)
-    combined_status = (status, finra_status)
+    combined_status = (status, finra_status, daily_flow_status)
     st.session_state[key] = combined_status
     if previous is not None and previous != combined_status:
         st.rerun()
@@ -195,14 +205,31 @@ try:
             f"Fetched: {extended_quote.get('fetched_at')}"
         )
 
-    figure = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, vertical_spacing=.04,
-        row_heights=[.78, .22], specs=[[{}], [{"secondary_y": True}]],
-    )
     chart_dates = pd.DatetimeIndex(pd.to_datetime(history.index))
     if chart_dates.tz is not None:
         chart_dates = chart_dates.tz_localize(None)
     chart_dates = chart_dates.normalize()
+    history_start = chart_dates.min()
+    daily_volume_rows = [
+        row for row in get_finra_daily_short_volume(ticker)
+        if pd.Timestamp(str(row["trade_date"])).normalize() >= history_start
+        and float(row.get("total_volume") or 0) > 0
+    ]
+    daily_flow_frame = pd.DataFrame(daily_volume_rows)
+    if not daily_flow_frame.empty:
+        daily_flow_frame["date"] = pd.to_datetime(daily_flow_frame["trade_date"]).dt.normalize()
+        daily_flow_frame["short_share"] = (
+            daily_flow_frame["short_volume"].astype(float)
+            / daily_flow_frame["total_volume"].astype(float) * 100
+        )
+        daily_flow_frame = daily_flow_frame.sort_values("date").drop_duplicates("date", keep="last")
+        daily_flow_frame["average_10d"] = daily_flow_frame["short_share"].rolling(10, min_periods=3).mean()
+    has_daily_flow = not daily_flow_frame.empty
+    figure = make_subplots(
+        rows=3 if has_daily_flow else 2, cols=1, shared_xaxes=True, vertical_spacing=.035,
+        row_heights=[.68, .18, .14] if has_daily_flow else [.78, .22],
+        specs=[[{}], [{"secondary_y": True}], [{}]] if has_daily_flow else [[{}], [{"secondary_y": True}]],
+    )
     figure.add_scatter(x=chart_dates, y=history["Close"], name="Close", row=1, col=1)
     for window, label in ((50, "50-day MA"), (100, "100-day MA"), (200, "200-day MA")):
         moving_average = history["Close"].rolling(window).mean()
@@ -215,7 +242,6 @@ try:
                 row=1, col=1,
             )
     finra_rows = []
-    history_start = chart_dates.min()
     for observation in positioning_history:
         if observation.get("snapshot_type") != "historical_short_interest":
             continue
@@ -255,6 +281,34 @@ try:
             mode="lines+markers", line={"color": "#f5c26b", "width": 1.5},
             marker={"size": 4}, row=2, col=1, secondary_y=True,
         )
+    if has_daily_flow:
+        daily_colors = [
+            "#ff6375" if pd.notna(average) and float(share) > float(average)
+            else "#35d0ba" if pd.notna(average) else "#70a5ff"
+            for share, average in zip(
+                daily_flow_frame["short_share"], daily_flow_frame["average_10d"], strict=False,
+            )
+        ]
+        daily_hover = [
+            f"Trade date {row.date:%Y-%m-%d}<br>Daily short-sale share {float(row.short_share):.1f}%"
+            f"<br>Short-sale volume {float(row.short_volume):,.0f}"
+            f"<br>Total FINRA-reported volume {float(row.total_volume):,.0f}"
+            f"<br>Observed by app: {row.known_at}<br>Flow proxy — not outstanding short interest"
+            for row in daily_flow_frame.itertuples()
+        ]
+        figure.add_scatter(
+            x=daily_flow_frame["date"], y=daily_flow_frame["short_share"],
+            name="Daily short flow", mode="markers",
+            marker={"size": 5, "color": daily_colors, "opacity": .72},
+            customdata=daily_hover, hovertemplate="%{customdata}<extra></extra>",
+            row=3, col=1,
+        )
+        figure.add_scatter(
+            x=daily_flow_frame["date"], y=daily_flow_frame["average_10d"],
+            name="10D flow average", mode="lines",
+            line={"color": "#70a5ff", "width": 1.6},
+            hovertemplate="10-session average %{y:.1f}%<extra></extra>", row=3, col=1,
+        )
     chart_start = chart_dates.min()
     chart_end = chart_dates.max()
     completed_dates = {str(run["as_of_date"]): run for run in backtest_runs}
@@ -286,7 +340,9 @@ try:
     figure.update_yaxes(title_text="Price", row=1, col=1)
     figure.update_yaxes(title_text="Short Δ %", row=2, col=1, secondary_y=False, zeroline=True)
     figure.update_yaxes(title_text="Days", row=2, col=1, secondary_y=True, showgrid=False)
-    style_figure(figure, height=560)
+    if has_daily_flow:
+        figure.update_yaxes(title_text="Daily flow %", range=[0, 100], row=3, col=1)
+    style_figure(figure, height=650 if has_daily_flow else 560)
     # Plotly's horizontal legend becomes a tall, narrow stack on phones. A
     # compact semantic legend keeps all series discoverable without consuming
     # a large part of the chart viewport.
@@ -304,6 +360,8 @@ try:
     ]
     if finra_rows:
         legend_items.extend([("bar finra", "FINRA short Δ"), ("line cover", "Days to cover")])
+    if has_daily_flow:
+        legend_items.extend([("dot daily", "Daily short flow"), ("line dailyavg", "10D flow avg")])
     marker_labels = {
         "Manual simulation": ("line manual", "Manual sim."),
         "Suggested simulation": ("line suggested", "Suggested sim."),
@@ -325,6 +383,13 @@ try:
             "FINRA pressure pulse · exact shared calendar axis · bars use official settlement dates · "
             f"latest report {positioning_modifier.get('short_report_date') or 'unknown'} "
             f"({positioning_modifier.get('short_age_days') if positioning_modifier.get('short_age_days') is not None else 'unknown'} days old; {eligibility})"
+        )
+    if has_daily_flow:
+        latest_flow_date = daily_flow_frame["date"].max()
+        st.caption(
+            "Daily FINRA short-sale flow · points are the short-sale share of FINRA-reported daily volume · "
+            "coral = above its 10-session average · teal = at/below average · "
+            f"latest trade date {latest_flow_date:%Y-%m-%d} · display-only shadow evidence, excluded from scores"
         )
     if visible_marker_types:
         st.caption("Simulation markers · blue = manual · purple = completed suggestion · gold = suggested and pending")

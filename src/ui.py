@@ -75,6 +75,12 @@ button[data-testid="stExpandSidebarButton"]:hover {
 .company-chart-legend i.ma100 { border-color: #f0b36a; border-top-style: dotted; }
 .company-chart-legend i.ma200 { border-color: #c18cff; border-top-style: dotted; }
 .company-chart-legend i.cover { border-color: #f5c26b; }
+.company-chart-legend i.dailyavg { border-color: #70a5ff; }
+.company-chart-legend i.dot.daily {
+     width: .48rem; height: .48rem; margin-right: .38rem; border: 0;
+     border-radius: 50%; background: #70a5ff;
+     box-shadow: -.24rem 0 0 #35d0ba, .24rem 0 0 #ff6375;
+}
 .company-chart-legend i.manual { border-color: #7aa2f7; border-top-style: dotted; }
 .company-chart-legend i.suggested { border-color: #c792ea; border-top-style: dotted; }
 .company-chart-legend i.pending { border-color: #f5c26b; border-top-style: dotted; }

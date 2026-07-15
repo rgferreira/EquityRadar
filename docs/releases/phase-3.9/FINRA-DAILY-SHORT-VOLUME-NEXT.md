@@ -1,6 +1,6 @@
 # Phase 3.9 next step — FINRA daily short-volume driver
 
-Status: **saved; not implemented; no live-model change authorized**.
+Status: **provider, persistence and Company-chart flow layer implemented; no live-model change authorized**.
 
 ## Purpose
 
@@ -19,12 +19,15 @@ trade date.
 
 ## Proposed slice
 
-1. Add a replaceable daily-short-volume provider interface and FINRA file adapter.
+1. Add a replaceable daily-short-volume provider interface and FINRA file adapter. **Implemented.**
 2. Persist symbol, trade date, short volume, exempt volume, total reported volume, source, `known_at`, and
    `fetched_at` using an additive migration.
+   **Implemented with immutable revision-aware observations.**
 3. Build transparent features such as daily short-volume share, rolling baseline, z-score, persistence and
    coverage confidence; do not infer net short positions.
+   **Daily share and 10-session mean implemented; broader research features remain pending.**
 4. Show the daily flow layer separately from the twice-monthly FINRA position pulse in Company and Operations.
+   **Implemented as a third aligned Company-chart band plus provider-health rows.**
 5. Backfill a bounded history, then accumulate 60–90 genuinely prospective trading sessions.
 6. Evaluate incremental utility against the current live model and subsequent official short-interest changes
    using the existing purged, versioned evaluator.

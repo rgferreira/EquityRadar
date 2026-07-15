@@ -103,6 +103,30 @@ def init_db(db_path: str | Path | None = None) -> None:
                 fetched_at TEXT NOT NULL,
                 PRIMARY KEY (ticker, snapshot_date)
             );
+            CREATE TABLE IF NOT EXISTS finra_daily_short_volume_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                trade_date TEXT NOT NULL,
+                short_volume REAL NOT NULL CHECK(short_volume >= 0),
+                short_exempt_volume REAL NOT NULL CHECK(short_exempt_volume >= 0),
+                total_volume REAL NOT NULL CHECK(total_volume >= 0),
+                market TEXT,
+                provider_name TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                known_at TEXT NOT NULL,
+                known_at_status TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                UNIQUE(ticker, trade_date, payload_hash)
+            );
+            CREATE INDEX IF NOT EXISTS finra_daily_short_volume_ticker_date
+                ON finra_daily_short_volume_observations(ticker, trade_date);
+            CREATE TABLE IF NOT EXISTS finra_daily_short_volume_fetches (
+                trade_date TEXT PRIMARY KEY,
+                status TEXT NOT NULL CHECK(status IN ('fetched','unavailable')),
+                source_url TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS portfolio_lots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticker TEXT NOT NULL,
@@ -434,6 +458,9 @@ def init_db(db_path: str | Path | None = None) -> None:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('known_at_semantics_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('finra_daily_short_volume_v1')"
         )
         promotion_applied = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key='coverage_aware_live_promotion_v2'"
@@ -1981,6 +2008,77 @@ def save_positioning_history_snapshot(
              payload.get("period_end"), payload.get("published_at"), payload.get("known_at"),
              payload.get("known_at_status"), fetched_at),
         )
+
+
+def save_finra_daily_short_volume_file(
+    trade_date: str, rows: list[Mapping[str, object]], provider_name: str,
+    source_url: str, fetched_at: str, *, status: str = "fetched",
+    db_path: str | Path | None = None,
+) -> int:
+    """Append one observed FINRA daily file without rewriting prior versions."""
+    if status not in {"fetched", "unavailable"}:
+        raise ValueError("Unsupported FINRA daily-file status")
+    init_db(db_path)
+    inserted = 0
+    with get_connection(db_path) as connection:
+        for row in rows:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO finra_daily_short_volume_observations
+                    (ticker, trade_date, short_volume, short_exempt_volume, total_volume,
+                     market, provider_name, source_url, payload_hash, known_at,
+                     known_at_status, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified_observed', ?)
+                """,
+                (
+                    str(row["ticker"]).strip().upper(), trade_date,
+                    float(row["short_volume"]), float(row.get("short_exempt_volume") or 0),
+                    float(row["total_volume"]), str(row.get("market") or "") or None,
+                    provider_name, source_url, str(row["payload_hash"]), fetched_at, fetched_at,
+                ),
+            )
+            inserted += max(0, cursor.rowcount)
+        connection.execute(
+            """
+            INSERT INTO finra_daily_short_volume_fetches
+                (trade_date, status, source_url, fetched_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(trade_date) DO UPDATE SET
+                status=excluded.status, source_url=excluded.source_url, fetched_at=excluded.fetched_at
+            """,
+            (trade_date, status, source_url, fetched_at),
+        )
+    return inserted
+
+
+def get_finra_daily_short_volume(
+    ticker: str, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return the latest observed version for each trade date."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY ticker, trade_date ORDER BY fetched_at DESC, id DESC
+                ) AS version_rank
+                FROM finra_daily_short_volume_observations WHERE ticker = ?
+            ) WHERE version_rank = 1 ORDER BY trade_date
+            """,
+            (ticker.strip().upper(),),
+        ).fetchall()
+    return [{key: row[key] for key in row.keys() if key != "version_rank"} for row in rows]
+
+
+def get_finra_daily_short_volume_fetches(
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(
+            "SELECT * FROM finra_daily_short_volume_fetches ORDER BY trade_date"
+        ).fetchall()]
 
 
 def add_journal_entry(entry: Mapping[str, object], db_path: str | Path | None = None) -> None:

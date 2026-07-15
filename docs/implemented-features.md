@@ -2,6 +2,11 @@
 
 ## Phase 3.9 · Technology Potential shadow challenger
 
+- FINRA consolidated daily short-sale volume now refreshes watchlist-wide into immutable, revision-aware
+  point-in-time observations and appears as a separate daily-flow band in Company charts. It is explicitly a
+  transaction-flow proxy, remains excluded from Entry/Exit scores, and does not replace official twice-monthly
+  short interest.
+
 - Registered `technology-potential-modifier-v1-shadow` as an inactive, reversible challenger based on the current live champion.
 - Computes a transparent industry-relative Technology Potential proxy from R&D intensity, revenue growth, gross margin, free-cash-flow margin and balance-sheet funding capacity.
 - Applies a confidence-gated Entry modifier capped at +/-5 shadow points; missing evidence is neutral and the live model remains unchanged.
