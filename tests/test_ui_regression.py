@@ -99,11 +99,18 @@ def test_company_uses_compact_responsive_chart_legend():
 
 def test_macos_launcher_is_idempotent_and_scoped_to_equity_radar():
     control = Path("scripts/macos/equity-radar-control.zsh").read_text(encoding="utf-8")
-    launcher = Path("scripts/macos/Equity Radar Launcher.applescript").read_text(encoding="utf-8")
+    launcher = Path("scripts/macos/EquityRadarLauncher.swift").read_text(encoding="utf-8")
+    manifest = Path("scripts/macos/Info.plist").read_text(encoding="utf-8")
+    builder = Path("scripts/macos/build-launcher.zsh").read_text(encoding="utf-8")
     assert "running_pid" in control and "is_equity_radar_pid" in control
     assert '"streamlit"' in control and '"app.py"' in control
     assert '/_stcore/health' in control
-    assert 'buttons {"Stop everything", "Start everything"}' in launcher
+    assert 'Button("Stop everything"' in launcher and 'Button("Start everything"' in launcher
+    assert 'keyboardShortcut(.defaultAction)' in launcher
+    assert 'Quit normally from the app menu or press ⌘Q.' in launcher
+    assert "LSUIElement" not in manifest
+    assert 'PREVIOUS_APP="$BUILD_ROOT/' in builder
+    assert "work/backups/launcher-" not in builder
 
 
 def test_company_learning_diagnostic_colors_are_defined_before_rendering():
