@@ -50,6 +50,18 @@ class FINRAShortInterestProvider:
         return sorted(rows, key=lambda row: str(row["reporting_date"]))
 
 
+def finra_supports_ticker(ticker: str) -> bool:
+    """Return whether FINRA short-interest coverage applies to the instrument.
+
+    FINRA's consolidated short-interest dataset covers reportable securities,
+    not cryptocurrency pairs such as ``BTC-USD``.  Keeping this distinction at
+    the adapter boundary prevents an unsupported instrument from being
+    reported as a provider outage.
+    """
+    normalized = ticker.strip().upper()
+    return bool(normalized) and not normalized.endswith("-USD")
+
+
 def backfill_finra_short_history(
     ticker: str, provider: FINRAShortInterestProvider | None = None,
     db_path: str | Path | None = None,

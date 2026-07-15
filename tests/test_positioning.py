@@ -9,7 +9,9 @@ from src.data.database import (
     save_positioning_snapshot,
 )
 from src.data.positioning import YahooPositioningProvider
-from src.data.positioning_refresh import _refresh, finra_refresh_due, positioning_is_fresh
+from src.data.positioning_refresh import (
+    _refresh, finra_backfill_status, finra_refresh_due, positioning_is_fresh,
+)
 from src.scoring.positioning import (
     apply_positioning_adjustment, effective_positioning_snapshot,
     positioning_score_adjustments, positioning_scores, short_interest_freshness,
@@ -114,6 +116,14 @@ def test_finra_refresh_is_due_daily_even_with_existing_history(tmp_path):
     assert finra_refresh_due("MU", database, now=datetime(2026, 7, 15, 9, 0)) is True
     record_provider_health("finra", "MU", "healthy", db_path=database)
     assert finra_refresh_due("MU", database, now=datetime.now()) is False
+
+
+def test_finra_refresh_skips_unsupported_instruments(tmp_path):
+    database = tmp_path / "radar.db"
+    init_db(database)
+
+    assert finra_refresh_due("BTC-USD", database, now=datetime(2026, 7, 15, 9, 0)) is False
+    assert finra_backfill_status("BTC-USD", database) == "Not applicable"
 
 
 def test_positioning_cache_round_trip(tmp_path):

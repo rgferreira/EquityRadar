@@ -27,6 +27,23 @@ def test_provider_health_exposes_isolated_failure_and_cooldown(tmp_path):
     assert operational["cooldown"] == "2026-07-14T12:15:00"
 
 
+def test_finra_health_ignores_unsupported_instrument_failure(tmp_path):
+    database = tmp_path / "health-finra.db"
+    init_db(database)
+    record_provider_health("finra", "MU", "healthy", db_path=database)
+    record_provider_health(
+        "finra", "BTC-USD", "failed", error="synthetic unsupported response",
+        db_path=database,
+    )
+
+    rows = provider_health(database, now=datetime.now())
+    operational = next(row for row in rows if row["source"] == "Finra operations")
+
+    assert operational["status"] == "Healthy"
+    assert operational["records"] == 1
+    assert operational["last_error"] is None
+
+
 def test_operations_uses_report_date_not_fetch_date_for_short_freshness(tmp_path):
     database = tmp_path / "health-short.db"
     add_ticker("MU", database)
@@ -41,6 +58,17 @@ def test_operations_uses_report_date_not_fetch_date_for_short_freshness(tmp_path
     assert row["status"] == "Stale — excluded"
     assert row["report_age_days"] == 45
     assert row["used_in_scores"] == "No"
+
+
+def test_operations_marks_crypto_short_interest_not_applicable(tmp_path):
+    database = tmp_path / "health-short-crypto.db"
+    add_ticker("BTC-USD", database)
+
+    row = short_interest_evidence_health(database, now=datetime(2026, 7, 15, 12, 0))[0]
+
+    assert row["status"] == "Not applicable"
+    assert row["used_in_scores"] == "No"
+    assert "does not cover" in row["reason"]
 
 
 def test_due_maintenance_records_verified_backup(tmp_path, monkeypatch):

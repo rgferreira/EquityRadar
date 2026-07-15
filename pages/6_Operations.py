@@ -54,6 +54,7 @@ else:
     short_icons = {
         "Current official": "🟢", "Stale — excluded": "🔴",
         "Missing — excluded": "🔴", "Future — excluded": "🔴",
+        "Not applicable": "⚪",
     }
     short_health["status"] = short_health["status"].map(
         lambda value: f"{short_icons.get(value, '🔴')} {value}"

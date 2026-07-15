@@ -10,7 +10,9 @@ from src.data.database import (
     get_cached_positioning, get_positioning_history, get_provider_health_states, record_provider_health,
     save_positioning_snapshot,
 )
-from src.data.finra_short_interest import FINRAShortInterestProvider, backfill_finra_short_history
+from src.data.finra_short_interest import (
+    FINRAShortInterestProvider, backfill_finra_short_history, finra_supports_ticker,
+)
 from src.data.positioning import YahooPositioningProvider
 from src.data.temporal import observed_at_fetch
 from src.scoring.positioning import effective_positioning_snapshot
@@ -109,6 +111,8 @@ def finra_refresh_due(
 ) -> bool:
     """Refresh official history at most daily, even when earlier rows already exist."""
     normalized = ticker.strip().upper()
+    if not finra_supports_ticker(normalized):
+        return False
     current = now or datetime.now()
     state = next((
         row for row in get_provider_health_states(db_path)
@@ -197,6 +201,8 @@ def schedule_finra_backfill(
 
 def finra_backfill_status(ticker: str, db_path: str | Path | None = None) -> str:
     normalized = ticker.strip().upper()
+    if not finra_supports_ticker(normalized):
+        return "Not applicable"
     with _lock:
         if normalized in _finra_futures:
             return "Backfilling"

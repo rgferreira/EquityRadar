@@ -15,6 +15,7 @@ from src.data.database import (
     get_provider_health_states, get_watchlist, init_db,
     record_provider_health,
 )
+from src.data.finra_short_interest import finra_supports_ticker
 from src.scoring.positioning import effective_positioning_snapshot
 from src.utils.config import DATABASE_PATH
 
@@ -106,6 +107,10 @@ def provider_health(db_path: str | Path | None = None, *, now: datetime | None =
     for state in operational:
         by_provider.setdefault(str(state["provider_key"]), []).append(state)
     for key, states in sorted(by_provider.items()):
+        if key == "finra":
+            states = [row for row in states if finra_supports_ticker(str(row["ticker"]))]
+            if not states:
+                continue
         failed = [row for row in states if row["status"] == "failed"]
         running = [row for row in states if row["status"] == "running"]
         last_success = max((str(row["last_success_at"]) for row in states if row["last_success_at"]), default=None)
@@ -131,6 +136,17 @@ def short_interest_evidence_health(
     current = now or datetime.now()
     rows: list[dict[str, object]] = []
     for ticker in get_watchlist(db_path):
+        if not finra_supports_ticker(ticker):
+            rows.append({
+                "ticker": ticker,
+                "status": "Not applicable",
+                "report_date": None,
+                "report_age_days": None,
+                "used_in_scores": "No",
+                "source": "—",
+                "reason": "FINRA consolidated short interest does not cover this instrument type",
+            })
+            continue
         evidence = effective_positioning_snapshot(
             get_cached_positioning(ticker, db_path), get_positioning_history(ticker, db_path), current,
         )
