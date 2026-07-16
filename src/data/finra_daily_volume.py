@@ -89,9 +89,9 @@ class FINRADailyShortVolumeProvider:
 def backfill_finra_daily_short_volume(
     tickers: list[str], provider: DailyShortVolumeProvider | None = None,
     db_path: str | Path | None = None, *, lookback_days: int = 120,
-    now: datetime | None = None,
+    now: datetime | None = None, force_full_lookback: bool = False,
 ) -> dict[str, int]:
-    """Fetch missing daily files once, while rechecking recent files for revisions."""
+    """Fetch missing files, optionally replaying the bounded window for new tickers."""
     provider = provider or FINRADailyShortVolumeProvider()
     current = now or datetime.now()
     end_date = current.date() - timedelta(days=1)
@@ -101,7 +101,9 @@ def backfill_finra_daily_short_volume(
     candidates = []
     cursor = start_date
     while cursor <= end_date:
-        if cursor.weekday() < 5 and (cursor.isoformat() not in fetched or cursor >= revision_window):
+        if cursor.weekday() < 5 and (
+            force_full_lookback or cursor.isoformat() not in fetched or cursor >= revision_window
+        ):
             candidates.append(cursor)
         cursor += timedelta(days=1)
 

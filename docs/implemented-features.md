@@ -6,6 +6,8 @@
   point-in-time observations and appears as a separate daily-flow band in Company charts. It is explicitly a
   transaction-flow proxy and does not replace official twice-monthly short interest. Its 10-session mean slope
   is now a point-in-time, confidence-gated component of the inactive shadow challenger; live scores are unchanged.
+- Newly added supported tickers automatically replay the bounded FINRA daily-file window once, even when those
+  shared files were already cached for the rest of the watchlist; subsequent updates return to the daily cadence.
 
 - Registered `technology-daily-short-flow-v3-shadow` as the inactive, reversible challenger based on the current live champion; earlier technology-only versions are archived.
 - Computes a transparent industry-relative Technology Potential proxy from R&D intensity, revenue growth, gross margin, free-cash-flow margin and balance-sheet funding capacity.

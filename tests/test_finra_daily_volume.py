@@ -95,3 +95,35 @@ def test_finra_daily_backfill_records_unavailable_days_without_fabricating_rows(
     assert len(get_finra_daily_short_volume("MU", database)) == 2
     fetches = get_finra_daily_short_volume_fetches(database)
     assert {row["status"] for row in fetches} == {"fetched", "unavailable"}
+
+
+def test_new_ticker_can_replay_files_already_cached_for_the_watchlist(tmp_path):
+    database = tmp_path / "new-ticker.db"
+
+    class StubProvider:
+        name = "daily stub"
+
+        def fetch_date(self, trade_date, tickers):
+            return ([{
+                "ticker": tickers[0], "short_volume": 40, "short_exempt_volume": 0,
+                "total_volume": 100, "market": "Q",
+                "payload_hash": f"{tickers[0]}-{trade_date}",
+            }], f"https://example/{trade_date}.txt")
+
+    now = datetime(2026, 7, 16, 12, 0)
+    backfill_finra_daily_short_volume(
+        ["MU"], StubProvider(), database, lookback_days=30, now=now,
+        force_full_lookback=True,
+    )
+    normal = backfill_finra_daily_short_volume(
+        ["TSLA"], StubProvider(), database, lookback_days=30, now=now,
+    )
+    recent_only = len(get_finra_daily_short_volume("TSLA", database))
+    replay = backfill_finra_daily_short_volume(
+        ["TSLA"], StubProvider(), database, lookback_days=30, now=now,
+        force_full_lookback=True,
+    )
+
+    assert normal["files_checked"] < replay["files_checked"]
+    assert recent_only < 20
+    assert len(get_finra_daily_short_volume("TSLA", database)) >= 20
