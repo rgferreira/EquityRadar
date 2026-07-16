@@ -19,6 +19,7 @@ from src.data.database import (
     update_portfolio_lot,
     delete_portfolio_lot,
     record_portfolio_sale,
+    ensure_purchase_cash_transaction,
     ensure_sale_cash_transaction,
     get_portfolio_sales,
     save_portfolio_snapshot,
@@ -150,6 +151,50 @@ def test_existing_aggregate_holding_is_migrated_to_legacy_lot(tmp_path):
     assert lots[0]["source"] == "legacy"
     assert lots[0]["purchase_date"] is None
     assert lots[0]["price_per_share"] is None
+
+
+def test_cash_funded_purchase_posts_linked_outflow_and_tracks_unsold_edits(tmp_path):
+    database = tmp_path / "radar.db"
+    lot_id = add_portfolio_lot({
+        "ticker": "MU", "purchase_date": "2026-07-15", "shares": 2,
+        "price_per_share": 100, "fees": 1, "fund_from_cash": True, "currency": "usd",
+    }, database)
+
+    cash = get_cash_transactions(database)
+    assert len(cash) == 1
+    assert cash[0]["amount"] == pytest.approx(-201)
+    assert cash[0]["source_lot_id"] == lot_id
+    with pytest.raises(ValueError, match="cannot be deleted independently"):
+        delete_cash_transaction(int(cash[0]["id"]), database)
+
+    update_portfolio_lot(lot_id, {
+        "ticker": "MU", "purchase_date": "2026-07-16", "shares": 3,
+        "price_per_share": 101, "fees": 2,
+    }, database)
+    updated_cash = get_cash_transactions(database)[0]
+    assert updated_cash["transaction_date"] == "2026-07-16"
+    assert updated_cash["amount"] == pytest.approx(-305)
+
+    delete_portfolio_lot(lot_id, database)
+    assert get_cash_transactions(database) == []
+
+
+def test_existing_purchase_cash_reconciliation_is_idempotent(tmp_path):
+    database = tmp_path / "radar.db"
+    lot_id = add_portfolio_lot({
+        "ticker": "MU", "purchase_date": "2026-07-15", "shares": 2,
+        "price_per_share": 100, "fees": 1,
+    }, database)
+    legacy_cash_id = add_cash_transaction({
+        "transaction_date": "2026-07-15", "transaction_type": "adjustment",
+        "amount": -201, "currency": "USD", "ticker": "MU",
+    }, database)
+
+    assert ensure_purchase_cash_transaction(lot_id, "usd", database) == legacy_cash_id
+    assert ensure_purchase_cash_transaction(lot_id, "USD", database) == legacy_cash_id
+    cash = get_cash_transactions(database)
+    assert len(cash) == 1
+    assert cash[0]["source_lot_id"] == lot_id
 
 
 def test_portfolio_sale_consumes_fifo_lots_and_calculates_realized_pl(tmp_path):

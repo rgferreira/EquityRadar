@@ -65,6 +65,11 @@ with st.expander("Add purchase lot"):
         shares = st.number_input("Shares", min_value=0.0, step=1.0)
         price_per_share = st.number_input("Price per share", min_value=0.0, step=0.01)
         fees = st.number_input("Fees", min_value=0.0, step=0.01)
+        fund_from_cash = st.checkbox(
+            "Pay from portfolio cash",
+            value=True,
+            help="Records the purchase cost as a cash outflow so reinvested sale proceeds are not counted twice.",
+        )
         lot_notes = st.text_input("Notes", placeholder="Broker, account, or optional context")
         save_lot = st.form_submit_button("Add purchase lot", type="primary")
 
@@ -78,6 +83,8 @@ with st.expander("Add purchase lot"):
                 "price_per_share": price_per_share,
                 "fees": fees,
                 "notes": lot_notes,
+                "fund_from_cash": fund_from_cash,
+                "currency": fetch_quote_currency(portfolio_ticker) or PORTFOLIO_BASE_CURRENCY,
             })
             st.success(f"Purchase lot added for {portfolio_ticker.strip().upper()}.")
             st.rerun()
@@ -347,7 +354,11 @@ if cash_transactions:
     st.subheader("Cash ledger")
     cash_frame = pd.DataFrame(cash_transactions)
     cash_frame["transaction_type"] = cash_frame.apply(
-        lambda row: "sale proceeds" if pd.notna(row.get("source_sale_id")) else row["transaction_type"],
+        lambda row: (
+            "sale proceeds" if pd.notna(row.get("source_sale_id"))
+            else "purchase payment" if pd.notna(row.get("source_lot_id"))
+            else row["transaction_type"]
+        ),
         axis=1,
     )
     cash_frame["transaction_date"] = pd.to_datetime(cash_frame["transaction_date"])
@@ -363,7 +374,10 @@ if cash_transactions:
             "amount_base": st.column_config.NumberColumn(f"Amount ({PORTFOLIO_BASE_CURRENCY})", format="%.2f"),
         },
     )
-    deletable_cash_transactions = [item for item in cash_transactions if item.get("source_sale_id") is None]
+    deletable_cash_transactions = [
+        item for item in cash_transactions
+        if item.get("source_sale_id") is None and item.get("source_lot_id") is None
+    ]
     cash_labels = {
         f"#{item['id']} · {item['transaction_date']} · {item['transaction_type']} · {item['amount']} {item['currency']}": item
         for item in deletable_cash_transactions
@@ -376,7 +390,7 @@ if cash_transactions:
             st.success("Cash transaction deleted.")
             st.rerun()
     if len(deletable_cash_transactions) != len(cash_transactions):
-        st.caption("Sale-proceeds entries are linked to their sale record and cannot be deleted independently.")
+        st.caption("Automatic sale and purchase cash entries are linked to their source record and cannot be deleted independently.")
 
 portfolio_history = calculate_portfolio_history(
     holdings, histories, currencies, fx_rates, PORTFOLIO_BASE_CURRENCY, lots, cash_transactions

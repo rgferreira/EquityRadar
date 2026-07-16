@@ -170,6 +170,7 @@ def init_db(db_path: str | Path | None = None) -> None:
                 ticker TEXT,
                 notes TEXT,
                 source_sale_id INTEGER,
+                source_lot_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS portfolio_targets (
@@ -420,6 +421,8 @@ def init_db(db_path: str | Path | None = None) -> None:
         }
         if "source_sale_id" not in cash_columns:
             connection.execute("ALTER TABLE cash_transactions ADD COLUMN source_sale_id INTEGER")
+        if "source_lot_id" not in cash_columns:
+            connection.execute("ALTER TABLE cash_transactions ADD COLUMN source_lot_id INTEGER")
         connection.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS cash_transactions_source_sale_unique
@@ -427,7 +430,16 @@ def init_db(db_path: str | Path | None = None) -> None:
             """
         )
         connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS cash_transactions_source_lot_unique
+                ON cash_transactions(source_lot_id) WHERE source_lot_id IS NOT NULL
+            """
+        )
+        connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('sale_cash_link_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('purchase_cash_link_v1')"
         )
         promotion_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(model_promotion_events)")
@@ -1481,6 +1493,8 @@ def add_portfolio_lot(lot: Mapping[str, object], db_path: str | Path | None = No
     price = float(lot.get("price_per_share", 0) or 0)
     fees = float(lot.get("fees", 0) or 0)
     purchase_date = str(lot.get("purchase_date", "")).strip()
+    fund_from_cash = bool(lot.get("fund_from_cash", False))
+    currency = str(lot.get("currency", PORTFOLIO_BASE_CURRENCY)).strip().upper()
     if not normalized:
         raise ValueError("Ticker cannot be empty")
     if shares <= 0 or price <= 0:
@@ -1489,6 +1503,8 @@ def add_portfolio_lot(lot: Mapping[str, object], db_path: str | Path | None = No
         raise ValueError("Fees cannot be negative")
     if not purchase_date:
         raise ValueError("Purchase date is required")
+    if fund_from_cash and not currency:
+        raise ValueError("Purchase currency is required when paying from portfolio cash")
     add_ticker(normalized, db_path)
     with get_connection(db_path) as connection:
         cursor = connection.execute(
@@ -1499,7 +1515,76 @@ def add_portfolio_lot(lot: Mapping[str, object], db_path: str | Path | None = No
             """,
             (normalized, purchase_date, shares, price, fees, lot.get("notes")),
         )
+        lot_id = int(cursor.lastrowid)
+        if fund_from_cash:
+            connection.execute(
+                """
+                INSERT INTO cash_transactions
+                    (transaction_date, transaction_type, amount, currency, ticker, notes, source_lot_id)
+                VALUES (?, 'adjustment', ?, ?, ?, ?, ?)
+                """,
+                (
+                    purchase_date, -(shares * price + fees), currency, normalized,
+                    "Automatically posted cash payment for recorded purchase lot.", lot_id,
+                ),
+            )
         _sync_portfolio_holding(normalized, connection)
+        return lot_id
+
+
+def ensure_purchase_cash_transaction(
+    lot_id: int,
+    currency: str = PORTFOLIO_BASE_CURRENCY,
+    db_path: str | Path | None = None,
+) -> int:
+    """Link or create the cash payment for an existing purchase lot exactly once."""
+    normalized_currency = currency.strip().upper()
+    if not normalized_currency:
+        raise ValueError("Purchase currency is required")
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        lot = connection.execute(
+            "SELECT * FROM portfolio_lots WHERE id = ?", (lot_id,),
+        ).fetchone()
+        if not lot:
+            raise ValueError(f"Portfolio lot {lot_id} does not exist")
+        existing = connection.execute(
+            "SELECT id FROM cash_transactions WHERE source_lot_id = ?", (lot_id,),
+        ).fetchone()
+        if existing:
+            return int(existing["id"])
+        cost = float(lot["shares"]) * float(lot["price_per_share"]) + float(lot["fees"])
+        legacy = connection.execute(
+            """
+            SELECT id FROM cash_transactions
+            WHERE source_lot_id IS NULL AND source_sale_id IS NULL
+              AND ticker = ? AND transaction_date = ? AND currency = ?
+              AND amount < 0 AND ABS(amount + ?) < 0.01
+            ORDER BY id DESC LIMIT 1
+            """,
+            (lot["ticker"], lot["purchase_date"], normalized_currency, cost),
+        ).fetchone()
+        if legacy:
+            connection.execute(
+                """
+                UPDATE cash_transactions
+                SET source_lot_id = ?, notes = ?
+                WHERE id = ?
+                """,
+                (lot_id, "Reconciled cash payment for recorded purchase lot.", legacy["id"]),
+            )
+            return int(legacy["id"])
+        cursor = connection.execute(
+            """
+            INSERT INTO cash_transactions
+                (transaction_date, transaction_type, amount, currency, ticker, notes, source_lot_id)
+            VALUES (?, 'adjustment', ?, ?, ?, ?, ?)
+            """,
+            (
+                lot["purchase_date"], -cost, normalized_currency, lot["ticker"],
+                "Reconciled cash payment for recorded purchase lot.", lot_id,
+            ),
+        )
         return int(cursor.lastrowid)
 
 
@@ -1540,6 +1625,27 @@ def update_portfolio_lot(
             """,
             (ticker, purchase_date, shares, price, fees, lot.get("notes", existing["notes"]), lot_id),
         )
+        linked_cash = connection.execute(
+            "SELECT * FROM cash_transactions WHERE source_lot_id = ?", (lot_id,),
+        ).fetchone()
+        if linked_cash:
+            old_cost = (
+                float(existing["shares"]) * float(existing["price_per_share"])
+                + float(existing["fees"])
+            )
+            if abs(abs(float(linked_cash["amount"])) - old_cost) < 0.01:
+                connection.execute(
+                    """
+                    UPDATE cash_transactions
+                    SET transaction_date=?, amount=?, ticker=?, notes=?
+                    WHERE id=?
+                    """,
+                    (
+                        purchase_date, -(shares * float(price) + fees), ticker,
+                        "Automatically updated cash payment for edited purchase lot.",
+                        linked_cash["id"],
+                    ),
+                )
         _sync_portfolio_holding(existing["ticker"], connection)
         if ticker != existing["ticker"]:
             _sync_portfolio_holding(ticker, connection)
@@ -1548,9 +1654,19 @@ def update_portfolio_lot(
 def delete_portfolio_lot(lot_id: int, db_path: str | Path | None = None) -> None:
     init_db(db_path)
     with get_connection(db_path) as connection:
-        existing = connection.execute("SELECT ticker FROM portfolio_lots WHERE id = ?", (lot_id,)).fetchone()
+        existing = connection.execute("SELECT * FROM portfolio_lots WHERE id = ?", (lot_id,)).fetchone()
         if not existing:
             raise ValueError(f"Portfolio lot {lot_id} does not exist")
+        linked_cash = connection.execute(
+            "SELECT * FROM cash_transactions WHERE source_lot_id = ?", (lot_id,),
+        ).fetchone()
+        if linked_cash and existing["price_per_share"] is not None:
+            open_cost = (
+                float(existing["shares"]) * float(existing["price_per_share"])
+                + float(existing["fees"])
+            )
+            if abs(abs(float(linked_cash["amount"])) - open_cost) < 0.01:
+                connection.execute("DELETE FROM cash_transactions WHERE id = ?", (linked_cash["id"],))
         connection.execute("DELETE FROM portfolio_lots WHERE id = ?", (lot_id,))
         _sync_portfolio_holding(existing["ticker"], connection)
 
@@ -1766,11 +1882,13 @@ def get_cash_transactions(db_path: str | Path | None = None) -> list[dict[str, o
 def delete_cash_transaction(transaction_id: int, db_path: str | Path | None = None) -> None:
     init_db(db_path)
     with get_connection(db_path) as connection:
-        linked_sale = connection.execute(
-            "SELECT source_sale_id FROM cash_transactions WHERE id = ?", (transaction_id,),
+        linked_source = connection.execute(
+            "SELECT source_sale_id, source_lot_id FROM cash_transactions WHERE id = ?", (transaction_id,),
         ).fetchone()
-        if linked_sale and linked_sale["source_sale_id"] is not None:
-            raise ValueError("Automatic sale-proceeds entries cannot be deleted independently")
+        if linked_source and (
+            linked_source["source_sale_id"] is not None or linked_source["source_lot_id"] is not None
+        ):
+            raise ValueError("Automatic portfolio cash entries cannot be deleted independently")
         cursor = connection.execute("DELETE FROM cash_transactions WHERE id = ?", (transaction_id,))
         if cursor.rowcount == 0:
             raise ValueError(f"Cash transaction {transaction_id} does not exist")
