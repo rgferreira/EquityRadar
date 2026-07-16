@@ -12,7 +12,7 @@ The documents in this folder have distinct roles so planning, implementation his
 | [`temporal-data-contract.md`](temporal-data-contract.md) | Source-specific point-in-time fields and conservative availability rules | Current |
 | [`model-governance.md`](model-governance.md) | Explicit registry, immutable prediction lineage, legacy separation and replay | Current |
 | [`audit/2026-07-13/FORENSIC_REVIEW_ES.md`](audit/2026-07-13/FORENSIC_REVIEW_ES.md) | Independent forensic review and scientific risk register | Authoritative audit |
-| [`next-best-actions.md`](next-best-actions.md) | Phase 3.9 monitoring, deferred operations, and saved Phase 4 candidates | Current |
+| [`next-best-actions.md`](next-best-actions.md) | Phase 3.9 monitoring, queued Phase 3.91 Credit Stress Feature, and saved Phase 4 candidates | Current |
 | [`implemented-features.md`](implemented-features.md) | Detailed record of behavior already present in the application | Current |
 | [`internal-changelog.md`](internal-changelog.md) | Compact internal phase/checkpoint and scoring-model narrative | Current |
 | [`industry-feature.md`](industry-feature.md) | Industry cohort architecture, calibration and refresh rules | Reference |

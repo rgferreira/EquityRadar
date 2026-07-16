@@ -1,6 +1,6 @@
 # Next best actions
 
-Last reviewed: 2026-07-15. Current internal phase: **3.9 - coverage-aware model promoted**.
+Last reviewed: 2026-07-16. Current internal phase: **3.9 - coverage-aware model promoted**.
 
 This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
 
@@ -30,6 +30,30 @@ shadow model exists and no score change is authorized.
    baseline slope is now a bounded component of `technology-daily-short-flow-v3-shadow`; prospective, incremental
    out-of-sample evidence remains required before authorizing any live score modifier. See
    [`releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md`](releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md).
+
+## Phase 3.91 — Credit Stress Feature (queued; not started)
+
+Do **not** start this phase while `technology-daily-short-flow-v3-shadow` is still accumulating
+prospective evidence. Phase 3.91 begins only after the current shadow experiment reaches a deliberate
+evaluation boundary, so CDS evidence is not mixed into its hypothesis or historical comparison.
+
+The proposed Phase 3.91 challenger will test whether credit-market stress adds information that is not
+already captured by equity volatility, drawdown, technical momentum, options and short positioning:
+
+1. Add a daily broad credit-regime layer using transparent investment-grade and high-yield spread data.
+2. Audit public SEC security-based-swap transaction data for point-in-time, issuer-level CDS usability;
+   compare its normalization and coverage burden with a licensed end-of-day single-name CDS provider.
+3. Store source, issuer/reference entity, tenor, currency, seniority, spread, liquidity, `as_of` and verified
+   `known_at`; missing or illiquid evidence must remain neutral.
+4. Preregister a bounded, asymmetric **Credit stress modifier** in a new shadow model: widening stress may
+   reduce Entry and increase Exit-review urgency; narrowing stress may become supportive only with confirming
+   technical evidence. Market-only evidence must have a smaller cap than liquid issuer-specific evidence.
+5. Run the score-overlap audit against volatility, drawdown and positioning, then evaluate incremental
+   benchmark-relative accuracy and downside detection through the existing purged prospective gates.
+6. Keep the live model unchanged unless the Phase 3.91 shadow clears the established promotion criteria and
+   receives an explicit manual promotion decision.
+
+Working name: **Credit Stress Feature**. Planned internal phase: **3.91**.
 
 ## Phase 4 - saved, not started
 
