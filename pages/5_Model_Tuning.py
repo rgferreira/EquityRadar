@@ -112,7 +112,7 @@ if not comparisons:
         "Across-date consistency", "Ticker concentration",
     ):
         st.markdown(f"⚪ **{criterion}** · Awaiting prospective data")
-        st.progress(0, text="Evidence progress · 0%")
+        st.progress(0, text="Evidence pipeline · 0%")
     if archived_comparisons:
         archived_gate = build_model_tuning_report(archived_comparisons)["gate"]
         with st.expander(
@@ -179,7 +179,8 @@ st.caption(str(gate["rationale"]))
 
 st.subheader(f"Current promotion readiness · {gate['passed']}/{gate['total']} gates green")
 st.caption(
-    "Progress measures completion of the evidence required to calculate each gate—not the probability that the gate will pass. "
+    "Pipeline progress combines captured decision-change cohorts with their elapsed path toward "
+    "a mature 3M outcome. It is not the probability that a gate will pass, and no threshold is relaxed. "
     f"Pending pipeline · {coverage['pending_signal_changes']} signal changes across "
     f"{coverage['pending_changed_dates']} date(s) still awaiting mature 3M outcomes."
 )
@@ -195,8 +196,9 @@ for index, criterion in enumerate(gate["criteria"]):
             st.markdown(f"**Observed:** {criterion['observed']}  ")
             st.progress(
                 int(criterion["progress_pct"]),
-                text=f"Evidence progress · {int(criterion['progress_pct'])}%",
+                text=f"Evidence pipeline · {int(criterion['progress_pct'])}%",
             )
+            st.caption(str(criterion["progress_detail"]))
             st.caption(f"Required: {criterion['required']}")
             st.caption(str(criterion["purpose"]))
 

@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from src.model_tuning import (
     build_post_promotion_report,
@@ -132,19 +133,40 @@ def test_cumulative_curve_uses_date_means_not_ticker_count():
 
 
 def test_gate_progress_is_explicit_while_changed_outcomes_are_immature():
+    rows = [
+        {
+            "ticker": ticker, "as_of_date": decision_date, "signal_changed": True,
+            "utility_delta_pct": None, "label_status": "awaiting_outcome",
+            "score_delta": 2, "coverage_mode": "ready",
+            "technical_regime": "Mixed technical", "simulation_source": "live",
+        }
+        for ticker, decision_date in (
+            ("AAA", "2026-07-15"), ("BBB", "2026-07-16"), ("CCC", "2026-07-17")
+        )
+    ]
+
+    report = build_model_tuning_report(rows, today=date(2026, 7, 17))
+
+    assert report["coverage"]["pending_signal_changes"] == 3
+    assert report["coverage"]["pending_changed_dates"] == 3
+    assert report["coverage"]["captured_changed_dates"] == 3
+    assert 0 < report["gate"]["criteria"][1]["progress_pct"] < 100
+    assert "Captured 3/5" in report["gate"]["criteria"][1]["progress_detail"]
+    assert report["gate"]["criteria"][2]["available"] is False
+
+
+def test_broken_unlinked_prediction_does_not_accrue_maturity_progress():
     rows = [{
-        "ticker": "AAA", "as_of_date": "2026-07-17", "signal_changed": True,
-        "utility_delta_pct": None, "label_status": "awaiting_outcome",
+        "ticker": "AAA", "as_of_date": "2026-01-01", "signal_changed": True,
+        "utility_delta_pct": None, "label_status": "prediction_not_linked",
         "score_delta": 2, "coverage_mode": "ready", "technical_regime": "Mixed technical",
         "simulation_source": "live",
     }]
 
-    report = build_model_tuning_report(rows)
+    report = build_model_tuning_report(rows, today=date(2026, 7, 17))
 
-    assert report["coverage"]["pending_signal_changes"] == 1
-    assert report["coverage"]["pending_changed_dates"] == 1
-    assert report["gate"]["criteria"][1]["progress_pct"] == 0
-    assert report["gate"]["criteria"][2]["available"] is False
+    assert report["coverage"]["changed_maturity_units"] == 0
+    assert report["gate"]["criteria"][1]["progress_pct"] == 10
 
 
 def test_daily_shadow_comparisons_keep_first_frozen_observation_only():

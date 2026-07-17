@@ -6,6 +6,7 @@ import json
 import math
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import date
 
 
 MIN_MATURED_DATES = 10
@@ -13,6 +14,7 @@ MIN_CHANGED_DATES = 5
 MIN_POSITIVE_DATE_SHARE = 0.60
 MAX_TICKER_CONCENTRATION = 0.35
 WATCH_TOLERANCE_PCT = 3.0
+THREE_MONTH_MATURITY_DAYS = 92
 PROMOTION_BASELINE = {
     "observations": 378,
     "independent_dates": 21,
@@ -196,8 +198,11 @@ def _grouped(rows: Sequence[Mapping[str, object]], field: str) -> list[dict[str,
     return result
 
 
-def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def build_model_tuning_report(
+    rows: Sequence[Mapping[str, object]], *, today: date | None = None,
+) -> dict[str, object]:
     """Summarize accumulated evidence without making a promotion decision."""
+    report_date = today or date.today()
     records = list(rows)
     matured = [row for row in records if row.get("utility_delta_pct") is not None]
     changed = [row for row in records if bool(row.get("signal_changed"))]
@@ -225,7 +230,32 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
     def progress(observed: int, required: int) -> int:
         return min(100, round(observed / required * 100)) if required else 100
 
-    changed_progress = progress(changed_dates, MIN_CHANGED_DATES)
+    captured_changed_dates = sorted({str(row["as_of_date"]) for row in changed})
+    matured_changed_dates = {str(row["as_of_date"]) for row in changed_matured}
+    pending_maturity_dates = {
+        str(row["as_of_date"])
+        for row in pending_changed
+        if str(row.get("label_status") or "") in {"awaiting_outcome", "pending"}
+    }
+    maturity_units = 0.0
+    for decision_date in captured_changed_dates[:MIN_CHANGED_DATES]:
+        if decision_date in matured_changed_dates:
+            maturity_units += 1.0
+            continue
+        if decision_date not in pending_maturity_dates:
+            continue
+        try:
+            elapsed_days = max(0, (report_date - date.fromisoformat(decision_date)).days)
+        except ValueError:
+            elapsed_days = 0
+        maturity_units += min(0.99, elapsed_days / THREE_MONTH_MATURITY_DAYS)
+    capture_ratio = min(len(captured_changed_dates), MIN_CHANGED_DATES) / MIN_CHANGED_DATES
+    maturity_ratio = maturity_units / MIN_CHANGED_DATES
+    changed_pipeline_progress = min(100, round((capture_ratio + maturity_ratio) * 50))
+    changed_progress_detail = (
+        f"Captured {min(len(captured_changed_dates), MIN_CHANGED_DATES)}/{MIN_CHANGED_DATES} "
+        f"changed-signal dates · 3M maturity {maturity_units:.2f}/{MIN_CHANGED_DATES}"
+    )
     criteria = [
         {
             "criterion": "Independent outcome maturity",
@@ -235,6 +265,7 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "purpose": "Avoid treating many tickers from a few dates as independent evidence.",
             "available": True,
             "progress_pct": progress(matured_dates, MIN_MATURED_DATES),
+            "progress_detail": f"Matured {matured_dates}/{MIN_MATURED_DATES} independent dates",
         },
         {
             "criterion": "Decision-change maturity",
@@ -243,7 +274,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "required": f"≥ {MIN_CHANGED_DATES} dates with matured signal changes",
             "purpose": "Evaluate dates on which the challenger would actually alter a decision.",
             "available": True,
-            "progress_pct": changed_progress,
+            "progress_pct": changed_pipeline_progress,
+            "progress_detail": changed_progress_detail,
         },
         {
             "criterion": "Utility improvement uncertainty",
@@ -252,7 +284,10 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "required": "> 0% lower 95% confidence bound",
             "purpose": "Require paired benchmark-relative improvement beyond sampling uncertainty.",
             "available": lower is not None,
-            "progress_pct": 100 if lower is not None else changed_progress,
+            "progress_pct": 100 if lower is not None else changed_pipeline_progress,
+            "progress_detail": (
+                "Required evidence is calculable" if lower is not None else changed_progress_detail
+            ),
         },
         {
             "criterion": "Decision accuracy non-deterioration",
@@ -261,7 +296,10 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "required": "≥ 0 pp paired accuracy delta",
             "purpose": "Prevent higher utility from hiding systematically worse diagnostic accuracy.",
             "available": accuracy is not None,
-            "progress_pct": 100 if accuracy is not None else changed_progress,
+            "progress_pct": 100 if accuracy is not None else changed_pipeline_progress,
+            "progress_detail": (
+                "Required evidence is calculable" if accuracy is not None else changed_progress_detail
+            ),
         },
         {
             "criterion": "Across-date consistency",
@@ -270,7 +308,11 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "required": f"≥ {MIN_POSITIVE_DATE_SHARE:.0%} positive changed-signal dates",
             "purpose": "Prevent one exceptional cutoff from dominating the conclusion.",
             "available": positive_date_share is not None,
-            "progress_pct": 100 if positive_date_share is not None else changed_progress,
+            "progress_pct": 100 if positive_date_share is not None else changed_pipeline_progress,
+            "progress_detail": (
+                "Required evidence is calculable"
+                if positive_date_share is not None else changed_progress_detail
+            ),
         },
         {
             "criterion": "Ticker concentration",
@@ -286,7 +328,11 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "required": f"≥ 3 tickers and largest share ≤ {MAX_TICKER_CONCENTRATION:.0%}",
             "purpose": "Require the result not to depend mainly on one security.",
             "available": ticker_concentration is not None,
-            "progress_pct": 100 if ticker_concentration is not None else changed_progress,
+            "progress_pct": 100 if ticker_concentration is not None else changed_pipeline_progress,
+            "progress_detail": (
+                "Required evidence is calculable"
+                if ticker_concentration is not None else changed_progress_detail
+            ),
         },
     ]
     passed_count = sum(bool(item["passed"]) for item in criteria)
@@ -311,6 +357,9 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "changed_dates": changed_dates,
             "pending_signal_changes": len(pending_changed),
             "pending_changed_dates": pending_changed_dates,
+            "captured_changed_dates": len(captured_changed_dates),
+            "changed_maturity_units": round(maturity_units, 3),
+            "changed_pipeline_progress_pct": changed_pipeline_progress,
             "label_statuses": dict(Counter(str(row["label_status"]) for row in records)),
         },
         "all_paired": all_paired,
