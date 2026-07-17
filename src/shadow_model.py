@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 
 from src.model_registry import (
-    COVERAGE_AWARE_PROMOTED, canonical_json, content_hash, coverage_aware_shadow_registration,
+    ACTIVE_SHADOW_ENABLED, COVERAGE_AWARE_PROMOTED, build_prediction_snapshot,
+    canonical_json, content_hash, coverage_aware_shadow_registration,
     current_model_registration, technology_potential_shadow_registration,
 )
 from src.scoring.decision import entry_label, exit_review_label
@@ -153,6 +155,69 @@ def build_shadow_snapshot(
         "signal_changed": int(bool(challenger_outputs["signal_changed"])),
         "coverage_mode": challenger_outputs["coverage_mode"],
     }
+
+
+def persist_live_shadow_observation(
+    *, ticker: str, as_of_date: str, surface: str,
+    inputs: Mapping[str, object], current_outputs: Mapping[str, object],
+    db_path: object = None,
+) -> str | None:
+    """Freeze the live prediction before its paired shadow observation."""
+    if not ACTIVE_SHADOW_ENABLED:
+        return None
+    from src.data.database import save_prediction_snapshot, save_shadow_decision_snapshot
+
+    model = current_model_registration()
+    prediction = build_prediction_snapshot(
+        ticker=ticker, as_of_date=as_of_date, model=model,
+        inputs=inputs, outputs=current_outputs, simulation_source="live",
+    )
+    save_prediction_snapshot(prediction, db_path)
+    save_shadow_decision_snapshot(build_shadow_snapshot(
+        ticker=ticker, as_of_date=as_of_date, surface=surface,
+        inputs=inputs, current_outputs=current_outputs,
+    ), db_path)
+    return str(prediction["prediction_id"])
+
+
+def reconcile_shadow_prediction_lineage(db_path: object = None) -> dict[str, int]:
+    """Add missing predictions from the earliest immutable shadow observation per daily key."""
+    from src.data.database import (
+        get_prediction_snapshots, get_shadow_decision_snapshots, save_prediction_snapshot,
+    )
+
+    predictions = get_prediction_snapshots(db_path=db_path)
+    existing = {
+        (str(row["ticker"]), str(row["as_of_date"]), str(row["model_version"]), str(row["config_hash"]))
+        for row in predictions
+    }
+    candidates: dict[tuple[str, str, str, str], Mapping[str, object]] = {}
+    shadows = sorted(
+        get_shadow_decision_snapshots(db_path=db_path),
+        key=lambda row: (str(row.get("created_at") or ""), str(row["shadow_snapshot_id"])),
+    )
+    for row in shadows:
+        key = (
+            str(row["ticker"]), str(row["as_of_date"]),
+            str(row["current_model_version"]), str(row["current_config_hash"]),
+        )
+        candidates.setdefault(key, row)
+    created = 0
+    for key, shadow in candidates.items():
+        if key in existing:
+            continue
+        prediction = build_prediction_snapshot(
+            ticker=key[0], as_of_date=key[1],
+            model={"model_version": key[2], "config_hash": key[3]},
+            inputs=json.loads(str(shadow.get("input_json") or "{}")),
+            outputs=json.loads(str(shadow.get("current_output_json") or "{}")),
+            simulation_source="live" if shadow.get("surface") == "decision_dashboard" else "historical_replay",
+            created_at=str(shadow.get("created_at") or "") or None,
+        )
+        save_prediction_snapshot(prediction, db_path)
+        existing.add(key)
+        created += 1
+    return {"candidate_keys": len(candidates), "created": created}
 
 
 def backfill_shadow_history(db_path: object = None) -> dict[str, int]:

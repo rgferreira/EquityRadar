@@ -3,13 +3,14 @@ import json
 import pytest
 
 from src.data.database import (
-    get_registered_models, get_shadow_decision_snapshots, save_prediction_snapshot,
+    get_prediction_snapshots, get_registered_models, get_shadow_decision_snapshots, save_prediction_snapshot,
     save_shadow_decision_snapshot,
 )
 from src.model_registry import build_prediction_snapshot, current_model_registration
 from src.shadow_model import (
     backfill_shadow_history, build_shadow_snapshot, coverage_aware_shadow_output,
-    meaningful_valuation_available, technology_potential_shadow_output,
+    meaningful_valuation_available, persist_live_shadow_observation,
+    reconcile_shadow_prediction_lineage, technology_potential_shadow_output,
 )
 
 
@@ -125,3 +126,35 @@ def test_promoted_shadow_backfill_is_archived(tmp_path):
     assert first == {"attempted": 0, "created": 0, "signal_changes": 0}
     assert second == first
     assert get_shadow_decision_snapshots("SYNTH", database) == []
+
+
+def test_live_shadow_observation_freezes_matching_prediction_first(tmp_path):
+    database = tmp_path / "live-shadow.db"
+    first = persist_live_shadow_observation(
+        ticker="SYNTH", as_of_date="2026-07-17", surface="decision_dashboard",
+        inputs=inputs(), current_outputs=CURRENT, db_path=database,
+    )
+    second = persist_live_shadow_observation(
+        ticker="SYNTH", as_of_date="2026-07-17", surface="decision_dashboard",
+        inputs=inputs(), current_outputs=CURRENT, db_path=database,
+    )
+
+    assert first == second
+    assert len(get_prediction_snapshots("SYNTH", database)) == 1
+    assert len(get_shadow_decision_snapshots("SYNTH", database)) == 1
+
+
+def test_missing_prediction_is_reconciled_from_earliest_immutable_shadow(tmp_path):
+    database = tmp_path / "lineage.db"
+    snapshot = build_shadow_snapshot(
+        ticker="SYNTH", as_of_date="2026-07-17", surface="decision_dashboard",
+        inputs=inputs(), current_outputs=CURRENT,
+    )
+    save_shadow_decision_snapshot(snapshot, database)
+
+    result = reconcile_shadow_prediction_lineage(database)
+    repeat = reconcile_shadow_prediction_lineage(database)
+
+    assert result["created"] == 1
+    assert repeat["created"] == 0
+    assert len(get_prediction_snapshots("SYNTH", database)) == 1

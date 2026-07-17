@@ -1,8 +1,10 @@
 import pandas as pd
 import pytest
+from datetime import date
 
 from src.data.database import get_outcome_labels, save_outcome_label, save_prediction_snapshot
 from src.model_registry import build_prediction_snapshot, current_model_registration
+from src.data.backtest_refresh import materialize_matured_prediction_labels
 from src.outcome_labels import (
     RELATIVE_LABEL_VERSION, TOTAL_COST_BPS, benchmark_for_ticker,
     build_relative_outcome_label,
@@ -110,3 +112,26 @@ def test_outcome_label_storage_is_idempotent_and_immutable(tmp_path):
     assert len(get_outcome_labels(prediction_id=snapshot["prediction_id"], db_path=database)) == 1
     with pytest.raises(ValueError, match="Immutable outcome label conflict"):
         save_outcome_label({**label, "outcome_hash": "different"}, database)
+
+
+def test_matured_prediction_label_is_materialized_without_persisting_pending_state(tmp_path):
+    database = tmp_path / "materialize.db"
+    model = current_model_registration()
+    snapshot = build_prediction_snapshot(
+        ticker="TEST", as_of_date="2026-01-05", model=model,
+        inputs={"features": {}, "temporal_coverage": {}, "input_references": {}},
+        outputs={"entry_score": 50, "exit_score": 50, "entry_signal": "Watch", "exit_signal": "Hold / no review"},
+    )
+    save_prediction_snapshot(snapshot, database)
+    security, benchmark = histories(periods=170)
+
+    def fetcher(ticker, period="max"):
+        return benchmark if ticker == "SPY" else security
+
+    result = materialize_matured_prediction_labels(
+        database, today=date(2026, 7, 17), history_fetcher=fetcher,
+    )
+
+    assert result["created"] == 1
+    stored = get_outcome_labels(prediction_id=snapshot["prediction_id"], db_path=database)
+    assert stored[0]["outcomes"]["3M"] is not None

@@ -81,7 +81,17 @@ def prepare_shadow_comparisons(
     prediction_index = {_prediction_key(row): row for row in predictions}
     label_index = {str(row["prediction_id"]): row for row in labels}
     comparisons: list[dict[str, object]] = []
-    for shadow in shadows:
+    frozen_daily: dict[tuple[str, str, str, str, str, str], Mapping[str, object]] = {}
+    for shadow in sorted(
+        shadows, key=lambda row: (str(row.get("created_at") or ""), str(row["shadow_snapshot_id"])),
+    ):
+        daily_key = (
+            str(shadow["ticker"]).upper(), str(shadow["as_of_date"]),
+            str(shadow["current_model_version"]), str(shadow["current_config_hash"]),
+            str(shadow["challenger_model_version"]), str(shadow["challenger_config_hash"]),
+        )
+        frozen_daily.setdefault(daily_key, shadow)
+    for shadow in frozen_daily.values():
         current = _json(shadow.get("current_output_json"))
         challenger = _json(shadow.get("challenger_output_json"))
         inputs = _json(shadow.get("input_json"))
@@ -116,7 +126,10 @@ def prepare_shadow_comparisons(
             "live_signal": live_signal,
             "shadow_signal": shadow_signal,
             "signal_changed": bool(shadow["signal_changed"]),
-            "label_status": str(label.get("status")) if label else "not_linked",
+            "label_status": (
+                str(label.get("status")) if label else
+                "awaiting_outcome" if prediction else "prediction_not_linked"
+            ),
             "outcome_end_date": str(outcome.get("end_date")) if outcome else None,
             "relative_return_pct": float(relative) if isinstance(relative, (int, float)) else None,
             "live_utility_pct": live_utility,
@@ -206,6 +219,13 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
     ticker_concentration = (
         max(ticker_counts.values()) / len(changed_matured) if changed_matured else None
     )
+    pending_changed = [row for row in changed if row.get("utility_delta_pct") is None]
+    pending_changed_dates = len({str(row["as_of_date"]) for row in pending_changed})
+
+    def progress(observed: int, required: int) -> int:
+        return min(100, round(observed / required * 100)) if required else 100
+
+    changed_progress = progress(changed_dates, MIN_CHANGED_DATES)
     criteria = [
         {
             "criterion": "Independent outcome maturity",
@@ -213,6 +233,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "observed": f"{matured_dates} dates",
             "required": f"≥ {MIN_MATURED_DATES} matured dates",
             "purpose": "Avoid treating many tickers from a few dates as independent evidence.",
+            "available": True,
+            "progress_pct": progress(matured_dates, MIN_MATURED_DATES),
         },
         {
             "criterion": "Decision-change maturity",
@@ -220,6 +242,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "observed": f"{changed_dates} dates",
             "required": f"≥ {MIN_CHANGED_DATES} dates with matured signal changes",
             "purpose": "Evaluate dates on which the challenger would actually alter a decision.",
+            "available": True,
+            "progress_pct": changed_progress,
         },
         {
             "criterion": "Utility improvement uncertainty",
@@ -227,6 +251,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "observed": "Unavailable" if lower is None else f"{float(lower):+.2f}% lower 95% bound",
             "required": "> 0% lower 95% confidence bound",
             "purpose": "Require paired benchmark-relative improvement beyond sampling uncertainty.",
+            "available": lower is not None,
+            "progress_pct": 100 if lower is not None else changed_progress,
         },
         {
             "criterion": "Decision accuracy non-deterioration",
@@ -234,6 +260,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "observed": "Unavailable" if accuracy is None else f"{float(accuracy) * 100:+.2f} pp",
             "required": "≥ 0 pp paired accuracy delta",
             "purpose": "Prevent higher utility from hiding systematically worse diagnostic accuracy.",
+            "available": accuracy is not None,
+            "progress_pct": 100 if accuracy is not None else changed_progress,
         },
         {
             "criterion": "Across-date consistency",
@@ -241,6 +269,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "observed": "Unavailable" if positive_date_share is None else f"{positive_date_share:.0%} positive dates",
             "required": f"≥ {MIN_POSITIVE_DATE_SHARE:.0%} positive changed-signal dates",
             "purpose": "Prevent one exceptional cutoff from dominating the conclusion.",
+            "available": positive_date_share is not None,
+            "progress_pct": 100 if positive_date_share is not None else changed_progress,
         },
         {
             "criterion": "Ticker concentration",
@@ -255,6 +285,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             ),
             "required": f"≥ 3 tickers and largest share ≤ {MAX_TICKER_CONCENTRATION:.0%}",
             "purpose": "Require the result not to depend mainly on one security.",
+            "available": ticker_concentration is not None,
+            "progress_pct": 100 if ticker_concentration is not None else changed_progress,
         },
     ]
     passed_count = sum(bool(item["passed"]) for item in criteria)
@@ -277,6 +309,8 @@ def build_model_tuning_report(rows: Sequence[Mapping[str, object]]) -> dict[str,
             "signal_changes": len(changed),
             "matured_signal_changes": len(changed_matured),
             "changed_dates": changed_dates,
+            "pending_signal_changes": len(pending_changed),
+            "pending_changed_dates": pending_changed_dates,
             "label_statuses": dict(Counter(str(row["label_status"]) for row in records)),
         },
         "all_paired": all_paired,

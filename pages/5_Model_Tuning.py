@@ -112,6 +112,7 @@ if not comparisons:
         "Across-date consistency", "Ticker concentration",
     ):
         st.markdown(f"⚪ **{criterion}** · Awaiting prospective data")
+        st.progress(0, text="Evidence progress · 0%")
     if archived_comparisons:
         archived_gate = build_model_tuning_report(archived_comparisons)["gate"]
         with st.expander(
@@ -177,16 +178,25 @@ st.markdown(f"**Evidence status:** :{status_color}[{gate['status']}]  ")
 st.caption(str(gate["rationale"]))
 
 st.subheader(f"Current promotion readiness · {gate['passed']}/{gate['total']} gates green")
+st.caption(
+    "Progress measures completion of the evidence required to calculate each gate—not the probability that the gate will pass. "
+    f"Pending pipeline · {coverage['pending_signal_changes']} signal changes across "
+    f"{coverage['pending_changed_dates']} date(s) still awaiting mature 3M outcomes."
+)
 criteria_columns = st.columns(2)
 for index, criterion in enumerate(gate["criteria"]):
     icon = (
         "🟢" if criterion["passed"] else
-        "⚪" if gate["status"] == "Collecting evidence" else "🔴"
+        "⚪" if not criterion["available"] or gate["status"] == "Collecting evidence" else "🔴"
     )
     with criteria_columns[index % 2]:
         with st.container(border=True):
             st.markdown(f"**{icon} {criterion['criterion']}**")
             st.markdown(f"**Observed:** {criterion['observed']}  ")
+            st.progress(
+                int(criterion["progress_pct"]),
+                text=f"Evidence progress · {int(criterion['progress_pct'])}%",
+            )
             st.caption(f"Required: {criterion['required']}")
             st.caption(str(criterion["purpose"]))
 

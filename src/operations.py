@@ -187,6 +187,7 @@ def run_due_maintenance(
             from src.data.positioning_refresh import schedule_finra_backfill, schedule_positioning_refresh
             from src.data.finra_daily_volume_refresh import schedule_finra_daily_volume_refresh
             from src.data.backtest_refresh import schedule_outcome_refresh
+            from src.shadow_model import reconcile_shadow_prediction_lineage
             from src.data.cutoff_suggestions import schedule_cutoff_suggestions
             from src.data.market_data import fetch_price_history
             from src.data.fmp import FMPProvider
@@ -225,6 +226,7 @@ def run_due_maintenance(
             futures = [pool.submit(warm_core, ticker) for ticker in tickers]
             wait(futures, timeout=45)
             pool.shutdown(wait=False, cancel_futures=True)
+            reconcile_shadow_prediction_lineage(database)
             schedule_outcome_refresh(database)
             schedule_cutoff_suggestions(tickers, database)
             result["refresh_scheduled"] = scheduled

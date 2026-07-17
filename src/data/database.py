@@ -1019,9 +1019,11 @@ def save_prediction_snapshot(
             "prediction_id", "input_snapshot_id", "ticker", "as_of_date", "model_version",
             "config_hash", "output_json", "output_hash", "simulation_source", "suggestion_rationale",
         )
+        insert_fields = fields + (("created_at",) if snapshot.get("created_at") else ())
         connection.execute(
-            f"INSERT OR IGNORE INTO prediction_snapshots ({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
-            tuple(snapshot.get(field) for field in fields),
+            f"INSERT OR IGNORE INTO prediction_snapshots ({', '.join(insert_fields)}) "
+            f"VALUES ({', '.join('?' for _ in insert_fields)})",
+            tuple(snapshot.get(field) for field in insert_fields),
         )
         stored = connection.execute(
             "SELECT * FROM prediction_snapshots WHERE prediction_id = ?", (snapshot["prediction_id"],)

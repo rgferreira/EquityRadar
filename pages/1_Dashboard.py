@@ -20,7 +20,6 @@ from src.data.database import (
     get_backtest_runs,
     get_active_backtest,
     get_simulation_suggestions,
-    save_shadow_decision_snapshot,
     save_active_backtest,
     get_watchlist,
     init_db,
@@ -58,7 +57,7 @@ from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
 from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
-from src.shadow_model import build_shadow_snapshot, meaningful_valuation_available
+from src.shadow_model import meaningful_valuation_available, persist_live_shadow_observation
 from src.model_registry import ACTIVE_SHADOW_ENABLED
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
@@ -445,9 +444,7 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                     daily_flow_evidence = daily_short_flow_evidence(
                         get_finra_daily_short_volume(ticker), as_of=date.today(),
                     )
-                    save_shadow_decision_snapshot(build_shadow_snapshot(
-                        ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
-                        inputs={
+                    frozen_inputs = {
                             "features": {"technical_score": technical, "valuation_score": valuation,
                                          "risk_score": risk},
                             "positioning_adjustments": {
@@ -458,9 +455,12 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                             "industry_calibrated": bool(industry_research),
                             "technology_potential": technology_evidence,
                             "daily_short_flow": daily_flow_evidence,
-                        },
+                        }
+                    persist_live_shadow_observation(
+                        ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
+                        inputs=frozen_inputs,
                         current_outputs=current_outputs,
-                    ))
+                    )
                 except Exception:
                     # Shadow research must never block or alter the live dashboard.
                     pass

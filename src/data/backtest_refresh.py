@@ -2,9 +2,10 @@
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from collections import defaultdict
+from collections.abc import Mapping
 from pathlib import Path
 from threading import RLock
-from datetime import date
+from datetime import date, timedelta
 import json
 
 from src.backtesting import evaluate_outcomes, latest_model_runs, reconstruct_signal
@@ -12,7 +13,8 @@ from src.backtesting import lesson_summary
 from src.data.database import (
     get_backtest_job_items, get_backtest_runs, get_cached_fundamentals,
     get_cached_industry_research, get_finra_daily_short_volume, get_positioning_history,
-    save_backtest_run, save_outcome_label, save_prediction_snapshot, save_shadow_decision_snapshot,
+    get_outcome_labels, get_prediction_snapshots, save_backtest_run, save_outcome_label,
+    save_prediction_snapshot, save_shadow_decision_snapshot,
     set_backtest_job_item, update_backtest_outcomes,
 )
 from src.data.market_data import fetch_price_history
@@ -104,12 +106,14 @@ def _persist_reconstruction(
             )
         except Exception:
             benchmark_cache[benchmark_ticker] = None
-    save_outcome_label(build_relative_outcome_label(
+    relative_label = build_relative_outcome_label(
         prediction_id=str(snapshot["prediction_id"]), ticker=ticker,
         as_of_date=as_of_date, security_history=history,
         benchmark_history=benchmark_cache.get(benchmark_ticker),
         benchmark_ticker=benchmark_ticker,
-    ), db_path)
+    )
+    if relative_label["status"] != "pending":
+        save_outcome_label(relative_label, db_path)
     return legacy_run
 
 
@@ -284,6 +288,50 @@ def _refresh_outcomes(db_path: str | Path | None) -> None:
         except Exception:
             # A bad symbol or immature horizon must not block other saved runs.
             continue
+    materialize_matured_prediction_labels(db_path)
+
+
+def materialize_matured_prediction_labels(
+    db_path: str | Path | None = None, *, today: date | None = None,
+    history_fetcher: object = fetch_price_history,
+) -> dict[str, int]:
+    """Persist a relative label only once its 3M outcome is actually mature."""
+    current_day = today or date.today()
+    earliest_candidate = current_day - timedelta(days=75)
+    labeled = {str(row["prediction_id"]) for row in get_outcome_labels(db_path=db_path)}
+    candidates = [
+        row for row in get_prediction_snapshots(db_path=db_path)
+        if str(row["prediction_id"]) not in labeled
+        and date.fromisoformat(str(row["as_of_date"])) <= earliest_candidate
+    ]
+    benchmark_cache: dict[str, object | None] = {}
+    created = pending = failed = 0
+    for prediction in candidates:
+        ticker = str(prediction["ticker"])
+        benchmark = benchmark_for_ticker(ticker)
+        try:
+            security_history = history_fetcher(ticker, period="max")
+            if benchmark not in benchmark_cache:
+                benchmark_cache[benchmark] = (
+                    history_fetcher(benchmark, period="max") if benchmark else None
+                )
+            label = build_relative_outcome_label(
+                prediction_id=str(prediction["prediction_id"]), ticker=ticker,
+                as_of_date=str(prediction["as_of_date"]), security_history=security_history,
+                benchmark_history=benchmark_cache.get(benchmark), benchmark_ticker=benchmark,
+            )
+            outcomes = label.get("outcomes") or {}
+            if label["status"] == "available" and isinstance(outcomes.get("3M"), Mapping):
+                save_outcome_label(label, db_path)
+                created += 1
+            elif label["status"] == "unavailable" and label.get("unavailable_reason") == "no_verified_benchmark_mapping":
+                save_outcome_label(label, db_path)
+                created += 1
+            else:
+                pending += 1
+        except Exception:
+            failed += 1
+    return {"candidates": len(candidates), "created": created, "pending": pending, "failed": failed}
 
 
 def schedule_outcome_refresh(db_path: str | Path | None = None) -> bool:
@@ -291,13 +339,19 @@ def schedule_outcome_refresh(db_path: str | Path | None = None) -> bool:
     global _outcome_future
     runs = get_backtest_runs(db_path=db_path)
     today = date.today().isoformat()
-    stale = any(
+    legacy_stale = any(
         any(run.get(field) is None for field in ("outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m"))
         and str(run.get("outcome_refreshed_at") or "")[:10] != today
         for run in runs
     )
+    labeled = {str(row["prediction_id"]) for row in get_outcome_labels(db_path=db_path)}
+    label_due = any(
+        str(row["prediction_id"]) not in labeled
+        and date.fromisoformat(str(row["as_of_date"])) <= date.today() - timedelta(days=75)
+        for row in get_prediction_snapshots(db_path=db_path)
+    )
     with _lock:
-        if not stale or (_outcome_future and not _outcome_future.done()):
+        if not (legacy_stale or label_due) or (_outcome_future and not _outcome_future.done()):
             return False
         _outcome_future = _executor.submit(_refresh_outcomes, db_path)
     return True

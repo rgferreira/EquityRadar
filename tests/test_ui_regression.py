@@ -71,6 +71,8 @@ def test_navigation_and_simulation_contracts_are_regression_guarded():
     assert "backtest_runs_by_ticker" in dashboard
     tuning = Path("pages/5_Model_Tuning.py").read_text(encoding="utf-8")
     assert "Current promotion readiness · Awaiting new challenger/data" in tuning
+    assert "Evidence progress" in tuning
+    assert "Pending pipeline" in tuning
     assert "Archived promotion result" in tuning
     assert "it cannot authorize another promotion" in tuning
 

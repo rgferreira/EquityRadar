@@ -129,3 +129,32 @@ def test_cumulative_curve_uses_date_means_not_ticker_count():
     assert curve[0]["live_expanding_utility_pct"] == 5
     assert curve[1]["live_expanding_utility_pct"] == 0
     assert curve[1]["shadow_expanding_utility_pct"] == 7.5
+
+
+def test_gate_progress_is_explicit_while_changed_outcomes_are_immature():
+    rows = [{
+        "ticker": "AAA", "as_of_date": "2026-07-17", "signal_changed": True,
+        "utility_delta_pct": None, "label_status": "awaiting_outcome",
+        "score_delta": 2, "coverage_mode": "ready", "technical_regime": "Mixed technical",
+        "simulation_source": "live",
+    }]
+
+    report = build_model_tuning_report(rows)
+
+    assert report["coverage"]["pending_signal_changes"] == 1
+    assert report["coverage"]["pending_changed_dates"] == 1
+    assert report["gate"]["criteria"][1]["progress_pct"] == 0
+    assert report["gate"]["criteria"][2]["available"] is False
+
+
+def test_daily_shadow_comparisons_keep_first_frozen_observation_only():
+    first = shadow("s1", "2026-07-17", "Watch", "Buy candidate", 8)
+    second = {**shadow("s2", "2026-07-17", "Watch", "Buy candidate", 9), "created_at": "2026-07-17 12:00:00"}
+    first["created_at"] = "2026-07-17 09:00:00"
+
+    rows = prepare_shadow_comparisons(
+        [second, first], [prediction("p1", "2026-07-17")], [label("p1", 5)],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["score_delta"] == 8

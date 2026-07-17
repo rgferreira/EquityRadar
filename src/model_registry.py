@@ -212,12 +212,13 @@ def build_prediction_snapshot(
     *, ticker: str, as_of_date: str, model: Mapping[str, object],
     inputs: Mapping[str, object], outputs: Mapping[str, object],
     simulation_source: str = "manual", suggestion_rationale: str | None = None,
+    created_at: str | None = None,
 ) -> dict[str, object]:
     input_hash = content_hash(dict(inputs))
     output_hash = content_hash(dict(outputs))
     config_hash = str(model["config_hash"])
     model_version = str(model["model_version"])
-    return {
+    snapshot = {
         "prediction_id": prediction_identity(ticker, as_of_date, model_version, config_hash),
         "input_snapshot_id": input_hash,
         "input_json": canonical_json(dict(inputs)),
@@ -231,6 +232,9 @@ def build_prediction_snapshot(
         "simulation_source": simulation_source,
         "suggestion_rationale": suggestion_rationale,
     }
+    if created_at:
+        snapshot["created_at"] = created_at
+    return snapshot
 
 
 def replay_prediction(snapshot: Mapping[str, object], tolerance: float = 1e-9) -> dict[str, object]:
