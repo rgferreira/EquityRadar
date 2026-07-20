@@ -16,6 +16,14 @@ scripts/macos/equity-radar-control.zsh stop
 Runtime PID and log files live under `work/` and are not committed. The launcher is idempotent: repeated Start or Stop actions are safe.
 It behaves like a normal macOS app: it does not hide or minimize other applications, and **Quit Equity Radar Launcher** / **⌘Q** remains available.
 
+On Macs where the repository is inside an iCloud/File Provider-managed Documents folder, keep the Python environment on local storage and expose it to the launcher through the conventional `.venv` path. The current installation uses:
+
+```text
+.venv -> ~/Library/Application Support/EquityRadar/venv-3.9
+```
+
+This prevents macOS from offloading thousands of dependency files while preserving every existing launcher command. The pre-migration environment may be retained temporarily as `.venv-cloud-backup-<date>` for rollback; it must remain untracked.
+
 Rebuild the Desktop app with:
 
 ```zsh

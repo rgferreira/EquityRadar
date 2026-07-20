@@ -1,5 +1,7 @@
 # Phase 3.9 operational acceptance — 2026-07-14
 
+> Historical acceptance snapshot. The live model and acceptance suite have evolved since this record; see the [2026-07-20 engineering closure](CLOSURE-2026-07-20.md) for the current release boundary. This file is preserved rather than rewritten.
+
 Phase 3.9 remains anchored at `coverage-aware-renormalized-v3-live`. None of the operational work in
 this acceptance slice changes model weights, thresholds, diagnostics or the exit policy.
 

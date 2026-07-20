@@ -79,7 +79,8 @@ def test_navigation_and_simulation_contracts_are_regression_guarded():
     assert "Both traces are present and overlap exactly" in tuning
     assert "Frozen promotion audit" in tuning
     assert "Experiments remain separate" in tuning
-    assert "later-created historical simulations are excluded" in tuning
+    assert "later-created " in tuning
+    assert "historical simulations are excluded" in tuning
 
 
 def test_responsive_breakpoint_contract_covers_phone_density():

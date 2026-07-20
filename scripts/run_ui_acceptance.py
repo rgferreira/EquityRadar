@@ -9,10 +9,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
+import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen
+
+from websockets.sync.client import connect
 
 
 ROUTES = {
@@ -44,16 +49,90 @@ def find_chromium() -> Path:
     raise RuntimeError("No Chromium executable found; set EQUITY_RADAR_CHROME_BIN")
 
 
-def render(chromium: Path, url: str, width: int, height: int) -> str:
+def _cdp_evaluate(socket: object, message_id: int, expression: str) -> dict[str, object]:
+    socket.send(json.dumps({
+        "id": message_id,
+        "method": "Runtime.evaluate",
+        "params": {"expression": expression, "returnByValue": True},
+    }))
+    while True:
+        response = json.loads(socket.recv(timeout=5))
+        if response.get("id") == message_id:
+            return response
+
+
+def render(chromium: Path, url: str, width: int, height: int, expected: str) -> str:
+    """Render after Streamlit finishes, not after an arbitrary virtual-time budget."""
+    profile = tempfile.TemporaryDirectory(prefix="equity-radar-chromium-")
     command = [
-        str(chromium), "--headless", "--disable-gpu", "--no-sandbox",
-        f"--window-size={width},{height}", "--virtual-time-budget=5000",
-        "--dump-dom", url,
+        str(chromium), "--headless=new", "--disable-gpu", "--no-sandbox",
+        "--disable-background-timer-throttling", "--remote-debugging-port=0",
+        "--remote-allow-origins=*", f"--user-data-dir={profile.name}",
+        f"--window-size={width},{height}", url,
     ]
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
-    if completed.returncode:
-        raise RuntimeError(f"Chromium failed for {url}: {completed.stderr[-500:]}")
-    return completed.stdout
+    process = subprocess.Popen(
+        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True,
+        start_new_session=True,
+    )
+    html = ""
+    try:
+        port_file = Path(profile.name) / "DevToolsActivePort"
+        deadline = time.monotonic() + 30
+        while not port_file.exists() and time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError("Chromium stopped before DevTools was ready")
+            time.sleep(0.05)
+        if not port_file.exists():
+            raise RuntimeError("Chromium DevTools endpoint did not become ready")
+        port = port_file.read_text(encoding="utf-8").splitlines()[0]
+        page = None
+        while page is None and time.monotonic() < deadline:
+            with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as response:
+                targets = json.load(response)
+            page = next((item for item in targets if item.get("type") == "page"), None)
+            if page is None:
+                time.sleep(0.05)
+        if page is None:
+            raise RuntimeError("Chromium page target did not become ready")
+        with connect(str(page["webSocketDebuggerUrl"]), open_timeout=5) as socket:
+            message_id = 0
+            while time.monotonic() < deadline:
+                message_id += 1
+                try:
+                    response = _cdp_evaluate(socket, message_id, """
+                        JSON.stringify({
+                          html: document.body.innerText,
+                          ready: window.prerenderReady === true,
+                          state: document.querySelector('[data-testid="stApp"]')
+                            ?.getAttribute('data-test-script-state') || ''
+                        })
+                    """)
+                except TimeoutError:
+                    time.sleep(0.1)
+                    continue
+                value = (
+                    response.get("result", {}).get("result", {}).get("value")
+                    if isinstance(response, dict) else None
+                )
+                if isinstance(value, str):
+                    status = json.loads(value)
+                    html = str(status.get("html") or "")
+                    has_result = expected in html or any(marker in html for marker in (
+                        "stException", "This app has encountered an error",
+                        "Traceback (most recent call last)",
+                    ))
+                    if has_result:
+                        return html
+                time.sleep(0.1)
+        raise RuntimeError(f"Streamlit did not finish rendering {url} within 30 seconds")
+    finally:
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=3)
+        profile.cleanup()
 
 
 def run(base_url: str) -> dict[str, object]:
@@ -67,7 +146,7 @@ def run(base_url: str) -> dict[str, object]:
             dom = ""
             attempts = 0
             for attempts in range(1, 4):
-                dom = render(chromium, f"{base_url}{route}", width, height)
+                dom = render(chromium, f"{base_url}{route}", width, height, expected)
                 if expected in dom or any(marker in dom for marker in (
                     "stException", "This app has encountered an error", "Traceback (most recent call last)",
                 )):

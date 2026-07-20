@@ -1,6 +1,6 @@
 # Next best actions
 
-Last reviewed: 2026-07-16. Current internal phase: **3.9 - coverage-aware model promoted**.
+Last reviewed: 2026-07-20. Current internal status: **Phase 3.9 engineering closed; daily-short-flow shadow monitoring continues**.
 
 This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
 
@@ -10,25 +10,29 @@ The forensic audit supersedes the former improvised implementation queue. PR-001
 
 The first coverage-aware challenger later accumulated 378 matured paired observations and cleared all six readiness gates. It was explicitly promoted as `coverage-aware-renormalized-v3-live`; the former live version remains the rollback anchor. Next: monitor prospective post-promotion accuracy, utility and drift against the frozen promotion baseline. Define another shadow only for a distinct preregistered hypothesis.
 
-## Phase 3.9 operational acceptance — completed
+## Phase 3.9 engineering release — completed
 
 The post-promotion monitor, all-page AppTest and real desktop/phone Chromium regression suites,
 full provider-state console, server-lifetime scheduler, verified daily backups and isolated restore drills,
 options-continuity gate, material research alerts and non-executing Scenario lab
-are implemented. See [`releases/phase-3.9/ACCEPTANCE-2026-07-14.md`](releases/phase-3.9/ACCEPTANCE-2026-07-14.md).
+are implemented. The reconciled release boundary and latest acceptance evidence are recorded in
+[`releases/phase-3.9/CLOSURE-2026-07-20.md`](releases/phase-3.9/CLOSURE-2026-07-20.md); the original
+[`2026-07-14 acceptance`](releases/phase-3.9/ACCEPTANCE-2026-07-14.md) remains as a historical snapshot.
 
 The next model-research action is to continue collecting genuinely prospective evidence. The
 [`options-positioning-v1`](experiments/options-positioning-v1.md) hypothesis is preregistered, but no new
 shadow model exists and no score change is authorized.
 
-## Phase 3.9 next step — visual evidence layer implemented; research validation pending
+## Phase 3.9 post-release monitoring — implementation complete; outcomes maturing
 
 1. **FINRA daily short-volume driver.** The consolidated FINRA short-sale-volume files now populate a
    separate daily flow-pressure input. Preserve twice-monthly consolidated short interest as the official
    position anchor: daily short-sale volume is trading flow, not outstanding short positions. Raw observations,
    point-in-time provenance, provider health, daily share and a 10-session visual baseline are implemented. The
    baseline slope is now a bounded component of `technology-daily-short-flow-v3-shadow`; prospective, incremental
-   out-of-sample evidence remains required before authorizing any live score modifier. See
+   out-of-sample evidence remains required before authorizing any live score modifier. At closure the active
+   shadow has 19 changed-diagnostic observations across six dates awaiting 3M outcomes; the full current cohort
+   should be reviewed around 2026-10-20. This waiting period is evidence maturation, not unfinished engineering. See
    [`releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md`](releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md).
 
 ## Phase 3.91 — Credit Stress Feature (queued; not started)

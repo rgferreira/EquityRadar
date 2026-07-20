@@ -5,3 +5,4 @@ yfinance
 plotly
 python-dotenv
 pytest
+websockets>=13,<17
