@@ -119,6 +119,8 @@ def prepare_shadow_comparisons(
             "ticker": str(shadow["ticker"]).upper(),
             "as_of_date": str(shadow["as_of_date"]),
             "surface": str(shadow["surface"]),
+            "current_model_version": str(shadow["current_model_version"]),
+            "challenger_model_version": str(shadow["challenger_model_version"]),
             "simulation_source": str(prediction.get("simulation_source") or "live") if prediction else "live",
             "coverage_mode": str(shadow["coverage_mode"]),
             "technical_regime": _technical_regime(inputs),
@@ -396,6 +398,21 @@ def cumulative_date_evidence(rows: Sequence[Mapping[str, object]]) -> list[dict[
     return result
 
 
+def cumulative_curve_overlap(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Describe whether clustered live/shadow utility curves are visually coincident."""
+    curve = cumulative_date_evidence(rows)
+    gaps = [
+        abs(float(item["shadow_expanding_utility_pct"]) - float(item["live_expanding_utility_pct"]))
+        for item in curve
+    ]
+    return {
+        "dates": len(curve),
+        "overlapping_dates": sum(gap <= 1e-9 for gap in gaps),
+        "max_gap_pct": round(max(gaps), 6) if gaps else None,
+        "fully_overlapping": bool(gaps) and all(gap <= 1e-9 for gap in gaps),
+    }
+
+
 def build_post_promotion_report(
     predictions: Sequence[Mapping[str, object]],
     labels: Sequence[Mapping[str, object]], *, model_version: str, promoted_at: str,
@@ -404,10 +421,11 @@ def build_post_promotion_report(
     """Measure only genuinely prospective evidence created after promotion.
 
     Historical rows materialized during promotion are deliberately excluded by
-    their creation timestamp.  The frozen promotion baseline is a comparison
-    anchor, never recomputed from the mutable application database.
+    both creation timestamp and decision date.  The frozen promotion baseline
+    is a comparison anchor, never recomputed from the mutable application database.
     """
     label_index = {str(row["prediction_id"]): row for row in labels}
+    promotion_date = date.fromisoformat(promoted_at[:10])
     by_date_accuracy: dict[str, list[float]] = defaultdict(list)
     by_date_utility: dict[str, list[float]] = defaultdict(list)
     matured = 0
@@ -415,6 +433,12 @@ def build_post_promotion_report(
         if str(prediction.get("model_version")) != model_version:
             continue
         if str(prediction.get("created_at") or "") <= promoted_at:
+            continue
+        try:
+            decision_date_value = date.fromisoformat(str(prediction["as_of_date"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if decision_date_value < promotion_date:
             continue
         label = label_index.get(str(prediction.get("prediction_id")))
         if not label or label.get("status") != "available":

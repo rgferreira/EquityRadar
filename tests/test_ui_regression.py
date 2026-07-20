@@ -70,11 +70,16 @@ def test_navigation_and_simulation_contracts_are_regression_guarded():
     assert dashboard.count("get_backtest_runs()") == 1
     assert "backtest_runs_by_ticker" in dashboard
     tuning = Path("pages/5_Model_Tuning.py").read_text(encoding="utf-8")
-    assert "Current promotion readiness · Awaiting new challenger/data" in tuning
+    assert "How this page works · read in 30 seconds" in tuning
+    assert '"Current live"' in tuning
+    assert '"Active shadow"' in tuning
+    assert '"Immediate rollback"' in tuning
     assert "Evidence pipeline" in tuning
-    assert "Pending pipeline" in tuning
-    assert "Archived promotion result" in tuning
-    assert "it cannot authorize another promotion" in tuning
+    assert "Paired 3M benchmark-relative outcomes" in tuning
+    assert "Both traces are present and overlap exactly" in tuning
+    assert "Frozen promotion audit" in tuning
+    assert "Experiments remain separate" in tuning
+    assert "later-created historical simulations are excluded" in tuning
 
 
 def test_responsive_breakpoint_contract_covers_phone_density():

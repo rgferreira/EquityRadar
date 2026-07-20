@@ -3,7 +3,8 @@ from datetime import date
 
 from src.model_tuning import (
     build_post_promotion_report,
-    build_model_tuning_report, cumulative_date_evidence, prepare_shadow_comparisons,
+    build_model_tuning_report, cumulative_curve_overlap, cumulative_date_evidence,
+    prepare_shadow_comparisons,
 )
 
 
@@ -92,6 +93,8 @@ def test_join_is_versioned_and_missing_evidence_stays_missing():
 
     assert rows[0]["utility_delta_pct"] == 20
     assert rows[0]["accuracy_delta"] == 1
+    assert rows[0]["current_model_version"] == "live-v1"
+    assert rows[0]["challenger_model_version"] == "shadow-v1"
     assert rows[1]["label_status"] == "unavailable"
     assert rows[1]["utility_delta_pct"] is None
 
@@ -130,6 +133,39 @@ def test_cumulative_curve_uses_date_means_not_ticker_count():
     assert curve[0]["live_expanding_utility_pct"] == 5
     assert curve[1]["live_expanding_utility_pct"] == 0
     assert curve[1]["shadow_expanding_utility_pct"] == 7.5
+
+
+def test_cumulative_curve_overlap_explains_hidden_identical_trace():
+    rows = [
+        {"as_of_date": "2026-01-01", "live_utility_pct": 5, "shadow_utility_pct": 5},
+        {"as_of_date": "2026-02-01", "live_utility_pct": -1, "shadow_utility_pct": -1},
+    ]
+
+    overlap = cumulative_curve_overlap(rows)
+
+    assert overlap == {
+        "dates": 2, "overlapping_dates": 2, "max_gap_pct": 0.0,
+        "fully_overlapping": True,
+    }
+
+
+def test_post_promotion_monitor_rejects_historical_replay_created_later():
+    predictions = [{
+        "prediction_id": "historical", "ticker": "AAA", "as_of_date": "2026-01-01",
+        "model_version": "v3", "created_at": "2026-07-15 10:00:00",
+        "output_json": '{"entry_signal":"Buy candidate"}',
+    }]
+    labels = [{
+        "prediction_id": "historical", "status": "available",
+        "outcomes_json": '{"3M":{"relative_return_after_cost_pct":12}}',
+    }]
+
+    report = build_post_promotion_report(
+        predictions, labels, model_version="v3", promoted_at="2026-07-14 12:00:00",
+    )
+
+    assert report["status"] == "awaiting_maturity"
+    assert report["matured_observations"] == 0
 
 
 def test_gate_progress_is_explicit_while_changed_outcomes_are_immature():
