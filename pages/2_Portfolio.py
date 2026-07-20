@@ -16,6 +16,7 @@ from src.data.database import (
     get_portfolio_sales,
     get_portfolio_targets,
     get_cash_transactions,
+    get_cached_extended_hours_quote,
     get_cached_industry_research,
     get_watchlist,
     init_db,
@@ -26,6 +27,10 @@ from src.data.database import (
 )
 from src.data.market_data import (
     clear_market_data_cache, fetch_fx_rate, fetch_price_history, fetch_quote_currency,
+)
+from src.data.extended_hours import overlay_extended_hours_prices
+from src.data.extended_hours_refresh import (
+    extended_hours_refresh_status, schedule_extended_hours_refresh,
 )
 from src.portfolio import (
     calculate_flow_adjusted_benchmark, calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
@@ -197,6 +202,11 @@ if not holdings:
     st.info("No stocks are currently marked as owned.")
     st.stop()
 
+portfolio_tickers = [str(holding["ticker"]) for holding in holdings]
+schedule_extended_hours_refresh(
+    portfolio_tickers, max_new=max(1, len(portfolio_tickers)),
+)
+
 refresh = st.button("Refresh portfolio prices")
 if refresh:
     clear_market_data_cache()
@@ -215,9 +225,15 @@ latest_prices = {
     for ticker, history in histories.items()
     if not history.empty and history["Close"].notna().any()
 }
+extended_snapshots = {
+    ticker: get_cached_extended_hours_quote(ticker) for ticker in latest_prices
+}
+valuation_prices, applied_extended_quotes = overlay_extended_hours_prices(
+    latest_prices, extended_snapshots,
+)
 lots = get_portfolio_lots()
 sales = get_portfolio_sales()
-currencies = {ticker: fetch_quote_currency(ticker) or PORTFOLIO_BASE_CURRENCY for ticker in latest_prices}
+currencies = {ticker: fetch_quote_currency(ticker) or PORTFOLIO_BASE_CURRENCY for ticker in valuation_prices}
 cash_transactions = get_cash_transactions()
 cash_currencies = {str(item["currency"]) for item in cash_transactions}
 fx_rates = {
@@ -225,7 +241,7 @@ fx_rates = {
     for currency in set(currencies.values()) | cash_currencies if currency != PORTFOLIO_BASE_CURRENCY
 }
 valued_holdings = enrich_holdings(
-    holdings, latest_prices, lots, currencies, fx_rates, PORTFOLIO_BASE_CURRENCY
+    holdings, valuation_prices, lots, currencies, fx_rates, PORTFOLIO_BASE_CURRENCY
 )
 normalized_sales = []
 for sale in sales:
@@ -273,6 +289,38 @@ value_columns = st.columns(3)
 value_columns[0].metric("Current portfolio value", f"{PORTFOLIO_BASE_CURRENCY} {total_value:,.2f}")
 value_columns[1].metric("Known unrealized P&L", f"{PORTFOLIO_BASE_CURRENCY} {sum(known_unrealized):,.2f}" if known_unrealized else "—")
 value_columns[2].metric("Cash balance", f"{PORTFOLIO_BASE_CURRENCY} {cash_balance_base:,.2f}")
+if applied_extended_quotes:
+    session_labels = ", ".join(sorted({str(item["label"]) for item in applied_extended_quotes.values()}))
+    st.caption(
+        f"Current valuation uses {session_labels} prices for "
+        f"{len(applied_extended_quotes)}/{len(valuation_prices)} priced positions; "
+        "remaining positions use the latest regular-market price."
+    )
+else:
+    st.caption(
+        "Current valuation uses regular-market prices. PRE/POST prices replace them automatically "
+        "as soon as an extended-hours print is available."
+    )
+
+
+@st.fragment(run_every=5)
+def render_portfolio_extended_hours_status() -> None:
+    schedule_extended_hours_refresh(
+        portfolio_tickers, max_new=max(1, len(portfolio_tickers)),
+    )
+    statuses = tuple(
+        (ticker, extended_hours_refresh_status(ticker)) for ticker in portfolio_tickers
+    )
+    updating = [ticker for ticker, status in statuses if status == "Updating"]
+    if updating:
+        st.caption("Extended-hours portfolio prices updating automatically.")
+    previous = st.session_state.get("portfolio_extended_hours_status")
+    st.session_state.portfolio_extended_hours_status = statuses
+    if previous is not None and previous != statuses:
+        st.rerun()
+
+
+render_portfolio_extended_hours_status()
 
 coverage_columns = st.columns(3)
 coverage_columns[0].metric("Positions", len(holdings))

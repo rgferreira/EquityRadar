@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Protocol
@@ -135,6 +137,32 @@ def effective_extended_quote(snapshot: dict[str, object] | None) -> dict[str, ob
             "session": "after-hours close",
         }
     return None
+
+
+def overlay_extended_hours_prices(
+    regular_prices: Mapping[str, float],
+    snapshots: Mapping[str, dict[str, object] | None],
+) -> tuple[dict[str, float], dict[str, dict[str, object]]]:
+    """Overlay usable extended-hours prints on current regular-market prices.
+
+    Invalid, missing, or regular-session snapshots never remove a known regular
+    price. Returned metadata lets callers disclose which prices were replaced.
+    """
+    prices = {str(ticker): float(price) for ticker, price in regular_prices.items()}
+    applied: dict[str, dict[str, object]] = {}
+    for ticker in prices:
+        effective = effective_extended_quote(snapshots.get(ticker))
+        if not effective:
+            continue
+        try:
+            extended_price = float(effective["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(extended_price) or extended_price <= 0:
+            continue
+        prices[ticker] = extended_price
+        applied[ticker] = effective
+    return prices, applied
 
 
 def get_extended_hours_quote(

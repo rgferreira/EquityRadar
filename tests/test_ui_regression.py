@@ -90,6 +90,8 @@ def test_portfolio_backup_and_profiles_do_not_bloat_normal_page_loads():
     assert "Prepare SQLite database backup" in portfolio
     assert "fetch_asset_profile" not in portfolio
     assert portfolio.index("st.button(\"Prepare SQLite database backup\"") < portfolio.index("DATABASE_PATH.read_bytes()")
+    assert "overlay_extended_hours_prices" in portfolio
+    assert "render_portfolio_extended_hours_status" in portfolio
 
 
 def test_company_uses_compact_responsive_chart_legend():
