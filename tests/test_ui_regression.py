@@ -116,6 +116,8 @@ def test_macos_launcher_is_idempotent_and_scoped_to_equity_radar():
     manifest = Path("scripts/macos/Info.plist").read_text(encoding="utf-8")
     builder = Path("scripts/macos/build-launcher.zsh").read_text(encoding="utf-8")
     assert "running_pid" in control and "is_equity_radar_pid" in control
+    assert "hydrate_project_sources" in control
+    assert "Project source files could not be made locally available" in control
     assert '"streamlit"' in control and '"app.py"' in control
     assert '/_stcore/health' in control
     assert 'Button("Stop everything"' in launcher and 'Button("Start everything"' in launcher

@@ -20,6 +20,16 @@ from src.research_alerts import build_research_alerts
 from src.ui import inject_app_styles, page_header, zebra_table
 
 
+def _format_operation_detail(value: object) -> str:
+    try:
+        detail = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "Unavailable legacy detail"
+    if not isinstance(detail, dict):
+        return "Unavailable legacy detail"
+    return ", ".join(f"{key}: {item}" for key, item in detail.items())
+
+
 st.set_page_config(page_title="Operations | Personal Equity Radar", page_icon="🩺", layout="wide")
 inject_app_styles()
 page_header(
@@ -73,19 +83,26 @@ st.subheader("Background maintenance")
 runs = get_operation_runs()
 if runs:
     run_frame = pd.DataFrame(runs)
-    run_frame["detail"] = run_frame["detail_json"].map(
-        lambda value: ", ".join(f"{key}: {item}" for key, item in json.loads(value or "{}").items())
-    )
+    run_frame["detail"] = run_frame["detail_json"].map(_format_operation_detail)
     st.dataframe(
         zebra_table(run_frame[["operation_key", "status", "completed_at", "detail", "error"]]),
         hide_index=True, width="stretch",
     )
 else:
     st.info("The server-lifetime scheduler has not completed its first cycle yet.")
+maintenance_message = st.session_state.pop("operations_maintenance_message", None)
+if maintenance_message:
+    st.success(maintenance_message)
 if st.button("Run due maintenance now"):
-    result = run_due_maintenance()
-    st.success(f"Maintenance checked · {len(result['refresh_scheduled'])} provider refresh(es) queued.")
-    st.rerun()
+    try:
+        result = run_due_maintenance()
+    except Exception:
+        st.error("Maintenance could not be checked. Existing cached research data remains available.")
+    else:
+        st.session_state["operations_maintenance_message"] = (
+            f"Maintenance checked · {len(result['refresh_scheduled'])} provider refresh(es) queued."
+        )
+        st.rerun()
 
 st.subheader("Verified local recovery")
 st.caption(
@@ -95,22 +112,34 @@ st.caption(
 backup_col, verify_col = st.columns(2)
 with backup_col:
     if st.button("Create verified backup", type="primary"):
-        result = create_verified_backup()
-        st.success(f"Verified backup created · {result['database_file']}")
-        st.code(result["sha256"])
+        try:
+            result = create_verified_backup()
+        except Exception:
+            st.error("A verified backup could not be created. The live database was not modified.")
+        else:
+            st.success(f"Verified backup created · {result['database_file']}")
+            st.code(result["sha256"])
 with verify_col:
     manifest_path = st.text_input("Manifest path", placeholder="work/backups/equity-radar-…manifest.json")
     if st.button("Verify existing backup", disabled=not manifest_path.strip()):
-        result = verify_backup_manifest(manifest_path.strip())
-        (st.success if result["valid"] else st.error)(
-            "Backup and manifest are valid." if result["valid"] else "Backup verification failed."
-        )
+        try:
+            result = verify_backup_manifest(manifest_path.strip())
+        except Exception:
+            st.error("Backup verification could not be completed. Check the manifest path and file integrity.")
+        else:
+            (st.success if result["valid"] else st.error)(
+                "Backup and manifest are valid." if result["valid"] else "Backup verification failed."
+            )
     if st.button("Run isolated restore drill", disabled=not manifest_path.strip()):
-        result = run_restore_drill(manifest_path.strip())
-        (st.success if result["valid"] else st.error)(
-            "Restore drill passed; schema and row counts match and the temporary copy was removed."
-            if result["valid"] else "Restore drill failed. The live database was never touched."
-        )
+        try:
+            result = run_restore_drill(manifest_path.strip())
+        except Exception:
+            st.error("Restore drill could not start. The live database was never touched.")
+        else:
+            (st.success if result["valid"] else st.error)(
+                "Restore drill passed; schema and row counts match and the temporary copy was removed."
+                if result["valid"] else "Restore drill failed. The live database was never touched."
+            )
 
 st.subheader("Options evidence continuity")
 st.caption(
@@ -131,11 +160,15 @@ else:
     )
 
 st.subheader("Research alerts")
-save_research_alerts(build_research_alerts(
-    get_backtest_runs(), positioning_histories=positioning_histories,
-    provider_transitions=get_provider_health_transitions(),
-))
-alerts = get_research_alerts()
+try:
+    save_research_alerts(build_research_alerts(
+        get_backtest_runs(), positioning_histories=positioning_histories,
+        provider_transitions=get_provider_health_transitions(),
+    ))
+    alerts = get_research_alerts()
+except Exception:
+    st.error("Research alerts are temporarily unavailable; the other operational controls remain usable.")
+    alerts = []
 if not alerts:
     st.success("No unacknowledged material research changes.")
 else:

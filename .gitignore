@@ -9,6 +9,7 @@ __pycache__/
 work/*.log
 work/*.json
 work/*.pid
+work/*.plist
 work/backups/
 work/reports/
 tmp/

@@ -47,6 +47,24 @@ running_pid() {
   return 1
 }
 
+hydrate_project_sources() {
+  # Documents may be managed by macOS File Provider. Reading source files once
+  # before launch materializes any placeholders so Streamlit cannot fail later
+  # while lazily loading a page module.
+  local source_paths=(
+    "$APP"
+    "$PROJECT_ROOT/pages"
+    "$PROJECT_ROOT/src"
+    "$PROJECT_ROOT/.streamlit"
+  )
+  if ! /usr/bin/find "${source_paths[@]}" -type f \( \
+      -name '*.py' -o -name '*.toml' -o -name '*.css' \
+    \) -print0 | /usr/bin/xargs -0 -P 8 -n 1 /bin/cat >/dev/null 2>>"$LOG_FILE"; then
+    print -u2 -r -- "Project source files could not be made locally available. Check $LOG_FILE"
+    return 1
+  fi
+}
+
 start_server() {
   local pid=""
   if pid="$(running_pid)"; then
@@ -63,6 +81,9 @@ start_server() {
   if [[ ! -x "$PYTHON" ]]; then
     print -u2 -r -- "Python environment not found at $PYTHON"
     return 3
+  fi
+  if ! hydrate_project_sources; then
+    return 7
   fi
   cd "$PROJECT_ROOT" || return 4
   nohup "$PYTHON" -m streamlit run "$APP" --server.port "$PORT" \
