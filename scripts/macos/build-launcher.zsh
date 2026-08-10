@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/Users/rafaelgonzalezferreira/Documents/PersonalEquityRadar"
+SCRIPT_DIR="${0:A:h}"
+PROJECT_ROOT="${SCRIPT_DIR:h:h}"
 SOURCE_DIR="$PROJECT_ROOT/scripts/macos"
 DESTINATION="${1:-$HOME/Desktop/Equity Radar Launcher.app}"
 BUILD_ROOT="$(/usr/bin/mktemp -d /private/tmp/equity-radar-launcher.XXXXXX)"
