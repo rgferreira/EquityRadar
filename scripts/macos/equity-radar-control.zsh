@@ -87,6 +87,7 @@ start_server() {
   fi
   cd "$PROJECT_ROOT" || return 4
   nohup "$PYTHON" -m streamlit run "$APP" --server.port "$PORT" \
+    --server.address 127.0.0.1 \
     > "$LOG_FILE" 2>&1 </dev/null &
   pid=$!
   print -r -- "$pid" > "$PID_FILE"

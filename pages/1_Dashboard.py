@@ -53,12 +53,19 @@ from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, zebra_table
 from src.backtesting import decision_outcome, latest_model_runs, learned_score_adjustments, lesson_summary
 from src.model_policy import governed_learning_adjustments
+from src.pilot_deployment import (
+    build_pilot_comparison,
+    pilot_deployment_state,
+    pilot_maturity_summary,
+    set_pilot_opt_in,
+)
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
 from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
 from src.shadow_model import meaningful_valuation_available, persist_live_shadow_observation
 from src.model_registry import ACTIVE_SHADOW_ENABLED
+from src.whaleseeker import whale_dashboard_feed, whaleseeker_runtime_enabled
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -90,6 +97,142 @@ def move_manual_ticker(offset: int) -> None:
 
 def request_dashboard_refresh() -> None:
     st.session_state.dashboard_refresh_requested = True
+
+
+def render_pilot_decisions(frame: pd.DataFrame) -> None:
+    """Render an opt-in comparison without changing official Dashboard rows."""
+    st.markdown("#### Modo piloto · Live vs Technology + FINRA flow")
+    st.caption(
+        "Research-only comparison. The Official column remains the decision authority; "
+        "Pilot never changes scores, position actions, model registration, or shadow evidence."
+    )
+    state = pilot_deployment_state()
+    maturity = pilot_maturity_summary()
+    toggle_key = "pilot_decisions_opt_in"
+    if toggle_key not in st.session_state:
+        st.session_state[toggle_key] = bool(state["persisted_opt_in"])
+    selected = st.toggle(
+        "Show per-ticker pilot comparison",
+        key=toggle_key,
+        disabled=not bool(state["runtime_enabled"]),
+        help=(
+            "This preference is local and reversible. It exposes the registered shadow calculation "
+            "but does not promote it or write new experiment observations."
+        ),
+    )
+    if bool(state["runtime_enabled"]) and selected != bool(state["persisted_opt_in"]):
+        state = set_pilot_opt_in(selected)
+
+    deployment_status = (
+        "Runtime disabled"
+        if not bool(state["runtime_enabled"])
+        else "Opted in · comparison only"
+        if bool(state["effective_enabled"])
+        else "Available · opt-in off"
+    )
+    maturity_date = maturity["next_maturity_date"] or "Pending eligible cohorts"
+    status_frame = pd.DataFrame([{
+        "Component": "Technology potential + FINRA daily short flow",
+        "Deployment": deployment_status,
+        "Evidence gate": (
+            f"{maturity['gate_status']} · {maturity['gates_passed']}/{maturity['gates_total']}"
+        ),
+        "Pipeline maturity": f"{maturity['pipeline_progress_pct']}%",
+        "Changed decisions": (
+            f"{maturity['matured_signal_changes']} matured / "
+            f"{maturity['signal_changes']} captured"
+        ),
+        "Next 3M maturity": maturity_date,
+    }])
+    st.dataframe(status_frame, hide_index=True, use_container_width=True)
+    st.progress(
+        int(maturity["pipeline_progress_pct"]) / 100,
+        text=(
+            f"Evidence pipeline · {maturity['independent_dates']} independent dates · "
+            f"{maturity['matured_observations']} matured paired observations"
+        ),
+    )
+    if not bool(state["runtime_enabled"]):
+        st.warning("Pilot exposure is disabled by PILOT_DECISIONS_ENABLED. Official decisions are unaffected.")
+        return
+    if not bool(state["effective_enabled"]):
+        return
+
+    comparisons = []
+    for _, row in frame.iterrows():
+        ticker = str(row["Ticker"])
+        try:
+            technology = technology_potential_evidence(get_cached_industry_research(ticker))
+            daily_flow = daily_short_flow_evidence(
+                get_finra_daily_short_volume(ticker), as_of=date.today(),
+            )
+        except Exception:
+            technology, daily_flow = {}, {}
+        comparisons.append(build_pilot_comparison(
+            ticker,
+            {
+                "entry_score": float(row["Entry score"]),
+                "entry_signal": str(row["Entry signal"]),
+                "exit_score": float(row["Exit-review score"]),
+                "exit_signal": str(row["Exit signal"]),
+            },
+            technology_evidence=technology,
+            daily_flow_evidence=daily_flow,
+        ))
+    comparison_frame = pd.DataFrame(comparisons)
+    st.dataframe(
+        comparison_frame,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Official score": st.column_config.NumberColumn(format="%.1f"),
+            "Pilot score": st.column_config.NumberColumn(format="%.1f"),
+            "Delta": st.column_config.NumberColumn(format="%+.1f"),
+            "Technology adj": st.column_config.NumberColumn(format="%+.1f"),
+            "Daily flow adj": st.column_config.NumberColumn(format="%+.1f"),
+        },
+    )
+    st.caption(
+        "A changed Pilot label is an observation to investigate, not an instruction to trade. "
+        "The official Portfolio and Watchlist tables above and below remain unchanged."
+    )
+
+
+def render_whaleseeker_panel(tickers: list[str]) -> None:
+    """Show delayed public disclosures as a parallel, zero-weight research layer."""
+    if not whaleseeker_runtime_enabled():
+        return
+    st.markdown("#### WhaleSeeker · Congressional disclosures")
+    st.caption(
+        "Public filings relevant to securities on this dashboard. Filing lag and first-seen time "
+        "remain visible; this evidence currently has 0% applied Entry/Exit weight."
+    )
+    feed = whale_dashboard_feed(tickers)
+    if not feed:
+        st.info(
+            "No locally imported congressional disclosures match the current Portfolio or Watchlist. "
+            "Use the WhaleSeeker page to import the next bounded historical batch."
+        )
+        st.markdown("🐋 [Open WhaleSeeker](/WhaleSeeker)")
+        return
+    display = pd.DataFrame(feed)[[
+        "Ticker", "Politician", "Trade", "Amount", "Traded", "Filed",
+        "Filing lag (days)", "First seen by app", "Source",
+    ]]
+    st.dataframe(
+        display,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Source": st.column_config.LinkColumn("Official source", display_text="Open"),
+            "Filing lag (days)": st.column_config.NumberColumn(format="%d"),
+        },
+    )
+    st.caption(
+        "The trade date is historical context, not alert time. Copyable performance must start no "
+        "earlier than a legitimate public-observation and execution timestamp."
+    )
+    st.markdown("🐋 [Explore politicians and data coverage](/WhaleSeeker)")
 
 
 def suggestion_run_status(as_of_date: str) -> str:
@@ -749,7 +892,7 @@ if rows:
         symbol: get_cached_extended_hours_quote(symbol) for symbol in frame["Ticker"].astype(str)
     } if not historical_mode else {}
     gate_exclusions = set(get_model_gate_exclusions())
-    if not historical_mode and portfolio_tickers:
+    if not historical_mode:
         owned_frame = display_frame[display_frame["Ticker"].isin(portfolio_tickers)].copy()
         watchlist_frame = display_frame[~display_frame["Ticker"].isin(portfolio_tickers)].copy()
         if not owned_frame.empty:
@@ -759,6 +902,8 @@ if rows:
                 owned_frame, set(portfolio_tickers), "portfolio", price_freshness, company_names,
                 daily_changes, extended_quotes, gate_exclusions,
             )
+        render_whaleseeker_panel(frame["Ticker"].astype(str).tolist())
+        render_pilot_decisions(frame)
         if not watchlist_frame.empty:
             st.markdown("#### Watchlist opportunities")
             st.caption("Unowned securities · potential position-initiation decisions")

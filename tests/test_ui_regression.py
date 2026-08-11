@@ -17,6 +17,7 @@ from src.data.database import add_ticker
 PAGES = (
     ("pages/1_Dashboard.py", "Decision dashboard"),
     ("pages/2_Portfolio.py", "Portfolio"),
+    ("pages/8_WhaleSeeker.py", "WhaleSeeker"),
     ("pages/3_Company.py", "Company detail"),
     ("pages/4_Journal.py", "Investment journal"),
     ("pages/0_Watchlist.py", "Watchlist management"),
@@ -56,7 +57,7 @@ def test_mobile_navigation_contract_remains_present():
 def test_navigation_and_simulation_contracts_are_regression_guarded():
     shell = Path("app.py").read_text(encoding="utf-8")
     for route in (
-        "Decision-dashboard", "Portfolio", "Company", "Journal", "Watchlist",
+        "Decision-dashboard", "Portfolio", "WhaleSeeker", "Company", "Journal", "Watchlist",
         "Model-tuning", "Operations", "Scenario-lab",
     ):
         assert f'url_path="{route}"' in shell

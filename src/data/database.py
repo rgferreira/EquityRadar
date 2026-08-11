@@ -188,6 +188,17 @@ def init_db(db_path: str | Path | None = None) -> None:
                 value_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS pilot_deployments (
+                deployment_key TEXT PRIMARY KEY,
+                candidate_model_version TEXT NOT NULL,
+                surface TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'comparison_only'
+                    CHECK(mode IN ('comparison_only')),
+                user_opt_in INTEGER NOT NULL DEFAULT 0 CHECK(user_opt_in IN (0,1)),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(candidate_model_version) REFERENCES model_registry(model_version)
+            );
             CREATE TABLE IF NOT EXISTS backtest_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticker TEXT NOT NULL,
@@ -412,6 +423,66 @@ def init_db(db_path: str | Path | None = None) -> None:
                 new_status TEXT NOT NULL,
                 occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS whale_raw_payloads (
+                raw_payload_id TEXT PRIMARY KEY,
+                provider_key TEXT NOT NULL,
+                endpoint TEXT NOT NULL,
+                request_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                UNIQUE(provider_key, endpoint, payload_hash, fetched_at)
+            );
+            CREATE TABLE IF NOT EXISTS whale_disclosure_observations (
+                observation_id TEXT PRIMARY KEY,
+                canonical_trade_id TEXT NOT NULL,
+                revision_number INTEGER NOT NULL CHECK(revision_number >= 1),
+                provider_key TEXT NOT NULL,
+                provider_record_id TEXT,
+                raw_payload_id TEXT NOT NULL,
+                politician_name TEXT NOT NULL,
+                chamber TEXT NOT NULL CHECK(chamber IN ('house','senate','unknown')),
+                district TEXT,
+                party TEXT,
+                owner TEXT,
+                ticker TEXT,
+                asset_description TEXT NOT NULL,
+                asset_type TEXT,
+                transaction_type TEXT NOT NULL
+                    CHECK(transaction_type IN ('purchase','sale','exchange','other')),
+                amount_text TEXT,
+                amount_min REAL,
+                amount_max REAL,
+                trade_date TEXT,
+                filed_date TEXT,
+                published_at TEXT,
+                known_at TEXT NOT NULL,
+                known_at_status TEXT NOT NULL
+                    CHECK(known_at_status IN ('observed_by_app','verified_publication')),
+                source_document_url TEXT,
+                source_hash TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                supersedes_observation_id TEXT,
+                FOREIGN KEY(raw_payload_id) REFERENCES whale_raw_payloads(raw_payload_id),
+                FOREIGN KEY(supersedes_observation_id)
+                    REFERENCES whale_disclosure_observations(observation_id),
+                UNIQUE(canonical_trade_id, provider_key, source_hash)
+            );
+            CREATE INDEX IF NOT EXISTS whale_disclosures_canonical_revision
+                ON whale_disclosure_observations(canonical_trade_id, provider_key, revision_number);
+            CREATE INDEX IF NOT EXISTS whale_disclosures_ticker_known_at
+                ON whale_disclosure_observations(ticker, known_at);
+            CREATE TABLE IF NOT EXISTS whale_backfill_state (
+                provider_key TEXT NOT NULL,
+                chamber TEXT NOT NULL CHECK(chamber IN ('house','senate')),
+                next_page INTEGER NOT NULL DEFAULT 0 CHECK(next_page >= 0),
+                status TEXT NOT NULL DEFAULT 'ready'
+                    CHECK(status IN ('ready','running','complete','failed')),
+                last_rows_received INTEGER,
+                last_error TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(provider_key, chamber)
+            );
         """)
         snapshot_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(portfolio_snapshots)")
@@ -621,6 +692,15 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('provider_health_state_v1')"
         )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('pilot_deployments_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('whaleseeker_lineage_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('whaleseeker_backfill_v1')"
+        )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
         ).fetchone()
@@ -650,6 +730,57 @@ def init_db(db_path: str | Path | None = None) -> None:
             connection.execute(
                 "INSERT INTO schema_migrations (migration_key) VALUES ('portfolio_holdings_to_lots_v1')"
             )
+
+
+def get_pilot_deployment(
+    deployment_key: str, *, candidate_model_version: str, surface: str,
+    db_path: str | Path | None = None,
+) -> dict[str, object]:
+    """Return the independent, comparison-only pilot exposure record."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT OR IGNORE INTO pilot_deployments
+               (deployment_key, candidate_model_version, surface, mode, user_opt_in)
+               VALUES (?, ?, ?, 'comparison_only', 0)""",
+            (deployment_key, candidate_model_version, surface),
+        )
+        row = connection.execute(
+            "SELECT * FROM pilot_deployments WHERE deployment_key=?", (deployment_key,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Pilot deployment could not be initialized")
+    deployment = dict(row)
+    if (
+        deployment["candidate_model_version"] != candidate_model_version
+        or deployment["surface"] != surface
+        or deployment["mode"] != "comparison_only"
+    ):
+        raise RuntimeError("Pilot deployment identity is immutable")
+    return deployment
+
+
+def save_pilot_deployment_opt_in(
+    deployment_key: str, enabled: bool, *, candidate_model_version: str, surface: str,
+    db_path: str | Path | None = None,
+) -> dict[str, object]:
+    """Persist user exposure without changing model or shadow registries."""
+    get_pilot_deployment(
+        deployment_key, candidate_model_version=candidate_model_version,
+        surface=surface, db_path=db_path,
+    )
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """UPDATE pilot_deployments SET user_opt_in=?, updated_at=CURRENT_TIMESTAMP
+               WHERE deployment_key=?""",
+            (int(enabled), deployment_key),
+        )
+        row = connection.execute(
+            "SELECT * FROM pilot_deployments WHERE deployment_key=?", (deployment_key,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Pilot deployment disappeared while updating")
+    return dict(row)
 
 
 def sync_model_gate_alert_state(
@@ -869,6 +1000,157 @@ def get_provider_health_transitions(
         return [dict(row) for row in connection.execute(
             "SELECT * FROM provider_health_transitions ORDER BY occurred_at,id"
         ).fetchall()]
+
+
+def save_whale_ingestion(
+    raw_payload: Mapping[str, object], observations: list[Mapping[str, object]],
+    db_path: str | Path | None = None,
+) -> dict[str, int]:
+    """Atomically persist raw congressional data and append-only normalized revisions."""
+    init_db(db_path)
+    raw_fields = (
+        "raw_payload_id", "provider_key", "endpoint", "request_json", "payload_json",
+        "payload_hash", "fetched_at",
+    )
+    observation_fields = (
+        "observation_id", "canonical_trade_id", "revision_number", "provider_key",
+        "provider_record_id", "raw_payload_id", "politician_name", "chamber", "district",
+        "party", "owner", "ticker", "asset_description", "asset_type", "transaction_type",
+        "amount_text", "amount_min", "amount_max", "trade_date", "filed_date", "published_at",
+        "known_at", "known_at_status", "source_document_url", "source_hash", "fetched_at",
+        "supersedes_observation_id",
+    )
+    inserted = revisions = 0
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"INSERT OR IGNORE INTO whale_raw_payloads ({', '.join(raw_fields)}) "
+            f"VALUES ({', '.join('?' for _ in raw_fields)})",
+            tuple(raw_payload[field] for field in raw_fields),
+        )
+        stored_raw = connection.execute(
+            "SELECT * FROM whale_raw_payloads WHERE raw_payload_id=?",
+            (raw_payload["raw_payload_id"],),
+        ).fetchone()
+        if stored_raw is None or any(stored_raw[field] != raw_payload[field] for field in raw_fields):
+            raise ValueError("Immutable WhaleSeeker raw payload conflict")
+
+        for candidate in observations:
+            existing = connection.execute(
+                """SELECT observation_id FROM whale_disclosure_observations
+                   WHERE canonical_trade_id=? AND provider_key=? AND source_hash=?""",
+                (
+                    candidate["canonical_trade_id"], candidate["provider_key"],
+                    candidate["source_hash"],
+                ),
+            ).fetchone()
+            if existing is not None:
+                continue
+            previous = connection.execute(
+                """SELECT observation_id,revision_number FROM whale_disclosure_observations
+                   WHERE canonical_trade_id=? AND provider_key=?
+                   ORDER BY revision_number DESC LIMIT 1""",
+                (candidate["canonical_trade_id"], candidate["provider_key"]),
+            ).fetchone()
+            record = dict(candidate)
+            record["revision_number"] = int(previous["revision_number"]) + 1 if previous else 1
+            record["supersedes_observation_id"] = previous["observation_id"] if previous else None
+            connection.execute(
+                f"INSERT INTO whale_disclosure_observations ({', '.join(observation_fields)}) "
+                f"VALUES ({', '.join('?' for _ in observation_fields)})",
+                tuple(record.get(field) for field in observation_fields),
+            )
+            inserted += 1
+            revisions += int(previous is not None)
+    return {"observations_inserted": inserted, "revisions_inserted": revisions}
+
+
+def get_whale_raw_payloads(
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(
+            "SELECT * FROM whale_raw_payloads ORDER BY fetched_at,raw_payload_id"
+        ).fetchall()]
+
+
+def get_whale_disclosures(
+    *, ticker: str | None = None, latest_only: bool = False,
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Read WhaleSeeker observations, optionally selecting only each latest revision."""
+    init_db(db_path)
+    params: list[object] = []
+    where = ""
+    if ticker:
+        where = " WHERE ticker=?"
+        params.append(ticker.strip().upper())
+    if latest_only:
+        query = f"""SELECT * FROM (
+            SELECT observations.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY canonical_trade_id,provider_key
+                       ORDER BY revision_number DESC
+                   ) AS revision_rank
+            FROM whale_disclosure_observations AS observations{where}
+        ) WHERE revision_rank=1 ORDER BY filed_date DESC,known_at DESC,politician_name"""
+    else:
+        query = (
+            "SELECT * FROM whale_disclosure_observations" + where
+            + " ORDER BY filed_date DESC,known_at DESC,politician_name,revision_number"
+        )
+    with get_connection(db_path) as connection:
+        return [dict(row) for row in connection.execute(query, tuple(params)).fetchall()]
+
+
+def get_whale_backfill_states(
+    provider_key: str, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return persistent, independent House and Senate cursors."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.executemany(
+            """INSERT OR IGNORE INTO whale_backfill_state
+               (provider_key,chamber,next_page,status) VALUES (?,?,0,'ready')""",
+            [(provider_key, "house"), (provider_key, "senate")],
+        )
+        return [dict(row) for row in connection.execute(
+            """SELECT * FROM whale_backfill_state WHERE provider_key=?
+               ORDER BY CASE chamber WHEN 'house' THEN 0 ELSE 1 END""",
+            (provider_key,),
+        ).fetchall()]
+
+
+def update_whale_backfill_state(
+    provider_key: str, chamber: str, *, status: str, next_page: int,
+    last_rows_received: int | None = None, last_error: str | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, object]:
+    if chamber not in {"house", "senate"}:
+        raise ValueError(f"Invalid chamber: {chamber}")
+    if status not in {"ready", "running", "complete", "failed"}:
+        raise ValueError(f"Invalid backfill status: {status}")
+    if next_page < 0:
+        raise ValueError("next_page must be zero or greater")
+    get_whale_backfill_states(provider_key, db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """UPDATE whale_backfill_state
+               SET next_page=?,status=?,last_rows_received=?,last_error=?,
+                   updated_at=CURRENT_TIMESTAMP
+               WHERE provider_key=? AND chamber=?""",
+            (
+                next_page, status, last_rows_received, last_error,
+                provider_key, chamber,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM whale_backfill_state WHERE provider_key=? AND chamber=?",
+            (provider_key, chamber),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("WhaleSeeker backfill state could not be updated")
+    return dict(row)
 
 
 def save_backtest_run(run: Mapping[str, object], db_path: str | Path | None = None) -> None:
