@@ -1,6 +1,10 @@
 import SwiftUI
 
-private let controlScript = "/Users/rafaelgonzalezferreira/Documents/PersonalEquityRadar/scripts/macos/equity-radar-control.zsh"
+private let projectRoot = ProcessInfo.processInfo.environment["EQUITY_RADAR_PROJECT_ROOT"]
+    ?? FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Documents/PersonalEquityRadar").path
+private let controlScript = URL(fileURLWithPath: projectRoot)
+    .appendingPathComponent("scripts/macos/equity-radar-control.zsh").path
 
 private struct ControlResult: Sendable {
     let message: String
