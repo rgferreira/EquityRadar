@@ -1,6 +1,10 @@
 .env
 .env.alerts
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
+**/xcuserdata/
 .venv/
 __pycache__/
 .pytest_cache/

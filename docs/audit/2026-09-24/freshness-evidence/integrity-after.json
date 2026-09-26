@@ -1,0 +1,38 @@
+{
+  "backtest_runs": {
+    "original_rows": 2531,
+    "missing_or_changed": 0,
+    "seconds": 0.22
+  },
+  "prediction_input_snapshots": {
+    "original_rows": 2548,
+    "missing_or_changed": 0,
+    "seconds": 0.23
+  },
+  "prediction_snapshots": {
+    "original_rows": 3235,
+    "missing_or_changed": 0,
+    "seconds": 0.05
+  },
+  "outcome_label_observations": {
+    "original_rows": 1873,
+    "missing_or_changed": 0,
+    "seconds": 0.01
+  },
+  "shadow_decision_snapshots": {
+    "original_rows": 3010,
+    "missing_or_changed": 0,
+    "seconds": 0.15
+  },
+  "whale_disclosure_observations": {
+    "original_rows": 50,
+    "missing_or_changed": 0,
+    "seconds": 0.01
+  },
+  "legacy_outcome_observations": {
+    "original_rows": 16696417,
+    "missing_or_changed": 0,
+    "seconds": 7.31
+  },
+  "quick_check": "ok"
+}

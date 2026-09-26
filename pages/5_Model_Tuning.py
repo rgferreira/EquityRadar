@@ -9,8 +9,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from src.data.outcome_maturation import get_current_outcome_labels as get_outcome_labels
 from src.data.database import (
-    get_model_gate_exclusions, get_model_promotion_event, get_outcome_labels,
+    get_model_gate_exclusions, get_model_promotion_event,
     get_prediction_snapshots, get_shadow_decision_snapshots, init_db,
     save_model_gate_exclusions,
 )
@@ -21,6 +22,7 @@ from src.model_registry import (
 from src.model_tuning import (
     build_model_tuning_report, build_post_promotion_report, cumulative_curve_overlap,
     cumulative_date_evidence, prepare_shadow_comparisons,
+    select_equity_gate_lineage_snapshots,
 )
 from src.outcome_labels import RELATIVE_LABEL_VERSION
 from src.ui import inject_app_styles, page_header, style_figure, zebra_table
@@ -38,9 +40,9 @@ def _interval(summary: dict[str, object], *, points: bool = False) -> str:
         return "Not calculable until a matching 3M outcome matures."
     estimate = _pct(summary.get("estimate"), points=points)
     if summary.get("ci_low") is None:
-        return f"{estimate} · more independent dates are needed for an interval."
+        return f"{estimate} · more cutoff dates are needed for a descriptive interval."
     return (
-        f"{estimate} · 95% CI {_pct(summary['ci_low'], points=points)} "
+        f"{estimate} · Descriptive 95% interval {_pct(summary['ci_low'], points=points)} "
         f"to {_pct(summary['ci_high'], points=points)}"
     )
 
@@ -123,6 +125,7 @@ page_header(
 
 predictions = get_prediction_snapshots()
 labels = get_outcome_labels(label_version=RELATIVE_LABEL_VERSION)
+st.caption("Outcome maturity includes append-only horizon completions. Original labels and frozen evaluations remain in the archive; decision rules are unchanged.")
 shadow_snapshots = get_shadow_decision_snapshots()
 promotion = get_model_promotion_event(CURRENT_MODEL_VERSION)
 immediate_rollback = str(
@@ -133,6 +136,9 @@ active_snapshots = [
     row for row in shadow_snapshots
     if str(row.get("challenger_model_version")) == TECHNOLOGY_POTENTIAL_SHADOW_VERSION
 ]
+persisted_gate_exclusions = get_model_gate_exclusions()
+excluded = set(persisted_gate_exclusions)
+gate_lineage_snapshots = select_equity_gate_lineage_snapshots(shadow_snapshots, excluded)
 promotion_archive_snapshots = [
     row for row in shadow_snapshots
     if str(row.get("challenger_model_version")) == COVERAGE_AWARE_SHADOW_VERSION
@@ -149,12 +155,26 @@ promotion_comparisons = prepare_shadow_comparisons(
 retired_comparisons = prepare_shadow_comparisons(retired_snapshots, predictions, labels, horizon="3M")
 
 tickers = sorted({str(row["ticker"]) for row in comparisons})
-persisted_gate_exclusions = get_model_gate_exclusions()
-excluded = set(persisted_gate_exclusions)
-gate_comparisons = [row for row in comparisons if row["ticker"] not in excluded]
+gate_comparisons = prepare_shadow_comparisons(
+    gate_lineage_snapshots, predictions, labels, horizon="3M",
+)
 gate_report = build_model_tuning_report(gate_comparisons)
 coverage = gate_report["coverage"]
 gate = gate_report["gate"]
+
+active_report = build_model_tuning_report(prepare_shadow_comparisons(
+    select_equity_gate_lineage_snapshots(active_snapshots, excluded), predictions, labels, horizon="3M",
+))
+st.subheader(f"Promotion readiness · {gate['passed']}/{gate['total']} gates")
+summary_columns = st.columns(4)
+summary_columns[0].metric("Current v5 captures", active_report["coverage"]["snapshots"])
+summary_columns[1].metric("Current v5 matured changes", active_report["coverage"]["matured_signal_changes"])
+summary_columns[2].metric("Current v5 collection / aging", f"{active_report['coverage']['changed_pipeline_progress_pct']}%")
+summary_columns[3].metric("Compatible lineage collection / aging", f"{coverage['changed_pipeline_progress_pct']}%")
+st.caption("Collection progress measures capture and elapsed time. It is not accuracy or the probability of promotion.")
+st.info("The gate lineage pools compatible v3/v5 equity records. Current v5 evidence is shown separately. "
+        "Overlapping 3M horizons and calendar dates do not establish statistical independence; legacy core "
+        "replays do not reproduce the industry-calibrated live route.")
 
 model_grid = "".join([
     _model_card(
@@ -171,14 +191,15 @@ model_grid = "".join([
         "The direct recovery model recorded when the current live version was activated.", "rollback",
     ),
 ])
-st.html(f"<div class='mt-model-grid'>{model_grid}</div>")
+with st.expander("Model versions and rollback"):
+    st.html(f"<div class='mt-model-grid'>{model_grid}</div>")
 
-with st.expander("How this page works · read in 30 seconds", expanded=True):
+with st.expander("How this page works · read in 30 seconds", expanded=False):
     st.html("""
     <div class='mt-step-grid'>
       <div class='mt-step'><div class='mt-step-number'>1 · Observe</div><strong>Live and shadow score together</strong><p>The shadow never reaches Dashboard decisions.</p></div>
       <div class='mt-step'><div class='mt-step-number'>2 · Wait</div><strong>The same 3M outcome matures</strong><p>No future data may enter the original decision.</p></div>
-      <div class='mt-step'><div class='mt-step-number'>3 · Compare</div><strong>Benchmark-relative utility is paired</strong><p>Dates—not ticker rows—are independent evidence.</p></div>
+      <div class='mt-step'><div class='mt-step-number'>3 · Compare</div><strong>Benchmark-relative utility is paired</strong><p>Dates cluster observations; overlapping horizons remain dependent.</p></div>
       <div class='mt-step'><div class='mt-step-number'>4 · Decide</div><strong>Six gates permit human review</strong><p>Green gates never promote a model automatically.</p></div>
     </div>
     """)
@@ -228,6 +249,49 @@ if promotion:
                 f"Accuracy · {_interval(prospective['accuracy_interval'], points=True)}"
             )
 
+        st.markdown("#### Nonstationarity watch")
+        temporal = prospective["temporal_evidence"]
+        window_dates = int(temporal["window_dates"])
+        if temporal["status"] == "collecting_evidence":
+            st.info(
+                f"Adjacent-window comparison is waiting for "
+                f"{int(temporal['required_dates'])} distinct decision dates "
+                f"({int(temporal['independent_dates'])} available). It will compare two consecutive "
+                f"{window_dates}-date blocks after reducing every cutoff to one cross-ticker mean."
+            )
+        else:
+            prior_window = temporal["prior_window"]
+            recent_window = temporal["recent_window"]
+            drift_columns = st.columns(4)
+            drift_columns[0].metric(
+                f"Prior {window_dates}-date utility", _pct(prior_window["utility_pct"]),
+            )
+            drift_columns[1].metric(
+                f"Recent {window_dates}-date utility", _pct(recent_window["utility_pct"]),
+            )
+            drift_columns[2].metric(
+                "Utility level change", _pct(temporal["utility_change_pct"]),
+            )
+            drift_columns[3].metric(
+                "Accuracy level change", _pct(temporal["accuracy_change"], points=True),
+            )
+            st.caption(
+                f"Prior window {prior_window['start_date']} to {prior_window['end_date']} · "
+                f"recent window {recent_window['start_date']} to {recent_window['end_date']}. "
+                "Dates receive equal weight; ticker count cannot make one market cutoff look independent."
+            )
+            if temporal["utility_sign_reversal"]:
+                st.warning(
+                    "Average date-clustered utility crossed zero between the adjacent windows. "
+                    "Treat this as a trajectory to inspect, not as a causal drift test or an automatic "
+                    "rollback signal."
+                )
+            else:
+                st.caption(
+                    "No utility sign reversal appears in the two observed windows. Magnitude changes remain "
+                    "descriptive and do not alter the live model."
+                )
+
 with st.expander("Research-view filters · do not alter promotion gates", expanded=False):
     filter_columns = st.columns(4)
     modes = sorted({str(row["coverage_mode"]) for row in comparisons})
@@ -248,347 +312,354 @@ report = build_model_tuning_report(filtered)
 
 readiness_tab, outcomes_tab, diagnostics_tab, lineage_tab, archive_tab = st.tabs([
     "Readiness", "Paired outcomes", "Score diagnostics", "Lineage & maturity", "Promotion archive",
-])
+], key="detail_tabs", on_change="rerun")
 
 with readiness_tab:
-    status_color = {
-        "Collecting evidence": "gray", "Inconclusive": "orange",
-        "Eligible for human review": "green",
-    }.get(str(gate["status"]), "gray")
-    st.subheader("Can the active shadow be considered for promotion?")
-    st.markdown(f"**Current answer:** :{status_color}[{gate['status']}] · **{gate['passed']}/{gate['total']} gates green**")
-    st.caption(str(gate["rationale"]))
-    if not comparisons:
-        st.info(
-            "No active-shadow snapshots exist yet. Loading the Dashboard records prospective observations; "
-            "legacy outcomes will not be reused or invented."
-        )
-    metric_row_one = st.columns(3)
-    metric_row_one[0].metric("Active snapshots", int(coverage["snapshots"]))
-    metric_row_one[1].metric("Included tickers", int(coverage["tickers"]))
-    metric_row_one[2].metric("Independent dates", int(coverage["independent_dates"]))
-    metric_row_two = st.columns(3)
-    metric_row_two[0].metric("Matured 3M pairs", int(coverage["matured_observations"]))
-    metric_row_two[1].metric("Changed diagnostics", int(coverage["signal_changes"]))
-    metric_row_two[2].metric("Matured changed dates", int(coverage["changed_dates"]))
-    st.caption(
-        "A large snapshot count is not enough: the decisive bottleneck is mature outcomes from dates "
-        "on which the shadow would actually have changed the diagnostic."
-    )
-
-    st.markdown("#### Promotion-readiness gates")
-    st.caption(
-        "Pipeline percentage measures evidence completion—not the probability of passing. "
-        f"Currently {coverage['pending_signal_changes']} changed observations across "
-        f"{coverage['pending_changed_dates']} date(s) are awaiting 3M outcomes."
-    )
-    gate_columns = st.columns(2)
-    for index, criterion in enumerate(gate["criteria"]):
-        icon = (
-            "🟢" if criterion["passed"] else
-            "⚪" if not criterion["available"] or gate["status"] == "Collecting evidence" else "🔴"
-        )
-        with gate_columns[index % 2]:
-            with st.container(border=True):
-                st.markdown(f"**{icon} {criterion['criterion']}**")
-                st.markdown(f"**Observed:** {criterion['observed']}")
-                st.progress(
-                    int(criterion["progress_pct"]),
-                    text=f"Evidence pipeline · {int(criterion['progress_pct'])}%",
-                )
-                st.caption(str(criterion["progress_detail"]))
-                st.caption(f"Pass rule · {criterion['required']}")
-                st.caption(str(criterion["purpose"]))
-
-    gate_universe_options = sorted(set(tickers) | set(persisted_gate_exclusions))
-    with st.expander("Promotion gate universe", expanded=False):
+    if readiness_tab.open:
+        status_color = {
+            "Collecting evidence": "gray", "Inconclusive": "orange",
+            "Eligible for human review": "green",
+        }.get(str(gate["status"]), "gray")
+        st.subheader("Can the active shadow be considered for promotion?")
+        st.markdown(f"**Current answer:** :{status_color}[{gate['status']}] · **{gate['passed']}/{gate['total']} gates green**")
+        st.caption(str(gate["rationale"]))
+        if not comparisons:
+            st.info(
+                "No active-shadow snapshots exist yet. Loading the Dashboard records prospective observations; "
+                "legacy outcomes will not be reused or invented."
+            )
+        metric_row_one = st.columns(3)
+        metric_row_one[0].metric("Compatible lineage snapshots", int(coverage["snapshots"]))
+        metric_row_one[1].metric("Included tickers", int(coverage["tickers"]))
+        metric_row_one[2].metric("Distinct cutoff dates", int(coverage["independent_dates"]))
+        metric_row_two = st.columns(3)
+        metric_row_two[0].metric("Matured 3M pairs", int(coverage["matured_observations"]))
+        metric_row_two[1].metric("Changed diagnostics", int(coverage["signal_changes"]))
+        metric_row_two[2].metric("Matured changed dates", int(coverage["changed_dates"]))
         st.caption(
-            "Excluded tickers retain every snapshot and outcome but do not contribute to these six gates."
+            "A large snapshot count is not enough: the decisive bottleneck is mature outcomes from dates "
+            "on which the shadow would actually have changed the diagnostic."
         )
-        pending_gate_exclusions = st.multiselect(
-            "Excluded from promotion gates", gate_universe_options,
-            default=persisted_gate_exclusions, key="pending_model_gate_exclusions",
-        )
-        if st.button("Save gate universe", type="primary"):
-            save_model_gate_exclusions(pending_gate_exclusions)
-            st.success("Gate universe saved; underlying evidence remains intact.")
-            st.rerun()
+
+        st.markdown("#### Promotion-readiness gates")
         st.caption(
-            "Currently excluded · " + (" · ".join(persisted_gate_exclusions) if persisted_gate_exclusions else "None")
+            "Pipeline percentage measures evidence completion—not the probability of passing. "
+            "Equity gates preserve the declared v3→v5 FINRA-compatible lineage; excluded BTC evidence "
+            "remains isolated in v5. "
+            f"Currently {coverage['pending_signal_changes']} changed observations across "
+            f"{coverage['pending_changed_dates']} date(s) are awaiting 3M outcomes."
         )
+        gate_columns = st.columns(2)
+        for index, criterion in enumerate(gate["criteria"]):
+            icon = (
+                "🟢" if criterion["passed"] else
+                "⚪" if not criterion["available"] or gate["status"] == "Collecting evidence" else "🔴"
+            )
+            with gate_columns[index % 2]:
+                with st.container(border=True):
+                    st.markdown(f"**{icon} {criterion['criterion']}**")
+                    st.markdown(f"**Observed:** {criterion['observed']}")
+                    st.progress(
+                        int(criterion["progress_pct"]),
+                        text=f"Evidence pipeline · {int(criterion['progress_pct'])}%",
+                    )
+                    st.caption(str(criterion["progress_detail"]))
+                    st.caption(f"Pass rule · {criterion['required']}")
+                    st.caption(str(criterion["purpose"]))
+
+        gate_universe_options = sorted(set(tickers) | set(persisted_gate_exclusions))
+        with st.expander("Promotion gate universe", expanded=False):
+            st.caption(
+                "Excluded tickers retain every snapshot and outcome but do not contribute to these six gates."
+            )
+            pending_gate_exclusions = st.multiselect(
+                "Excluded from promotion gates", gate_universe_options,
+                default=persisted_gate_exclusions, key="pending_model_gate_exclusions",
+            )
+            if st.button("Save gate universe", type="primary"):
+                save_model_gate_exclusions(pending_gate_exclusions)
+                st.success("Gate universe saved; underlying evidence remains intact.")
+                st.rerun()
+            st.caption(
+                "Currently excluded · " + (" · ".join(persisted_gate_exclusions) if persisted_gate_exclusions else "None")
+            )
 
 with outcomes_tab:
-    st.subheader("Paired 3M benchmark-relative outcomes")
-    st.caption(
-        "Active comparison: current live versus active shadow, using the same ticker, cutoff, outcome "
-        "contract, transaction-cost convention, and benchmark."
-    )
-    active_coverage = report["coverage"]
-    if active_coverage["matured_observations"] == 0:
-        st.info("No selected active-shadow observation has a mature 3M paired outcome yet.")
-    elif active_coverage["matured_signal_changes"] == 0:
-        st.info(
-            f"{active_coverage['matured_observations']} paired observations across "
-            f"{active_coverage['matured_dates']} dates have matured, but none changed the diagnostic. "
-            "They measure policy equivalence so far; they cannot establish shadow improvement."
+    if outcomes_tab.open:
+        st.subheader("Paired 3M benchmark-relative outcomes")
+        st.caption(
+            "Active comparison: current live versus active shadow, using the same ticker, cutoff, outcome "
+            "contract, transaction-cost convention, and benchmark."
         )
-    _render_pair_summary(
-        report, live_label="Current live utility", candidate_label="Active shadow utility",
-    )
-
-    st.markdown("#### Outcomes where the diagnostic changed")
-    changed_pair = report["changed_paired"]
-    if active_coverage["matured_signal_changes"] == 0:
-        with st.container(border=True):
+        active_coverage = report["coverage"]
+        if active_coverage["matured_observations"] == 0:
+            st.info("No selected active-shadow observation has a mature 3M paired outcome yet.")
+        elif active_coverage["matured_signal_changes"] == 0:
             st.info(
-                f"Not calculable yet. {active_coverage['pending_signal_changes']} changed observations across "
-                f"{active_coverage['pending_changed_dates']} date(s) are still awaiting their 3M outcomes."
+                f"{active_coverage['matured_observations']} paired observations across "
+                f"{active_coverage['matured_dates']} dates have matured, but none changed the diagnostic. "
+                "They measure policy equivalence so far; they cannot establish shadow improvement."
             )
-    else:
-        changed_columns = st.columns(2)
-        changed_columns[0].metric("Changed-signal utility Δ", _pct(changed_pair["utility_delta_pct"]["estimate"]))
-        changed_columns[0].caption(_interval(changed_pair["utility_delta_pct"]))
-        changed_columns[1].metric(
-            "Changed-signal accuracy Δ", _pct(changed_pair["accuracy_delta"]["estimate"], points=True),
+        _render_pair_summary(
+            report, live_label="Current live utility", candidate_label="Active shadow utility",
         )
-        changed_columns[1].caption(_interval(changed_pair["accuracy_delta"], points=True))
 
-    st.markdown("#### Utility evolution by independent decision date")
-    active_chart = _utility_curve(
-        filtered, live_label="Current live", candidate_label="Active shadow",
-    )
-    if active_chart is None:
-        st.info("The curve will appear after the first selected 3M outcome matures.")
-    else:
-        st.plotly_chart(active_chart, use_container_width=True)
-        overlap = cumulative_curve_overlap(filtered)
-        if overlap["fully_overlapping"]:
-            st.info(
-                f"Both traces are present and overlap exactly on all {overlap['dates']} matured dates. "
-                "The dotted open-circle line is current live; the solid diamond line is active shadow. "
-                "Exact overlap means the matured diagnostics were identical."
-            )
+        st.markdown("#### Outcomes where the diagnostic changed")
+        changed_pair = report["changed_paired"]
+        if active_coverage["matured_signal_changes"] == 0:
+            with st.container(border=True):
+                st.info(
+                    f"Not calculable yet. {active_coverage['pending_signal_changes']} changed observations across "
+                    f"{active_coverage['pending_changed_dates']} date(s) are still awaiting their 3M outcomes."
+                )
         else:
-            st.caption(
-                f"Curve overlap · {overlap['overlapping_dates']}/{overlap['dates']} dates · "
-                f"maximum expanding utility gap {float(overlap['max_gap_pct']):.2f} percentage points."
+            changed_columns = st.columns(2)
+            changed_columns[0].metric("Changed-signal utility Δ", _pct(changed_pair["utility_delta_pct"]["estimate"]))
+            changed_columns[0].caption(_interval(changed_pair["utility_delta_pct"]))
+            changed_columns[1].metric(
+                "Changed-signal accuracy Δ", _pct(changed_pair["accuracy_delta"]["estimate"], points=True),
             )
+            changed_columns[1].caption(_interval(changed_pair["accuracy_delta"], points=True))
 
-    matured_rows = [row for row in filtered if row.get("utility_delta_pct") is not None]
-    with st.expander(f"Inspect matured paired rows · {len(matured_rows)}", expanded=False):
-        if not matured_rows:
-            st.caption("No matured rows in the current research view.")
+        st.markdown("#### Utility evolution by cutoff date")
+        active_chart = _utility_curve(
+            filtered, live_label="Current live", candidate_label="Active shadow",
+        )
+        if active_chart is None:
+            st.info("The curve will appear after the first selected 3M outcome matures.")
         else:
-            matured_frame = pd.DataFrame(matured_rows)[[
-                "ticker", "as_of_date", "live_signal", "shadow_signal", "relative_return_pct",
-                "live_utility_pct", "shadow_utility_pct", "utility_delta_pct",
-            ]]
+            st.plotly_chart(active_chart, use_container_width=True)
+            overlap = cumulative_curve_overlap(filtered)
+            if overlap["fully_overlapping"]:
+                st.info(
+                    f"Both traces are present and overlap exactly on all {overlap['dates']} matured dates. "
+                    "The dotted open-circle line is current live; the solid diamond line is active shadow. "
+                    "Exact overlap means the matured diagnostics were identical."
+                )
+            else:
+                st.caption(
+                    f"Curve overlap · {overlap['overlapping_dates']}/{overlap['dates']} dates · "
+                    f"maximum expanding utility gap {float(overlap['max_gap_pct']):.2f} percentage points."
+                )
+
+        matured_rows = [row for row in filtered if row.get("utility_delta_pct") is not None]
+        with st.expander(f"Inspect matured paired rows · {len(matured_rows)}", expanded=False):
+            if not matured_rows:
+                st.caption("No matured rows in the current research view.")
+            else:
+                matured_frame = pd.DataFrame(matured_rows)[[
+                    "ticker", "as_of_date", "live_signal", "shadow_signal", "relative_return_pct",
+                    "live_utility_pct", "shadow_utility_pct", "utility_delta_pct",
+                ]]
+                st.dataframe(
+                    zebra_table(matured_frame), hide_index=True, use_container_width=True,
+                    height=min(620, 42 + len(matured_frame) * 35),
+                    column_config={
+                        "relative_return_pct": st.column_config.NumberColumn("3M relative return", format="%+.2f%%"),
+                        "live_utility_pct": st.column_config.NumberColumn("Live utility", format="%+.2f%%"),
+                        "shadow_utility_pct": st.column_config.NumberColumn("Shadow utility", format="%+.2f%%"),
+                        "utility_delta_pct": st.column_config.NumberColumn("Utility Δ", format="%+.2f%%"),
+                    },
+                )
+
+with diagnostics_tab:
+    if diagnostics_tab.open:
+        st.subheader("How the active shadow differs before outcomes mature")
+        st.caption(
+            "These are diagnostic comparisons, not performance claims. A score change without a label change "
+            "does not yet create a different investment decision."
+        )
+        frame = pd.DataFrame(filtered)
+        if frame.empty:
+            st.info("No active-shadow observations match the selected research filters.")
+        else:
+            chart_columns = st.columns(2)
+            with chart_columns[0]:
+                histogram = px.histogram(
+                    frame, x="score_delta", color="coverage_mode", nbins=24,
+                    labels={"score_delta": "Active shadow − current live Entry points", "count": "Snapshots"},
+                )
+                histogram.update_layout(legend={"orientation": "h", "y": 1.08})
+                st.plotly_chart(style_figure(histogram, height=370), use_container_width=True)
+            with chart_columns[1]:
+                transitions = (
+                    frame.groupby(["live_signal", "shadow_signal"], as_index=False)
+                    .size().rename(columns={"size": "snapshots"})
+                )
+                transition_chart = px.bar(
+                    transitions, x="live_signal", y="snapshots", color="shadow_signal", barmode="stack",
+                    labels={"live_signal": "Current live diagnostic", "shadow_signal": "Active shadow diagnostic"},
+                )
+                transition_chart.update_layout(legend={"orientation": "h", "y": 1.08})
+                st.plotly_chart(style_figure(transition_chart, height=370), use_container_width=True)
+            timeline = (
+                frame.groupby("as_of_date", as_index=False)
+                .agg(mean_score_delta=("score_delta", "mean"), signal_changes=("signal_changed", "sum"))
+            )
+            timeline_chart = go.Figure()
+            timeline_chart.add_trace(go.Scatter(
+                x=timeline["as_of_date"], y=timeline["mean_score_delta"],
+                name="Mean score Δ", mode="lines+markers",
+            ))
+            timeline_chart.add_trace(go.Bar(
+                x=timeline["as_of_date"], y=timeline["signal_changes"],
+                name="Diagnostic changes", opacity=.3, yaxis="y2",
+            ))
+            timeline_chart.update_layout(
+                hovermode="x unified", legend={"orientation": "h", "y": 1.08},
+                yaxis={"title": "Active shadow − current live points"},
+                yaxis2={"title": "Changes", "overlaying": "y", "side": "right", "rangemode": "tozero"},
+            )
+            st.plotly_chart(style_figure(timeline_chart, height=390), use_container_width=True)
+
+            st.markdown("#### Stability drill-down")
+            selector = st.radio(
+                "Break down by", ["Ticker", "Coverage mode", "Technical regime", "Simulation source"],
+                horizontal=True,
+            )
+            lookup = {
+                "Ticker": ("by_ticker", "ticker"), "Coverage mode": ("by_coverage_mode", "coverage_mode"),
+                "Technical regime": ("by_technical_regime", "technical_regime"),
+                "Simulation source": ("by_simulation_source", "simulation_source"),
+            }
+            report_key, label = lookup[selector]
+            breakdown = pd.DataFrame(report[report_key])
             st.dataframe(
-                zebra_table(matured_frame), hide_index=True, use_container_width=True,
-                height=min(620, 42 + len(matured_frame) * 35),
+                zebra_table(breakdown), hide_index=True, use_container_width=True,
+                height=min(620, 42 + len(breakdown) * 35),
+                column_config={
+                    label: st.column_config.TextColumn(selector),
+                    "utility_delta_pct": st.column_config.NumberColumn("Utility Δ", format="%+.2f%%"),
+                    "accuracy_delta_pp": st.column_config.NumberColumn("Accuracy Δ", format="%+.2f pp"),
+                    "mean_score_delta": st.column_config.NumberColumn("Score Δ", format="%+.2f"),
+                },
+            )
+            st.caption("Small groups are descriptive only; they are not independent promotion tests.")
+
+with lineage_tab:
+    if lineage_tab.open:
+        st.subheader("Evidence lineage and maturity")
+        label_statuses = coverage["label_statuses"]
+        broken_links = int(label_statuses.get("prediction_not_linked", 0))
+        if broken_links:
+            st.error(f"Lineage integrity warning · {broken_links} observation(s) are not linked to a prediction.")
+        else:
+            st.success("Lineage integrity check passed · every active observation is linked to a prediction.")
+        definitions = {
+            "available": "A valid 3M benchmark-relative outcome is attached and may enter paired analysis.",
+            "awaiting_outcome": "Prediction is linked; the 3M horizon has not completed.",
+            "pending": "Outcome materialization is scheduled or still incomplete.",
+            "unavailable": "Required evidence is missing; it remains non-directional.",
+            "prediction_not_linked": "Integrity defect: no matching immutable prediction exists.",
+        }
+        status_rows = []
+        for status in sorted(set(definitions) | set(label_statuses)):
+            status_rows.append({
+                "Outcome status": status.replace("_", " ").title(),
+                "Snapshots": int(label_statuses.get(status, 0)),
+                "Meaning": definitions.get(status, "Preserved provider status."),
+            })
+        st.dataframe(zebra_table(pd.DataFrame(status_rows)), hide_index=True, use_container_width=True)
+        st.caption("Missing or unavailable evidence never becomes neutral, positive, or negative evidence.")
+
+        detail_columns = [
+            "ticker", "as_of_date", "current_model_version", "challenger_model_version", "surface",
+            "simulation_source", "coverage_mode", "live_score", "shadow_score", "score_delta",
+            "live_signal", "shadow_signal", "signal_changed", "label_status", "outcome_end_date",
+            "relative_return_pct", "utility_delta_pct",
+        ]
+        if not filtered:
+            st.info("No lineage rows match the selected research filters.")
+        else:
+            detail = pd.DataFrame(filtered)[detail_columns].sort_values(
+                ["as_of_date", "ticker"], ascending=[False, True],
+            )
+            st.dataframe(
+                zebra_table(detail), hide_index=True, use_container_width=True,
+                height=min(720, 42 + len(detail) * 35),
                 column_config={
                     "relative_return_pct": st.column_config.NumberColumn("3M relative return", format="%+.2f%%"),
-                    "live_utility_pct": st.column_config.NumberColumn("Live utility", format="%+.2f%%"),
-                    "shadow_utility_pct": st.column_config.NumberColumn("Shadow utility", format="%+.2f%%"),
                     "utility_delta_pct": st.column_config.NumberColumn("Utility Δ", format="%+.2f%%"),
+                    "score_delta": st.column_config.NumberColumn("Score Δ", format="%+.1f"),
                 },
             )
 
-with diagnostics_tab:
-    st.subheader("How the active shadow differs before outcomes mature")
-    st.caption(
-        "These are diagnostic comparisons, not performance claims. A score change without a label change "
-        "does not yet create a different investment decision."
-    )
-    frame = pd.DataFrame(filtered)
-    if frame.empty:
-        st.info("No active-shadow observations match the selected research filters.")
-    else:
-        chart_columns = st.columns(2)
-        with chart_columns[0]:
-            histogram = px.histogram(
-                frame, x="score_delta", color="coverage_mode", nbins=24,
-                labels={"score_delta": "Active shadow − current live Entry points", "count": "Snapshots"},
-            )
-            histogram.update_layout(legend={"orientation": "h", "y": 1.08})
-            st.plotly_chart(style_figure(histogram, height=370), use_container_width=True)
-        with chart_columns[1]:
-            transitions = (
-                frame.groupby(["live_signal", "shadow_signal"], as_index=False)
-                .size().rename(columns={"size": "snapshots"})
-            )
-            transition_chart = px.bar(
-                transitions, x="live_signal", y="snapshots", color="shadow_signal", barmode="stack",
-                labels={"live_signal": "Current live diagnostic", "shadow_signal": "Active shadow diagnostic"},
-            )
-            transition_chart.update_layout(legend={"orientation": "h", "y": 1.08})
-            st.plotly_chart(style_figure(transition_chart, height=370), use_container_width=True)
-        timeline = (
-            frame.groupby("as_of_date", as_index=False)
-            .agg(mean_score_delta=("score_delta", "mean"), signal_changes=("signal_changed", "sum"))
-        )
-        timeline_chart = go.Figure()
-        timeline_chart.add_trace(go.Scatter(
-            x=timeline["as_of_date"], y=timeline["mean_score_delta"],
-            name="Mean score Δ", mode="lines+markers",
-        ))
-        timeline_chart.add_trace(go.Bar(
-            x=timeline["as_of_date"], y=timeline["signal_changes"],
-            name="Diagnostic changes", opacity=.3, yaxis="y2",
-        ))
-        timeline_chart.update_layout(
-            hovermode="x unified", legend={"orientation": "h", "y": 1.08},
-            yaxis={"title": "Active shadow − current live points"},
-            yaxis2={"title": "Changes", "overlaying": "y", "side": "right", "rangemode": "tozero"},
-        )
-        st.plotly_chart(style_figure(timeline_chart, height=390), use_container_width=True)
-
-        st.markdown("#### Stability drill-down")
-        selector = st.radio(
-            "Break down by", ["Ticker", "Coverage mode", "Technical regime", "Simulation source"],
-            horizontal=True,
-        )
-        lookup = {
-            "Ticker": ("by_ticker", "ticker"), "Coverage mode": ("by_coverage_mode", "coverage_mode"),
-            "Technical regime": ("by_technical_regime", "technical_regime"),
-            "Simulation source": ("by_simulation_source", "simulation_source"),
-        }
-        report_key, label = lookup[selector]
-        breakdown = pd.DataFrame(report[report_key])
-        st.dataframe(
-            zebra_table(breakdown), hide_index=True, use_container_width=True,
-            height=min(620, 42 + len(breakdown) * 35),
-            column_config={
-                label: st.column_config.TextColumn(selector),
-                "utility_delta_pct": st.column_config.NumberColumn("Utility Δ", format="%+.2f%%"),
-                "accuracy_delta_pp": st.column_config.NumberColumn("Accuracy Δ", format="%+.2f pp"),
-                "mean_score_delta": st.column_config.NumberColumn("Score Δ", format="%+.2f"),
-            },
-        )
-        st.caption("Small groups are descriptive only; they are not independent promotion tests.")
-
-with lineage_tab:
-    st.subheader("Evidence lineage and maturity")
-    label_statuses = coverage["label_statuses"]
-    broken_links = int(label_statuses.get("prediction_not_linked", 0))
-    if broken_links:
-        st.error(f"Lineage integrity warning · {broken_links} observation(s) are not linked to a prediction.")
-    else:
-        st.success("Lineage integrity check passed · every active observation is linked to a prediction.")
-    definitions = {
-        "available": "A valid 3M benchmark-relative outcome is attached and may enter paired analysis.",
-        "awaiting_outcome": "Prediction is linked; the 3M horizon has not completed.",
-        "pending": "Outcome materialization is scheduled or still incomplete.",
-        "unavailable": "Required evidence is missing; it remains non-directional.",
-        "prediction_not_linked": "Integrity defect: no matching immutable prediction exists.",
-    }
-    status_rows = []
-    for status in sorted(set(definitions) | set(label_statuses)):
-        status_rows.append({
-            "Outcome status": status.replace("_", " ").title(),
-            "Snapshots": int(label_statuses.get(status, 0)),
-            "Meaning": definitions.get(status, "Preserved provider status."),
-        })
-    st.dataframe(zebra_table(pd.DataFrame(status_rows)), hide_index=True, use_container_width=True)
-    st.caption("Missing or unavailable evidence never becomes neutral, positive, or negative evidence.")
-
-    detail_columns = [
-        "ticker", "as_of_date", "current_model_version", "challenger_model_version", "surface",
-        "simulation_source", "coverage_mode", "live_score", "shadow_score", "score_delta",
-        "live_signal", "shadow_signal", "signal_changed", "label_status", "outcome_end_date",
-        "relative_return_pct", "utility_delta_pct",
-    ]
-    if not filtered:
-        st.info("No lineage rows match the selected research filters.")
-    else:
-        detail = pd.DataFrame(filtered)[detail_columns].sort_values(
-            ["as_of_date", "ticker"], ascending=[False, True],
-        )
-        st.dataframe(
-            zebra_table(detail), hide_index=True, use_container_width=True,
-            height=min(720, 42 + len(detail) * 35),
-            column_config={
-                "relative_return_pct": st.column_config.NumberColumn("3M relative return", format="%+.2f%%"),
-                "utility_delta_pct": st.column_config.NumberColumn("Utility Δ", format="%+.2f%%"),
-                "score_delta": st.column_config.NumberColumn("Score Δ", format="%+.1f"),
-            },
-        )
-
 with archive_tab:
-    st.subheader("Frozen promotion audit")
-    st.caption(
-        "This section alone shows the former-live versus promoted-policy experiment. It is immutable, "
-        "already consumed, and cannot authorize promotion of the active shadow."
-    )
-    if not promotion_comparisons:
-        st.info("No frozen coverage-aware promotion comparison is available.")
-    else:
-        archived_current = str(promotion_comparisons[0]["current_model_version"])
-        archived_candidate = str(promotion_comparisons[0]["challenger_model_version"])
+    if archive_tab.open:
+        st.subheader("Frozen promotion audit")
         st.caption(
-            f"Frozen experiment · former live `{archived_current}` → candidate `{archived_candidate}`."
+            "This section alone shows the former-live versus promoted-policy experiment. It is immutable, "
+            "already consumed, and cannot authorize promotion of the active shadow."
         )
-        promotion_report = build_model_tuning_report(promotion_comparisons)
-        promotion_gate = promotion_report["gate"]
-        st.success(
-            f"Archived result · {promotion_gate['passed']}/{promotion_gate['total']} gates green · "
-            "the candidate was promoted and this evidence is now read-only."
-        )
-        _render_pair_summary(
-            promotion_report,
-            live_label="Former-live utility",
-            candidate_label="Promoted-policy utility",
-        )
-        archive_chart = _utility_curve(
-            promotion_comparisons, live_label="Former live", candidate_label="Promoted policy",
-        )
-        if archive_chart is not None:
-            st.plotly_chart(archive_chart, use_container_width=True)
-            archive_overlap = cumulative_curve_overlap(promotion_comparisons)
+        if not promotion_comparisons:
+            st.info("No frozen coverage-aware promotion comparison is available.")
+        else:
+            archived_current = str(promotion_comparisons[0]["current_model_version"])
+            archived_candidate = str(promotion_comparisons[0]["challenger_model_version"])
             st.caption(
-                f"Former-live/promoted overlap · {archive_overlap['overlapping_dates']}/"
-                f"{archive_overlap['dates']} dates · maximum expanding utility gap "
-                f"{float(archive_overlap['max_gap_pct'] or 0):.2f} percentage points. "
-                "Distinct line styles keep coincident portions visible."
+                f"Frozen experiment · former live `{archived_current}` → candidate `{archived_candidate}`."
             )
-        with st.expander("Archived gate evidence", expanded=False):
-            archive_columns = st.columns(2)
-            for index, criterion in enumerate(promotion_gate["criteria"]):
-                with archive_columns[index % 2]:
-                    icon = "🟢" if criterion["passed"] else "🔴"
-                    st.markdown(f"{icon} **{criterion['criterion']}** · {criterion['observed']}")
+            promotion_report = build_model_tuning_report(promotion_comparisons)
+            promotion_gate = promotion_report["gate"]
+            st.success(
+                f"Archived result · {promotion_gate['passed']}/{promotion_gate['total']} gates green · "
+                "the candidate was promoted and this evidence is now read-only."
+            )
+            _render_pair_summary(
+                promotion_report,
+                live_label="Former-live utility",
+                candidate_label="Promoted-policy utility",
+            )
+            archive_chart = _utility_curve(
+                promotion_comparisons, live_label="Former live", candidate_label="Promoted policy",
+            )
+            if archive_chart is not None:
+                st.plotly_chart(archive_chart, use_container_width=True)
+                archive_overlap = cumulative_curve_overlap(promotion_comparisons)
+                st.caption(
+                    f"Former-live/promoted overlap · {archive_overlap['overlapping_dates']}/"
+                    f"{archive_overlap['dates']} dates · maximum expanding utility gap "
+                    f"{float(archive_overlap['max_gap_pct'] or 0):.2f} percentage points. "
+                    "Distinct line styles keep coincident portions visible."
+                )
+            with st.expander("Archived gate evidence", expanded=False):
+                archive_columns = st.columns(2)
+                for index, criterion in enumerate(promotion_gate["criteria"]):
+                    with archive_columns[index % 2]:
+                        icon = "🟢" if criterion["passed"] else "🔴"
+                        st.markdown(f"{icon} **{criterion['criterion']}** · {criterion['observed']}")
 
-    st.markdown("#### Other retired shadow experiments")
-    if not retired_comparisons:
-        st.caption("No additional retired shadow evidence is stored.")
-    else:
-        retired_rows = []
-        experiment_keys = sorted({
-            (str(row["current_model_version"]), str(row["challenger_model_version"]))
-            for row in retired_comparisons
-        })
-        for current_version, challenger_version in experiment_keys:
-            experiment = [
-                row for row in retired_comparisons
-                if row["current_model_version"] == current_version
-                and row["challenger_model_version"] == challenger_version
-            ]
-            experiment_report = build_model_tuning_report(experiment)
-            experiment_coverage = experiment_report["coverage"]
-            retired_rows.append({
-                "Retired shadow": challenger_version,
-                "Compared with": current_version,
-                "Snapshots": experiment_coverage["snapshots"],
-                "Dates": experiment_coverage["independent_dates"],
-                "Matured 3M": experiment_coverage["matured_observations"],
-                "Diagnostic changes": experiment_coverage["signal_changes"],
-                "Final gate state": experiment_report["gate"]["status"],
+        st.markdown("#### Other retired shadow experiments")
+        if not retired_comparisons:
+            st.caption("No additional retired shadow evidence is stored.")
+        else:
+            retired_rows = []
+            experiment_keys = sorted({
+                (str(row["current_model_version"]), str(row["challenger_model_version"]))
+                for row in retired_comparisons
             })
-        st.dataframe(
-            zebra_table(pd.DataFrame(retired_rows)), hide_index=True, use_container_width=True,
-            height=min(420, 42 + len(retired_rows) * 35),
-        )
-        st.caption("Experiments remain separate; their evidence is never pooled across model versions.")
+            for current_version, challenger_version in experiment_keys:
+                experiment = [
+                    row for row in retired_comparisons
+                    if row["current_model_version"] == current_version
+                    and row["challenger_model_version"] == challenger_version
+                ]
+                experiment_report = build_model_tuning_report(experiment)
+                experiment_coverage = experiment_report["coverage"]
+                retired_rows.append({
+                    "Retired shadow": challenger_version,
+                    "Compared with": current_version,
+                    "Snapshots": experiment_coverage["snapshots"],
+                    "Dates": experiment_coverage["independent_dates"],
+                    "Matured 3M": experiment_coverage["matured_observations"],
+                    "Diagnostic changes": experiment_coverage["signal_changes"],
+                    "Final gate state": experiment_report["gate"]["status"],
+                })
+            st.dataframe(
+                zebra_table(pd.DataFrame(retired_rows)), hide_index=True, use_container_width=True,
+                height=min(420, 42 + len(retired_rows) * 35),
+            )
+            st.caption("Experiments remain separate; their evidence is never pooled across model versions.")
 
 st.divider()
 st.caption(

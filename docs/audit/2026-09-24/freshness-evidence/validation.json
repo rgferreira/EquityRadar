@@ -1,0 +1,20 @@
+{
+  "tests": 330,
+  "compile_import_modules": 64,
+  "zerotier_listener": "10.147.17.69:8501",
+  "rendered_dashboard_verified": true,
+  "mobile": {
+    "width": 390,
+    "document_width": 390,
+    "page_exceptions": 0,
+    "pages": [
+      "WhaleSeeker",
+      "Operations",
+      "Model tuning"
+    ]
+  },
+  "limitations": [
+    "No physical mobile latency measurement",
+    "Small UI sample, not a latency SLO"
+  ]
+}

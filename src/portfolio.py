@@ -1,6 +1,7 @@
 """Portfolio valuation helpers independent of the Streamlit UI."""
 
 from collections.abc import Mapping
+from datetime import date
 
 import pandas as pd
 
@@ -43,6 +44,46 @@ def calculate_flow_adjusted_benchmark(
         flow_factor = after_flow / before_flow if flow and before_flow > 0 else 1.0
         result.iloc[position] = float(result.iloc[position - 1]) * market_growth * flow_factor
     return result
+
+
+def calculate_benchmark_comparison(
+    portfolio_values: pd.Series,
+    benchmark_prices: pd.Series,
+    external_flows: pd.Series | None = None,
+    start_date: str | date | pd.Timestamp | None = None,
+    base: float = 100.0,
+) -> pd.DataFrame:
+    """Rebase portfolio and flow-adjusted benchmark from a selected date.
+
+    Non-trading dates start at the next date shared by both series. Flows before
+    that first comparison date form part of the opening value and are not
+    reapplied to the benchmark.
+    """
+    aligned = pd.concat(
+        [portfolio_values.rename("Portfolio"), benchmark_prices.rename("Benchmark")],
+        axis=1,
+        join="inner",
+    ).dropna().sort_index()
+    selected_start: pd.Timestamp | None = None
+    if start_date is not None:
+        selected_start = pd.Timestamp(start_date).tz_localize(None).normalize()
+        normalized_index = pd.DatetimeIndex(aligned.index).tz_localize(None).normalize()
+        aligned = aligned.loc[normalized_index >= selected_start]
+    if aligned.empty:
+        return pd.DataFrame(columns=["Portfolio", "Benchmark"], dtype=float)
+
+    flows = external_flows if external_flows is not None else pd.Series(dtype=float)
+    if selected_start is not None and not flows.empty:
+        normalized_flow_dates = pd.DatetimeIndex(flows.index).tz_localize(None).normalize()
+        flows = flows.loc[normalized_flow_dates >= selected_start]
+    adjusted_benchmark = calculate_flow_adjusted_benchmark(
+        aligned["Benchmark"], aligned["Portfolio"], flows, base,
+    )
+    return pd.concat(
+        [normalize_performance(aligned["Portfolio"], base), adjusted_benchmark.rename("Benchmark")],
+        axis=1,
+        join="inner",
+    ).dropna()
 
 
 def calculate_return_risk_metrics(series: pd.Series, risk_free_rate: float = 0.0) -> dict[str, float | None]:

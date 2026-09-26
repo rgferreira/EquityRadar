@@ -2,7 +2,8 @@ import pandas as pd
 import pytest
 
 from src.portfolio import (
-    calculate_flow_adjusted_benchmark, calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
+    calculate_benchmark_comparison, calculate_flow_adjusted_benchmark, calculate_portfolio_history,
+    calculate_return_risk_metrics, calculate_risk_contributions,
     calculate_time_weighted_return, enrich_holdings, normalize_performance,
     calculate_rebalance,
 )
@@ -104,6 +105,51 @@ def test_benchmark_receives_same_proportional_jump_as_portfolio_inflow():
         pd.Series([1000.0, 1000.0], index=[dates[0], dates[2]]),
     )
     assert result.tolist() == pytest.approx([100.0, 110.0, 220.0])
+
+
+def test_benchmark_comparison_rebases_both_series_on_selected_start():
+    dates = pd.date_range("2026-01-01", periods=4)
+    result = calculate_benchmark_comparison(
+        pd.Series([100.0, 110.0, 121.0, 133.1], index=dates),
+        pd.Series([100.0, 105.0, 110.0, 115.0], index=dates),
+        start_date="2026-01-02",
+    )
+    assert result.index.tolist() == dates[1:].tolist()
+    assert result["Portfolio"].tolist() == pytest.approx([100.0, 110.0, 121.0])
+    assert result["Benchmark"].tolist() == pytest.approx([100.0, 110 / 105 * 100, 115 / 105 * 100])
+
+
+def test_benchmark_comparison_uses_next_shared_close_for_non_trading_start():
+    dates = pd.to_datetime(["2026-01-02", "2026-01-05", "2026-01-06"])
+    result = calculate_benchmark_comparison(
+        pd.Series([100.0, 120.0, 132.0], index=dates),
+        pd.Series([100.0, 110.0, 121.0], index=dates),
+        start_date="2026-01-03",
+    )
+    assert result.index.tolist() == dates[1:].tolist()
+    assert result.iloc[0].tolist() == pytest.approx([100.0, 100.0])
+
+
+def test_benchmark_comparison_applies_only_flows_after_selected_start():
+    dates = pd.date_range("2026-01-01", periods=4)
+    result = calculate_benchmark_comparison(
+        pd.Series([100.0, 220.0, 242.0, 484.0], index=dates),
+        pd.Series([100.0, 110.0, 121.0, 133.1], index=dates),
+        pd.Series([100.0, 242.0], index=[dates[1], dates[3]]),
+        start_date=dates[1],
+    )
+    assert result["Benchmark"].tolist() == pytest.approx([100.0, 110.0, 242.0])
+
+
+def test_benchmark_comparison_is_empty_when_start_is_after_history():
+    dates = pd.date_range("2026-01-01", periods=2)
+    result = calculate_benchmark_comparison(
+        pd.Series([100.0, 110.0], index=dates),
+        pd.Series([100.0, 105.0], index=dates),
+        start_date="2026-02-01",
+    )
+    assert result.empty
+    assert result.columns.tolist() == ["Portfolio", "Benchmark"]
 
 
 def test_return_risk_metrics_include_return_drawdown_and_volatility():

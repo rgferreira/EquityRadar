@@ -18,6 +18,9 @@ from src.data.database import (
 )
 
 
+FINRA_DAILY_HISTORY_DAYS = 365
+
+
 class DailyShortVolumeProvider(Protocol):
     name: str
 
@@ -88,7 +91,7 @@ class FINRADailyShortVolumeProvider:
 
 def backfill_finra_daily_short_volume(
     tickers: list[str], provider: DailyShortVolumeProvider | None = None,
-    db_path: str | Path | None = None, *, lookback_days: int = 120,
+    db_path: str | Path | None = None, *, lookback_days: int = FINRA_DAILY_HISTORY_DAYS,
     now: datetime | None = None, force_full_lookback: bool = False,
 ) -> dict[str, int]:
     """Fetch missing files, optionally replaying the bounded window for new tickers."""

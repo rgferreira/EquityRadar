@@ -127,3 +127,32 @@ def daily_short_flow_evidence(
             f"modifier is capped at +/-{MODIFIER_CAP:.0f}. Flow is not open short interest."
         ),
     }
+
+
+def retrospective_daily_short_flow_evidence(
+    rows: Sequence[Mapping[str, object]] | None, *, as_of: date | str,
+) -> dict[str, object]:
+    """Calculate a clearly quarantined counterfactual from files retrieved after cutoff.
+
+    This helper deliberately bypasses historical `known_at` eligibility and must never feed
+    prospective Shadow snapshots, promotion gates, or official accuracy.
+    """
+    cutoff = _date(as_of)
+    if cutoff is None:
+        raise ValueError("Invalid retrospective daily short-flow cutoff")
+    synthetic = []
+    for row in rows or []:
+        trade_date = _date(row.get("trade_date"))
+        if trade_date is None or trade_date >= cutoff:
+            continue
+        synthetic.append({
+            **dict(row), "known_at": cutoff.isoformat(),
+            "known_at_status": "verified_observed",
+        })
+    evidence = daily_short_flow_evidence(synthetic, as_of=cutoff)
+    return {
+        **evidence,
+        "evidence_status": "retrospective_only",
+        "historical_availability": "not_point_in_time_verified",
+        "cutoff_policy": "trade dates strictly before cutoff; current retrieved revision",
+    }

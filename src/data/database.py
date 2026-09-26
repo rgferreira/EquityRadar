@@ -4,9 +4,12 @@ import sqlite3
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from threading import RLock
 
 from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
 from src.model_registry import (
+    finra_daily_short_flow_shadow_registration,
+    unified_shorts_v4_registration,
     coverage_aware_shadow_registration, current_model_registration,
     evidence_policy_previous_live_registration, previous_live_model_registration,
     legacy_technology_potential_shadow_registration,
@@ -14,14 +17,66 @@ from src.model_registry import (
 )
 
 
+SQLITE_BUSY_TIMEOUT_MS = 30_000
+_bootstrap_lock = RLock()
+_initialized_databases: dict[str, tuple[int, int]] = {}
+
+
+class _ClosingConnection(sqlite3.Connection):
+    """Commit or roll back a managed connection, then release its descriptor."""
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool | None:
+        try:
+            return super().__exit__(exc_type, exc, traceback)
+        finally:
+            self.close()
+
+
+def _database_path(db_path: str | Path | None = None) -> Path:
+    return Path(db_path or DATABASE_PATH).expanduser().resolve()
+
+
+def _database_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        status = path.stat()
+    except FileNotFoundError:
+        return None
+    return status.st_dev, status.st_ino
+
+
 def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path or DATABASE_PATH)
+    connection = sqlite3.connect(
+        _database_path(db_path),
+        timeout=SQLITE_BUSY_TIMEOUT_MS / 1000,
+        factory=_ClosingConnection,
+    )
     connection.row_factory = sqlite3.Row
+    connection.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     return connection
 
 
 def init_db(db_path: str | Path | None = None) -> None:
+    """Initialize one database once per process, serializing cold-start callers."""
+    database = _database_path(db_path)
+    key = str(database)
+    with _bootstrap_lock:
+        identity = _database_identity(database)
+        if identity is not None and _initialized_databases.get(key) == identity:
+            return
+        _init_db_unlocked(database)
+        initialized_identity = _database_identity(database)
+        if initialized_identity is None:
+            raise sqlite3.OperationalError("database initialization did not create the database")
+        _initialized_databases[key] = initialized_identity
+
+
+def _init_db_unlocked(db_path: str | Path) -> None:
     with get_connection(db_path) as connection:
+        journal_mode = str(connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+        if journal_mode != "wal":
+            raise sqlite3.OperationalError(
+                f"database could not enter WAL journal mode (reported {journal_mode})"
+            )
         connection.executescript("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 ticker TEXT PRIMARY KEY,
@@ -91,6 +146,13 @@ def init_db(db_path: str | Path | None = None) -> None:
                 quote_date TEXT,
                 fetched_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS dashboard_market_snapshots (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                tickers_json TEXT NOT NULL,
+                rows_json TEXT NOT NULL,
+                errors_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS positioning_history (
                 ticker TEXT NOT NULL,
                 snapshot_date TEXT NOT NULL,
@@ -128,6 +190,28 @@ def init_db(db_path: str | Path | None = None) -> None:
                 source_url TEXT NOT NULL,
                 fetched_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS bitcoin_derivatives_daily_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venue TEXT NOT NULL,
+                instrument TEXT NOT NULL,
+                period_date TEXT NOT NULL,
+                taker_buy_volume REAL NOT NULL CHECK(taker_buy_volume >= 0),
+                taker_sell_volume REAL NOT NULL CHECK(taker_sell_volume >= 0),
+                long_account_pct REAL NOT NULL CHECK(long_account_pct BETWEEN 0 AND 100),
+                short_account_pct REAL NOT NULL CHECK(short_account_pct BETWEEN 0 AND 100),
+                open_interest_value_quote REAL NOT NULL CHECK(open_interest_value_quote >= 0),
+                quote_currency TEXT NOT NULL,
+                provider_name TEXT NOT NULL,
+                source_endpoints_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                known_at TEXT NOT NULL,
+                known_at_status TEXT NOT NULL CHECK(known_at_status = 'verified_observed'),
+                fetched_at TEXT NOT NULL,
+                UNIQUE(venue, instrument, period_date, payload_hash)
+            );
+            CREATE INDEX IF NOT EXISTS bitcoin_derivatives_daily_venue_date
+                ON bitcoin_derivatives_daily_observations(venue, instrument, period_date);
             CREATE TABLE IF NOT EXISTS portfolio_lots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticker TEXT NOT NULL,
@@ -223,6 +307,39 @@ def init_db(db_path: str | Path | None = None) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(ticker, as_of_date, model_version)
             );
+            CREATE TABLE IF NOT EXISTS btc_simulation_enrichments (
+                enrichment_id TEXT PRIMARY KEY,
+                source_backtest_run_id INTEGER NOT NULL,
+                ticker TEXT NOT NULL CHECK(ticker = 'BTC-USD'),
+                as_of_date TEXT NOT NULL,
+                source_model_version TEXT NOT NULL,
+                methodology_version TEXT NOT NULL,
+                evidence_status TEXT NOT NULL CHECK(evidence_status = 'retrospective_only'),
+                metrics_json TEXT NOT NULL,
+                input_references_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_backtest_run_id, methodology_version),
+                FOREIGN KEY(source_backtest_run_id) REFERENCES backtest_runs(id)
+            );
+            CREATE INDEX IF NOT EXISTS btc_simulation_enrichments_cutoff
+                ON btc_simulation_enrichments(as_of_date, methodology_version);
+            CREATE TABLE IF NOT EXISTS finra_simulation_enrichments (
+                enrichment_id TEXT PRIMARY KEY,
+                source_backtest_run_id INTEGER NOT NULL,
+                ticker TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                source_model_version TEXT NOT NULL,
+                shadow_model_version TEXT NOT NULL,
+                methodology_version TEXT NOT NULL,
+                evidence_status TEXT NOT NULL CHECK(evidence_status = 'retrospective_only'),
+                metrics_json TEXT NOT NULL,
+                input_references_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_backtest_run_id, methodology_version),
+                FOREIGN KEY(source_backtest_run_id) REFERENCES backtest_runs(id)
+            );
+            CREATE INDEX IF NOT EXISTS finra_simulation_enrichments_cutoff
+                ON finra_simulation_enrichments(as_of_date, methodology_version);
             CREATE TABLE IF NOT EXISTS model_registry (
                 model_version TEXT PRIMARY KEY,
                 config_json TEXT NOT NULL,
@@ -270,6 +387,27 @@ def init_db(db_path: str | Path | None = None) -> None:
                 outcome_6m REAL,
                 outcome_12m REAL,
                 observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS latest_legacy_outcomes (
+                ticker TEXT NOT NULL,
+                as_of_date TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                latest_id INTEGER NOT NULL,
+                PRIMARY KEY(ticker, as_of_date, model_version)
+            );
+            CREATE TRIGGER IF NOT EXISTS project_latest_legacy_outcome
+            AFTER INSERT ON legacy_outcome_observations BEGIN
+                INSERT INTO latest_legacy_outcomes (ticker, as_of_date, model_version, latest_id)
+                VALUES (NEW.ticker, NEW.as_of_date, NEW.model_version, NEW.id)
+                ON CONFLICT(ticker, as_of_date, model_version) DO UPDATE
+                SET latest_id=excluded.latest_id
+                WHERE excluded.latest_id > latest_legacy_outcomes.latest_id;
+            END;
+            CREATE TABLE IF NOT EXISTS daily_refresh_attempts (
+                task_key TEXT NOT NULL,
+                attempt_day TEXT NOT NULL,
+                attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(task_key, attempt_day)
             );
             CREATE TABLE IF NOT EXISTS outcome_label_observations (
                 label_id TEXT PRIMARY KEY,
@@ -546,6 +684,15 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('finra_daily_short_volume_v1')"
         )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('bitcoin_derivatives_daily_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('btc_simulation_enrichment_v1')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('finra_simulation_enrichment_v1')"
+        )
         promotion_applied = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key='coverage_aware_live_promotion_v2'"
         ).fetchone()
@@ -559,6 +706,8 @@ def init_db(db_path: str | Path | None = None) -> None:
             evidence_policy_previous_live_registration(), current_model_registration(),
             legacy_technology_potential_shadow_registration(),
             previous_technology_potential_shadow_registration(),
+            finra_daily_short_flow_shadow_registration(),
+            unified_shorts_v4_registration(),
             technology_potential_shadow_registration(),
         ):
             existing_model = connection.execute(
@@ -585,6 +734,14 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
             (previous_technology_potential_shadow_registration()["model_version"],),
+        )
+        connection.execute(
+            "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
+            (finra_daily_short_flow_shadow_registration()["model_version"],),
+        )
+        connection.execute(
+            "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
+            (unified_shorts_v4_registration()["model_version"],),
         )
         connection.execute(
             "UPDATE model_registry SET status='retired' WHERE model_version=? AND is_active=0",
@@ -701,6 +858,21 @@ def init_db(db_path: str | Path | None = None) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO schema_migrations (migration_key) VALUES ('whaleseeker_backfill_v1')"
         )
+        if not connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration_key='latest_legacy_outcomes_v1'"
+        ).fetchone():
+            # One scan at migration; reads thereafter touch only the compact projection.
+            # The trigger also maintains it for writers running the previous app version.
+            connection.execute(
+                """INSERT INTO latest_legacy_outcomes (ticker, as_of_date, model_version, latest_id)
+                   SELECT ticker, as_of_date, model_version, MAX(id)
+                   FROM legacy_outcome_observations GROUP BY ticker, as_of_date, model_version
+                   ON CONFLICT(ticker, as_of_date, model_version) DO UPDATE SET
+                   latest_id=MAX(latest_legacy_outcomes.latest_id, excluded.latest_id)"""
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (migration_key) VALUES ('latest_legacy_outcomes_v1')"
+            )
         provenance_migrated = connection.execute(
             "SELECT 1 FROM schema_migrations WHERE migration_key = 'simulation_provenance_v1'"
         ).fetchone()
@@ -993,10 +1165,16 @@ def get_provider_health_states(
 
 
 def get_provider_health_transitions(
-    db_path: str | Path | None = None,
+    db_path: str | Path | None = None, *, limit: int | None = None,
 ) -> list[dict[str, object]]:
     init_db(db_path)
     with get_connection(db_path) as connection:
+        if limit is not None:
+            rows = connection.execute(
+                "SELECT * FROM provider_health_transitions ORDER BY id DESC LIMIT ?",
+                (max(0, int(limit)),),
+            ).fetchall()
+            return sorted((dict(row) for row in rows), key=lambda row: (row["occurred_at"], row["id"]))
         return [dict(row) for row in connection.execute(
             "SELECT * FROM provider_health_transitions ORDER BY occurred_at,id"
         ).fetchall()]
@@ -1179,10 +1357,7 @@ def get_backtest_runs(ticker: str | None = None, db_path: str | Path | None = No
     init_db(db_path)
     query = """WITH latest_outcomes AS (
         SELECT observations.* FROM legacy_outcome_observations AS observations
-        JOIN (
-            SELECT ticker, as_of_date, model_version, MAX(id) AS latest_id
-            FROM legacy_outcome_observations GROUP BY ticker, as_of_date, model_version
-        ) AS latest ON latest.latest_id = observations.id
+        JOIN latest_legacy_outcomes AS latest ON latest.latest_id = observations.id
     )
         SELECT backtest_runs.id, backtest_runs.ticker, backtest_runs.as_of_date,
         backtest_runs.coverage, backtest_runs.entry_score, backtest_runs.exit_score,
@@ -1216,6 +1391,104 @@ def get_backtest_runs(ticker: str | None = None, db_path: str | Path | None = No
     query += " ORDER BY backtest_runs.as_of_date DESC, backtest_runs.ticker"
     with get_connection(db_path) as connection:
         return [dict(row) for row in connection.execute(query, params).fetchall()]
+
+
+def save_btc_simulation_enrichment(
+    enrichment: Mapping[str, object], db_path: str | Path | None = None,
+) -> bool:
+    """Append one retrospective BTC overlay without altering its source simulation."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        cursor = connection.execute(
+            """INSERT OR IGNORE INTO btc_simulation_enrichments
+               (enrichment_id, source_backtest_run_id, ticker, as_of_date,
+                source_model_version, methodology_version, evidence_status,
+                metrics_json, input_references_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                enrichment["enrichment_id"], enrichment["source_backtest_run_id"],
+                enrichment["ticker"], enrichment["as_of_date"],
+                enrichment["source_model_version"], enrichment["methodology_version"],
+                enrichment["evidence_status"],
+                json.dumps(enrichment["metrics"], sort_keys=True, separators=(",", ":")),
+                json.dumps(enrichment["input_references"], sort_keys=True, separators=(",", ":")),
+            ),
+        )
+        return cursor.rowcount == 1
+
+
+def get_btc_simulation_enrichments(
+    *, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return BTC overlays together with immutable source-run context."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = connection.execute(
+            """SELECT enrichments.*, runs.entry_signal AS source_entry_signal,
+                      runs.entry_score AS source_entry_score,
+                      runs.outcome_1m, runs.outcome_3m, runs.outcome_6m, runs.outcome_12m
+               FROM btc_simulation_enrichments AS enrichments
+               JOIN backtest_runs AS runs ON runs.id = enrichments.source_backtest_run_id
+               ORDER BY enrichments.as_of_date DESC, enrichments.created_at DESC"""
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["metrics"] = json.loads(str(item.pop("metrics_json")))
+        item["input_references"] = json.loads(str(item.pop("input_references_json")))
+        result.append(item)
+    return result
+
+
+def save_finra_simulation_enrichment(
+    enrichment: Mapping[str, object], db_path: str | Path | None = None,
+) -> bool:
+    """Append one retrospective FINRA-flow counterfactual without altering its source run."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        cursor = connection.execute(
+            """INSERT OR IGNORE INTO finra_simulation_enrichments
+               (enrichment_id, source_backtest_run_id, ticker, as_of_date,
+                source_model_version, shadow_model_version, methodology_version,
+                evidence_status, metrics_json, input_references_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                enrichment["enrichment_id"], enrichment["source_backtest_run_id"],
+                enrichment["ticker"], enrichment["as_of_date"],
+                enrichment["source_model_version"], enrichment["shadow_model_version"],
+                enrichment["methodology_version"], enrichment["evidence_status"],
+                json.dumps(enrichment["metrics"], sort_keys=True, separators=(",", ":")),
+                json.dumps(enrichment["input_references"], sort_keys=True, separators=(",", ":")),
+            ),
+        )
+        return cursor.rowcount == 1
+
+
+def get_finra_simulation_enrichments(
+    *, methodology_version: str | None = None, db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return retrospective FINRA overlays with immutable source-run context."""
+    init_db(db_path)
+    query = """SELECT enrichments.*, runs.entry_signal AS source_entry_signal,
+                      runs.entry_score AS source_entry_score, runs.exit_signal AS source_exit_signal,
+                      runs.exit_score AS source_exit_score, runs.outcome_1m, runs.outcome_3m,
+                      runs.outcome_6m, runs.outcome_12m
+               FROM finra_simulation_enrichments AS enrichments
+               JOIN backtest_runs AS runs ON runs.id = enrichments.source_backtest_run_id"""
+    params: tuple[object, ...] = ()
+    if methodology_version:
+        query += " WHERE enrichments.methodology_version = ?"
+        params = (methodology_version,)
+    query += " ORDER BY enrichments.as_of_date DESC, enrichments.ticker"
+    with get_connection(db_path) as connection:
+        rows = connection.execute(query, params).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["metrics"] = json.loads(str(item.pop("metrics_json")))
+        item["input_references"] = json.loads(str(item.pop("input_references_json")))
+        result.append(item)
+    return result
 
 
 def get_registered_models(db_path: str | Path | None = None) -> list[dict[str, object]]:
@@ -1542,22 +1815,48 @@ def update_backtest_outcomes(
     ticker: str, as_of_date: str, outcomes: Mapping[str, object],
     db_path: str | Path | None = None,
 ) -> None:
-    """Append a legacy outcome observation; never rewrite the research row."""
+    """Append changed evidence atomically, preserving every immutable source row.
+
+    An unavailable horizon does not erase an already observed result. IS provides
+    null-safe equality; one INSERT/SELECT serializes competing SQLite writers.
+    """
+    init_db(db_path)
+    columns = ("outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m")
+    current = [f"COALESCE(observed.{field}, runs.{field})" for field in columns]
+    effective = [f"COALESCE(?, {value})" for value in current]
+    incoming = [outcomes.get(key) for key in ("1M", "3M", "6M", "12M")]
+    with get_connection(db_path) as connection:
+        connection.execute(
+            f"""INSERT INTO legacy_outcome_observations
+                (ticker, as_of_date, model_version, {', '.join(columns)})
+                SELECT runs.ticker, runs.as_of_date, runs.model_version, {', '.join(effective)}
+                FROM backtest_runs AS runs
+                LEFT JOIN latest_legacy_outcomes AS latest
+                  ON latest.ticker=runs.ticker AND latest.as_of_date=runs.as_of_date
+                  AND latest.model_version=runs.model_version
+                LEFT JOIN legacy_outcome_observations AS observed ON observed.id=latest.latest_id
+                WHERE runs.ticker=? AND runs.as_of_date=?
+                  AND NOT ({' AND '.join(f'{new} IS {old}' for new, old in zip(effective, current))})""",
+            (*incoming, ticker.strip().upper(), as_of_date, *incoming),
+        )
+
+
+def daily_refresh_attempted(task_key: str, day: str, db_path: str | Path | None = None) -> bool:
     init_db(db_path)
     with get_connection(db_path) as connection:
-        versions = connection.execute(
-            "SELECT model_version FROM backtest_runs WHERE ticker=? AND as_of_date=?",
-            (ticker.strip().upper(), as_of_date),
-        ).fetchall()
-        connection.executemany(
-            """INSERT INTO legacy_outcome_observations
-                (ticker, as_of_date, model_version, outcome_1m, outcome_3m, outcome_6m, outcome_12m)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            [(
-                ticker.strip().upper(), as_of_date, row["model_version"], outcomes.get("1M"),
-                outcomes.get("3M"), outcomes.get("6M"), outcomes.get("12M"),
-            ) for row in versions],
-        )
+        return connection.execute(
+            "SELECT 1 FROM daily_refresh_attempts WHERE task_key=? AND attempt_day=?", (task_key, day),
+        ).fetchone() is not None
+
+
+def claim_daily_refresh(task_key: str, day: str, db_path: str | Path | None = None) -> bool:
+    """Durable attempt budget, shared across sessions and processes (including failures)."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        return connection.execute(
+            "INSERT OR IGNORE INTO daily_refresh_attempts (task_key, attempt_day) VALUES (?, ?)",
+            (task_key, day),
+        ).rowcount == 1
 
 
 def set_backtest_job_item(
@@ -1636,6 +1935,52 @@ def get_dashboard_order(db_path: str | Path | None = None) -> list[str]:
         return []
     value = json.loads(row["value_json"])
     return [str(ticker) for ticker in value] if isinstance(value, list) else []
+
+
+def save_dashboard_market_snapshot(
+    tickers: list[str], rows: list[dict[str, object]], errors: list[str], fetched_at: str,
+    db_path: str | Path | None = None,
+) -> None:
+    """Atomically publish one complete last-good Dashboard market generation."""
+    normalized = sorted({str(ticker).strip().upper() for ticker in tickers if str(ticker).strip()})
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        connection.execute(
+            """INSERT INTO dashboard_market_snapshots
+               (id, tickers_json, rows_json, errors_json, fetched_at)
+               VALUES (1, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   tickers_json=excluded.tickers_json,
+                   rows_json=excluded.rows_json,
+                   errors_json=excluded.errors_json,
+                   fetched_at=excluded.fetched_at""",
+            (
+                json.dumps(normalized),
+                json.dumps(rows, sort_keys=True, separators=(",", ":"), allow_nan=False),
+                json.dumps(errors),
+                fetched_at,
+            ),
+        )
+
+
+def get_dashboard_market_snapshot(
+    tickers: list[str], db_path: str | Path | None = None,
+) -> dict[str, object] | None:
+    """Return the last complete generation only when it matches the current watchlist."""
+    normalized = sorted({str(ticker).strip().upper() for ticker in tickers if str(ticker).strip()})
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        row = connection.execute(
+            "SELECT tickers_json, rows_json, errors_json, fetched_at "
+            "FROM dashboard_market_snapshots WHERE id = 1"
+        ).fetchone()
+    if not row or json.loads(row["tickers_json"]) != normalized:
+        return None
+    return {
+        "rows": json.loads(row["rows_json"]),
+        "errors": json.loads(row["errors_json"]),
+        "fetched_at": str(row["fetched_at"]),
+    }
 
 
 def save_active_backtest(as_of_date: str | None, db_path: str | Path | None = None) -> None:
@@ -2490,6 +2835,60 @@ def get_finra_daily_short_volume_fetches(
         return [dict(row) for row in connection.execute(
             "SELECT * FROM finra_daily_short_volume_fetches ORDER BY trade_date"
         ).fetchall()]
+
+
+def save_bitcoin_derivatives_daily_observations(
+    rows: list[Mapping[str, object]], *, db_path: str | Path | None = None,
+) -> int:
+    """Append venue-specific BTC derivatives observations without rewriting history."""
+    init_db(db_path)
+    inserted = 0
+    with get_connection(db_path) as connection:
+        for row in rows:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO bitcoin_derivatives_daily_observations
+                    (venue, instrument, period_date, taker_buy_volume, taker_sell_volume,
+                     long_account_pct, short_account_pct, open_interest_value_quote,
+                     quote_currency, provider_name, source_endpoints_json, payload_json,
+                     payload_hash, known_at, known_at_status, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified_observed', ?)
+                """,
+                (
+                    str(row["venue"]), str(row["instrument"]), str(row["period_date"]),
+                    float(row["taker_buy_volume"]), float(row["taker_sell_volume"]),
+                    float(row["long_account_pct"]), float(row["short_account_pct"]),
+                    float(row["open_interest_value_quote"]), str(row["quote_currency"]),
+                    str(row["provider_name"]), json.dumps(row["source_endpoints"], sort_keys=True),
+                    json.dumps(row["payload"], sort_keys=True, separators=(",", ":")),
+                    str(row["payload_hash"]), str(row["fetched_at"]), str(row["fetched_at"]),
+                ),
+            )
+            inserted += max(0, cursor.rowcount)
+    return inserted
+
+
+def get_bitcoin_derivatives_daily_observations(
+    *, venue: str = "Binance USD-M Futures", instrument: str = "BTCUSDT perpetual",
+    db_path: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return the latest observed version for each BTC derivatives period date."""
+    init_db(db_path)
+    with get_connection(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY venue, instrument, period_date
+                    ORDER BY fetched_at DESC, id DESC
+                ) AS version_rank
+                FROM bitcoin_derivatives_daily_observations
+                WHERE venue = ? AND instrument = ?
+            ) WHERE version_rank = 1 ORDER BY period_date
+            """,
+            (venue, instrument),
+        ).fetchall()
+    return [{key: row[key] for key in row.keys() if key != "version_rank"} for row in rows]
 
 
 def add_journal_entry(entry: Mapping[str, object], db_path: str | Path | None = None) -> None:

@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.data.database import add_ticker, init_db, record_provider_health, save_positioning_snapshot
 from src.operations import (
-    get_operation_runs, provider_health, run_due_maintenance, short_interest_evidence_health,
+    WHALE_LATEST_REFRESH_INTERVAL, get_operation_runs, provider_health, run_due_maintenance,
+    short_interest_evidence_health, whaleseeker_refresh_due,
 )
 
 
@@ -79,6 +80,7 @@ def test_due_maintenance_records_verified_backup(tmp_path, monkeypatch):
     monkeypatch.setattr("src.data.extended_hours_refresh.schedule_extended_hours_refresh", lambda *a, **k: [])
     monkeypatch.setattr("src.data.backtest_refresh.schedule_outcome_refresh", lambda *a, **k: False)
     monkeypatch.setattr("src.data.cutoff_suggestions.schedule_cutoff_suggestions", lambda *a, **k: False)
+    monkeypatch.setattr("src.utils.config.FMP_API_KEY", "")
 
     def backup_runner(**_kwargs):
         return {"manifest_path": "synthetic.manifest.json", "sha256": "abc"}
@@ -89,3 +91,37 @@ def test_due_maintenance_records_verified_backup(tmp_path, monkeypatch):
     runs = {row["operation_key"]: row for row in get_operation_runs(database)}
     assert runs["scheduled_refresh"]["status"] == "completed"
     assert runs["verified_backup"]["status"] == "completed"
+
+
+def test_whaleseeker_refresh_due_uses_its_own_six_hour_interval():
+    now = datetime(2026, 9, 10, 12, 0)
+    assert whaleseeker_refresh_due(None, now) is True
+    assert whaleseeker_refresh_due(now - WHALE_LATEST_REFRESH_INTERVAL, now) is True
+    assert whaleseeker_refresh_due(now - WHALE_LATEST_REFRESH_INTERVAL + timedelta(seconds=1), now) is False
+    assert WHALE_LATEST_REFRESH_INTERVAL == timedelta(hours=6)
+
+
+def test_due_maintenance_exposes_missing_whaleseeker_provider_config(tmp_path, monkeypatch):
+    database = tmp_path / "operations-whale-pending.db"
+    init_db(database)
+    monkeypatch.setattr("src.data.industry_refresh.schedule_industry_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.positioning_refresh.schedule_positioning_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.positioning_refresh.schedule_finra_backfill", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.extended_hours_refresh.schedule_extended_hours_refresh", lambda *a, **k: [])
+    monkeypatch.setattr("src.data.finra_daily_volume_refresh.schedule_finra_daily_volume_refresh", lambda *a, **k: False)
+    monkeypatch.setattr("src.data.backtest_refresh.schedule_outcome_refresh", lambda *a, **k: False)
+    monkeypatch.setattr("src.data.cutoff_suggestions.schedule_cutoff_suggestions", lambda *a, **k: False)
+    monkeypatch.setattr("src.shadow_model.reconcile_shadow_prediction_lineage", lambda *a, **k: None)
+    monkeypatch.setattr("src.utils.config.FMP_API_KEY", "")
+
+    run_due_maintenance(
+        database, now=datetime(2026, 9, 10, 12, 0),
+        backup_runner=lambda **k: {"manifest_path": "synthetic", "sha256": "abc"},
+    )
+
+    run = {row["operation_key"]: row for row in get_operation_runs(database)}[
+        "whaleseeker_latest_refresh"
+    ]
+    assert run["status"] == "failed"
+    assert "Blocked" in run["error"]
+    assert "not configured" in run["detail_json"]

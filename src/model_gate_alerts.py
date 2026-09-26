@@ -10,13 +10,17 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Callable
 
+from src.data.outcome_maturation import get_current_outcome_labels as get_outcome_labels
 from src.data.database import (
-    get_model_gate_exclusions, get_outcome_labels, get_prediction_snapshots,
+    get_model_gate_exclusions,  get_prediction_snapshots,
     get_shadow_decision_snapshots,
     sync_model_gate_alert_state, update_model_gate_email_status,
 )
 from src.model_registry import TECHNOLOGY_POTENTIAL_SHADOW_VERSION
-from src.model_tuning import build_model_tuning_report, prepare_shadow_comparisons
+from src.model_tuning import (
+    build_model_tuning_report, prepare_shadow_comparisons,
+    select_equity_gate_lineage_snapshots,
+)
 from src.outcome_labels import RELATIVE_LABEL_VERSION
 from src.utils.config import (
     MODEL_ALERT_APP_URL, MODEL_ALERT_EMAIL_TO, SMTP_FROM, SMTP_HOST, SMTP_PASSWORD,
@@ -43,16 +47,15 @@ class EmailSettings:
 
 def current_gate_evidence(db_path: str | Path | None = None) -> tuple[dict[str, object], str]:
     """Build the current gate report and a privacy-safe immutable evidence signature."""
+    exclusions = set(get_model_gate_exclusions(db_path))
     rows = prepare_shadow_comparisons(
-        [
-            row for row in get_shadow_decision_snapshots(db_path=db_path)
-            if str(row.get("challenger_model_version")) == TECHNOLOGY_POTENTIAL_SHADOW_VERSION
-        ],
+        select_equity_gate_lineage_snapshots(
+            get_shadow_decision_snapshots(db_path=db_path), exclusions,
+        ),
         get_prediction_snapshots(db_path=db_path),
         get_outcome_labels(label_version=RELATIVE_LABEL_VERSION, db_path=db_path),
     )
-    exclusions = set(get_model_gate_exclusions(db_path))
-    gate_rows = [row for row in rows if row["ticker"] not in exclusions]
+    gate_rows = [row for row in rows if str(row["ticker"]).upper() not in exclusions]
     report = build_model_tuning_report(gate_rows)
     signature_rows = [{
         "shadow_snapshot_id": row["shadow_snapshot_id"],

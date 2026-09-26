@@ -94,8 +94,8 @@ PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
     "evidence_policy": "finra-report-date-freshness-v1",
 }
 
-TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-daily-short-flow-v3-shadow"
-TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION = "technology-daily-short-flow-v3-shadow"
+FINRA_DAILY_SHORT_FLOW_SHADOW_CONFIG: dict[str, object] = {
     **PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG,
     "hypothesis": (
         "technology potential plus a rising 10-session FINRA daily short-flow slope "
@@ -115,6 +115,55 @@ TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
     },
     "evaluation": "prospective_purged_benchmark_relative_3m_new_version_only",
 }
+
+UNIFIED_SHORTS_V4_VERSION = "technology-unified-shorts-v4-shadow"
+UNIFIED_SHORTS_V4_CONFIG: dict[str, object] = {
+    **FINRA_DAILY_SHORT_FLOW_SHADOW_CONFIG,
+    "hypothesis": (
+        "technology potential plus asset-specific short-pressure adapters improve selective "
+        "entry and exit-review decisions"
+    ),
+    "shorts_adapters": {
+        "equity": "FINRA daily short-sale flow v1 (unchanged from v3)",
+        "crypto": "Binance BTC perpetual squeeze-pressure v1",
+    },
+    "btc_short_pressure": {
+        "crowding": "60% level above rolling median-to-p90 + 40% positive 10D change",
+        "squeeze_confirmation": "below-10D-average taker selling",
+        "downside_confirmation": "above-10D-average taker selling",
+        "open_interest_confirmation": "50%-100% magnitude multiplier over 0%-10% 10D expansion",
+        "modifier_cap": 2.0,
+        "minimum_observations": 30,
+        "lookback_days": 90,
+        "maximum_age_days": 2,
+        "missing_or_stale": "neutral_zero_modifier",
+        "point_in_time": "verified_observed_before_cutoff_and_completed_period_required",
+    },
+    "evaluation": {
+        "equity": "prospective_purged_benchmark_relative_3m_new_version_only",
+        "crypto": "prospective_purged_BTC_relative_1d_3d_5d_10d_and_1m",
+        "promotion": "adapter-stratified gates within one unified shadow",
+    },
+}
+
+TECHNOLOGY_POTENTIAL_SHADOW_VERSION = "technology-unified-shorts-v5-shadow"
+TECHNOLOGY_POTENTIAL_SHADOW_CONFIG: dict[str, object] = {
+    **UNIFIED_SHORTS_V4_CONFIG,
+    "evaluation": {
+        "equity": "prospective_purged_benchmark_relative_3m_new_version_only",
+        "crypto_primary": "prospective_purged_benchmark_relative_3m_new_version_only",
+        "crypto_secondary_required_before_promotion": "BTC-relative_1d_3d_5d_10d_and_1m",
+        "promotion": "adapter-stratified gates; short-horizon crypto evaluator still required",
+    },
+}
+# The v5 change is confined to the crypto adapter. For promotion-gate tickers,
+# the equity transformation is byte-for-byte the registered v3 FINRA policy.
+# Gate evidence may therefore continue across this declared lineage, while
+# excluded crypto observations remain version-isolated.
+EQUITY_GATE_SHADOW_LINEAGE = (
+    FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION,
+    TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+)
 ACTIVE_SHADOW_ENABLED = True
 
 
@@ -186,6 +235,28 @@ def previous_technology_potential_shadow_registration() -> dict[str, object]:
         "model_version": PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
         "config_json": canonical_json(PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
         "config_hash": content_hash(PREVIOUS_TECHNOLOGY_POTENTIAL_SHADOW_CONFIG),
+        "status": "retired",
+        "is_active": 0,
+        "is_champion": 0,
+    }
+
+
+def finra_daily_short_flow_shadow_registration() -> dict[str, object]:
+    return {
+        "model_version": FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION,
+        "config_json": canonical_json(FINRA_DAILY_SHORT_FLOW_SHADOW_CONFIG),
+        "config_hash": content_hash(FINRA_DAILY_SHORT_FLOW_SHADOW_CONFIG),
+        "status": "retired",
+        "is_active": 0,
+        "is_champion": 0,
+    }
+
+
+def unified_shorts_v4_registration() -> dict[str, object]:
+    return {
+        "model_version": UNIFIED_SHORTS_V4_VERSION,
+        "config_json": canonical_json(UNIFIED_SHORTS_V4_CONFIG),
+        "config_hash": content_hash(UNIFIED_SHORTS_V4_CONFIG),
         "status": "retired",
         "is_active": 0,
         "is_champion": 0,

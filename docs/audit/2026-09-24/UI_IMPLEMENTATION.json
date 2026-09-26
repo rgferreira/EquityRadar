@@ -1,0 +1,62 @@
+{
+  "measurement": "Chrome Rafael; warmed caches; navigation to meaningful rendered section, includes UI automation overhead",
+  "samples_ms": {
+    "Dashboard": [
+      2152,
+      1485,
+      944
+    ],
+    "Portfolio": [
+      1555,
+      1766,
+      2976
+    ],
+    "Company": [
+      1783,
+      1872,
+      1471
+    ],
+    "Model tuning": [
+      1015,
+      906,
+      1279
+    ],
+    "Entry research": [
+      731,
+      866,
+      2219
+    ]
+  },
+  "median_ms": {
+    "Dashboard": 1485,
+    "Portfolio": 1766,
+    "Company": 1783,
+    "Model tuning": 1015,
+    "Entry research": 866
+  },
+  "sample_size": 15,
+  "p95_nearest_rank_ms": 2976,
+  "max_ms": 2976,
+  "page_exceptions": 0,
+  "mobile": {
+    "viewport": [
+      390,
+      844
+    ],
+    "document_width": 390,
+    "verified_routes": [
+      "Dashboard",
+      "Portfolio",
+      "Company",
+      "Model tuning",
+      "Entry research"
+    ],
+    "page_exceptions": 0
+  },
+  "limitations": [
+    "Only three samples per route; not a production latency SLO",
+    "First cached useful content below 2s was not met on every sample",
+    "Cold providers and physical mobile hardware latency not measured"
+  ],
+  "service": "Restart controller verified ZeroTier route and rendered Dashboard; listener only 10.147.17.69:8501"
+}

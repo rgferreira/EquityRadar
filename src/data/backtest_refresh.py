@@ -15,19 +15,29 @@ from src.data.database import (
     get_cached_industry_research, get_finra_daily_short_volume, get_positioning_history,
     get_outcome_labels, get_prediction_snapshots, save_backtest_run, save_outcome_label,
     save_prediction_snapshot, save_shadow_decision_snapshot,
-    set_backtest_job_item, update_backtest_outcomes,
+    set_backtest_job_item, update_backtest_outcomes, claim_daily_refresh, daily_refresh_attempted,
 )
 from src.data.market_data import fetch_price_history
 from src.model_registry import (
     ACTIVE_SHADOW_ENABLED, build_prediction_snapshot, current_model_registration,
 )
-from src.outcome_labels import benchmark_for_ticker, build_relative_outcome_label
+from src.outcome_labels import (
+    HORIZON_SESSIONS, benchmark_for_ticker, build_relative_outcome_label, clone_outcome_label,
+)
+from src.data.outcome_maturation import append_horizon, get_current_outcome_labels
 from src.shadow_model import build_shadow_snapshot
 
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtested-learning")
 _lock = RLock()
 _futures: dict[str, Future[None]] = {}
 _outcome_future: Future[None] | None = None
+
+
+def _completed_daily_history(history, today=None):
+    """Conservatively exclude today's potentially unfinished daily bar."""
+    import pandas as pd
+    return history.loc[pd.to_datetime(history.index).tz_localize(None).normalize()
+                       < pd.Timestamp(today or date.today())]
 
 
 def _persist_reconstruction(
@@ -41,7 +51,8 @@ def _persist_reconstruction(
         history, as_of_date, fundamentals, positioning_history, industry_research,
         daily_short_flow_history,
     )
-    outcomes = evaluate_outcomes(history, as_of_date)
+    completed_history = _completed_daily_history(history)
+    outcomes = evaluate_outcomes(completed_history, as_of_date)
     legacy_run = {
         "ticker": ticker, "as_of_date": as_of_date, "coverage": result["coverage"],
         "entry_score": result["entry_score"], "exit_score": result["exit_score"],
@@ -102,13 +113,13 @@ def _persist_reconstruction(
     if benchmark_ticker not in benchmark_cache:
         try:
             benchmark_cache[benchmark_ticker] = (
-                fetch_price_history(benchmark_ticker, period="max") if benchmark_ticker else None
+                _completed_daily_history(fetch_price_history(benchmark_ticker, period="max")) if benchmark_ticker else None
             )
         except Exception:
             benchmark_cache[benchmark_ticker] = None
     relative_label = build_relative_outcome_label(
         prediction_id=str(snapshot["prediction_id"]), ticker=ticker,
-        as_of_date=as_of_date, security_history=history,
+        as_of_date=as_of_date, security_history=completed_history,
         benchmark_history=benchmark_cache.get(benchmark_ticker),
         benchmark_ticker=benchmark_ticker,
     )
@@ -276,82 +287,122 @@ def backtest_status(as_of_date: str, db_path: str | Path | None = None) -> dict[
 
 
 def _refresh_outcomes(db_path: str | Path | None) -> None:
+    histories: dict[str, object] = {}
+    failed_tickers: set[str] = set()
+    processed: set[tuple[str, str]] = set()
+
+    def cached_history(ticker: str, *, period: str = "max") -> object:
+        if ticker in failed_tickers:
+            raise ValueError("History unavailable during this refresh")
+        if ticker not in histories:
+            try:
+                histories[ticker] = _completed_daily_history(
+                    fetch_price_history(ticker, period=period, force_refresh=True))
+            except Exception:
+                failed_tickers.add(ticker)
+                raise
+        return histories[ticker]
+
     for run in get_backtest_runs(db_path=db_path):
-        if all(run.get(field) is not None for field in ("outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m")):
+        key = (str(run["ticker"]), str(run["as_of_date"]))
+        if key in processed or all(run.get(field) is not None for field in (
+            "outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m",
+        )):
             continue
+        processed.add(key)
         try:
-            history = fetch_price_history(str(run["ticker"]), period="max")
             update_backtest_outcomes(
-                str(run["ticker"]), str(run["as_of_date"]),
-                evaluate_outcomes(history, str(run["as_of_date"])), db_path,
+                *key, evaluate_outcomes(cached_history(key[0]), key[1]), db_path,
             )
         except Exception:
             # A bad symbol or immature horizon must not block other saved runs.
             continue
-    materialize_matured_prediction_labels(db_path)
+    materialize_matured_prediction_labels(db_path, history_fetcher=cached_history)
 
 
 def materialize_matured_prediction_labels(
     db_path: str | Path | None = None, *, today: date | None = None,
     history_fetcher: object = fetch_price_history,
 ) -> dict[str, int]:
-    """Persist a relative label only once its 3M outcome is actually mature."""
+    """Complete each missing horizon without freezing pending labels or rewriting v1."""
     current_day = today or date.today()
-    earliest_candidate = current_day - timedelta(days=75)
-    labeled = {str(row["prediction_id"]) for row in get_outcome_labels(db_path=db_path)}
-    candidates = [
-        row for row in get_prediction_snapshots(db_path=db_path)
-        if str(row["prediction_id"]) not in labeled
-        and date.fromisoformat(str(row["as_of_date"])) <= earliest_candidate
-    ]
-    benchmark_cache: dict[str, object | None] = {}
-    created = pending = failed = 0
+    labels = {str(row["prediction_id"]): row for row in get_current_outcome_labels(db_path=db_path)}
+    raw = {str(row["prediction_id"]): row for row in get_outcome_labels(db_path=db_path)}
+    candidates = [row for row in get_prediction_snapshots(db_path=db_path)
+                  if benchmark_for_ticker(str(row["ticker"])) is not None
+                  and any(not isinstance(labels.get(str(row["prediction_id"]), {}).get("outcomes", {}).get(h), Mapping)
+                          and (current_day - date.fromisoformat(str(row["as_of_date"]))).days >= sessions
+                          for h, sessions in HORIZON_SESSIONS.items())]
+    histories, computed = {}, {}
+    created = pending = failed = horizons_created = 0
+
+    def history(ticker):
+        if ticker not in histories:
+            try:
+                fetched = history_fetcher(ticker, period="max")
+                # Today's daily bar may still be trading: never freeze it as an outcome.
+                histories[ticker] = _completed_daily_history(fetched, current_day)
+            except Exception:
+                histories[ticker] = None
+        if histories[ticker] is None:
+            raise ValueError("Price history unavailable in this refresh")
+        return histories[ticker]
+
     for prediction in candidates:
-        ticker = str(prediction["ticker"])
-        benchmark = benchmark_for_ticker(ticker)
+        ticker, pid = str(prediction["ticker"]), str(prediction["prediction_id"])
+        key = ticker, str(prediction["as_of_date"])
         try:
-            security_history = history_fetcher(ticker, period="max")
-            if benchmark not in benchmark_cache:
-                benchmark_cache[benchmark] = (
-                    history_fetcher(benchmark, period="max") if benchmark else None
+            if key not in computed:
+                computed[key] = build_relative_outcome_label(
+                    prediction_id=pid, ticker=ticker, as_of_date=key[1],
+                    security_history=history(ticker),
+                    benchmark_history=history(benchmark_for_ticker(ticker)),
                 )
-            label = build_relative_outcome_label(
-                prediction_id=str(prediction["prediction_id"]), ticker=ticker,
-                as_of_date=str(prediction["as_of_date"]), security_history=security_history,
-                benchmark_history=benchmark_cache.get(benchmark), benchmark_ticker=benchmark,
-            )
-            outcomes = label.get("outcomes") or {}
-            if label["status"] == "available" and isinstance(outcomes.get("3M"), Mapping):
-                save_outcome_label(label, db_path)
-                created += 1
-            elif label["status"] == "unavailable" and label.get("unavailable_reason") == "no_verified_benchmark_mapping":
-                save_outcome_label(label, db_path)
-                created += 1
-            else:
+            label = clone_outcome_label(computed[key], prediction_id=pid)
+            previous = labels.get(pid, {}).get("outcomes", {})
+            missing = [h for h in HORIZON_SESSIONS if not isinstance(previous.get(h), Mapping)
+                       and isinstance(label["outcomes"].get(h), Mapping)]
+            if not missing:
                 pending += 1
+                continue
+            # Preserve the legacy first-complete-3M contract for predictions that
+            # have no earlier label or per-horizon observations at all.
+            if pid not in raw and pid not in labels and isinstance(label["outcomes"].get("3M"), Mapping):
+                save_outcome_label(label, db_path)
+            else:
+                for horizon in missing:
+                    horizons_created += int(append_horizon(label, horizon, db_path))
+            created += 1
         except Exception:
             failed += 1
-    return {"candidates": len(candidates), "created": created, "pending": pending, "failed": failed}
+    return {"candidates": len(candidates), "created": created, "pending": pending,
+            "failed": failed, "horizons_created": horizons_created}
 
 
 def schedule_outcome_refresh(db_path: str | Path | None = None) -> bool:
     """Auto-complete matured outcomes at most once daily, without a refresh button."""
     global _outcome_future
-    runs = get_backtest_runs(db_path=db_path)
     today = date.today().isoformat()
+    if daily_refresh_attempted("outcomes", today, db_path):
+        return False
+    runs = get_backtest_runs(db_path=db_path)
     legacy_stale = any(
         any(run.get(field) is None for field in ("outcome_1m", "outcome_3m", "outcome_6m", "outcome_12m"))
         and str(run.get("outcome_refreshed_at") or "")[:10] != today
         for run in runs
     )
-    labeled = {str(row["prediction_id"]) for row in get_outcome_labels(db_path=db_path)}
+    labels = {str(row["prediction_id"]): row for row in get_current_outcome_labels(db_path=db_path)}
     label_due = any(
-        str(row["prediction_id"]) not in labeled
-        and date.fromisoformat(str(row["as_of_date"])) <= date.today() - timedelta(days=75)
+        benchmark_for_ticker(str(row["ticker"])) is not None
+        and any(not isinstance(labels.get(str(row["prediction_id"]), {}).get("outcomes", {}).get(h), Mapping)
+                and (date.today() - date.fromisoformat(str(row["as_of_date"]))).days >= sessions
+                for h, sessions in HORIZON_SESSIONS.items())
         for row in get_prediction_snapshots(db_path=db_path)
     )
     with _lock:
         if not (legacy_stale or label_due) or (_outcome_future and not _outcome_future.done()):
+            return False
+        if not claim_daily_refresh("outcomes", today, db_path):
             return False
         _outcome_future = _executor.submit(_refresh_outcomes, db_path)
     return True

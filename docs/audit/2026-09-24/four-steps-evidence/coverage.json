@@ -1,0 +1,26 @@
+{
+  "cftc_contracts": 4,
+  "cftc_history_records": 104,
+  "checked_instruments": 25,
+  "current_cftc_period": "2026-09-15",
+  "greeks_contracts": 2628,
+  "liquid_contracts": 2628,
+  "local_summary_ms_single_measurement": 71.7,
+  "macro_series": {
+    "cp_a2_30d": "fresh",
+    "cp_aa_30d": "fresh",
+    "nominal_10y": "fresh",
+    "nominal_2y": "fresh",
+    "real_10y": "fresh"
+  },
+  "max_distinct_quote_dates": 1,
+  "overnight_rates_available": [
+    "EFFR",
+    "SOFR"
+  ],
+  "policy_releases_visible": 5,
+  "raw_contracts": 9662,
+  "snapshot_count": 1,
+  "snapshot_replay_source": "First daily capture preserved; current policy helper runs without UI for subsequent days.",
+  "usable_instruments": 23
+}

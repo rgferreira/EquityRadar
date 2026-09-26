@@ -21,6 +21,8 @@ For a newly captured response without a verified publication timestamp, the appl
 | Yahoo industry, peers and analysts | No common reliable publication timestamp | First new application observation for the normalized snapshot | Current display preserved; historical use requires captured verified metadata |
 | Yahoo/FMP positioning | Short-interest reference date → `period_end`; other components are snapshot values | First new application observation | Mixed snapshot becomes available only from capture time |
 | FINRA consolidated short interest | Settlement date → `period_end` | Verified dissemination time if added later; currently first API observation | Historical backfill is not treated as known on settlement date |
+| Binance BTCUSDT perpetual daily observations | Completed UTC period → `period_date` | First new application observation | Venue-specific history is never presumed known at period end; display-only and excluded from live scores |
+| FMP congressional disclosures | Trade date and filing date retained separately | Provider publication timestamp only when verified; otherwise first new application observation | A filing is never backdated to the politician's trade date |
 | Daily prices | Trading-session date | Bar is available at session close; date-only Time Machine cutoffs are end-of-day | `history_as_of` excludes all later bars |
 
 ## Conservative failure behavior

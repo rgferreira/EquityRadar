@@ -8,7 +8,7 @@ This is the live planning document. Completed work belongs in [`implemented-feat
 
 The forensic audit supersedes the former improvised implementation queue. PR-001 through PR-005 are complete on the Phase 3.8 branch. Continue accumulating immutable, verified-known-at predictions and versioned relative outcomes; run the offline evaluator only as a diagnostic and accept `insufficient_evidence` when independent dates are scarce. The ordered record remains in [`implementation/phase-3.8/ROADMAP-3.8.md`](implementation/phase-3.8/ROADMAP-3.8.md). Do not treat the evidence pack or evaluator output as evidence of alpha.
 
-The first coverage-aware challenger later accumulated 378 matured paired observations and cleared all six readiness gates. It was explicitly promoted as `coverage-aware-renormalized-v3-live`; the former live version remains the rollback anchor. Next: monitor prospective post-promotion accuracy, utility and drift against the frozen promotion baseline. Define another shadow only for a distinct preregistered hypothesis.
+The first coverage-aware challenger later accumulated 378 matured paired observations and cleared all six readiness gates. It was explicitly promoted as `coverage-aware-renormalized-v3-live`; the former live version remains the rollback anchor. The post-promotion view now monitors prospective accuracy and utility plus an adjacent-window, date-clustered nonstationarity diagnostic; it remains in evidence collection until ten independent dates mature. Define another shadow only for a distinct preregistered hypothesis.
 
 ## Phase 3.9 engineering release — completed
 
@@ -29,15 +29,15 @@ shadow model exists and no score change is authorized.
    separate daily flow-pressure input. Preserve twice-monthly consolidated short interest as the official
    position anchor: daily short-sale volume is trading flow, not outstanding short positions. Raw observations,
    point-in-time provenance, provider health, daily share and a 10-session visual baseline are implemented. The
-   baseline slope is now a bounded component of `technology-daily-short-flow-v3-shadow`; prospective, incremental
+   baseline slope is preserved as the equity adapter of `technology-unified-shorts-v5-shadow`; prospective, incremental
    out-of-sample evidence remains required before authorizing any live score modifier. At closure the active
-   shadow has 19 changed-diagnostic observations across six dates awaiting 3M outcomes; the full current cohort
-   should be reviewed around 2026-10-20. This waiting period is evidence maturation, not unfinished engineering. See
+   FINRA-only v3 archive has 19 changed-diagnostic observations across six dates awaiting 3M outcomes and remains
+   reviewable around 2026-10-20. The unified v4 evidence clock is separate. This waiting period is evidence maturation, not unfinished engineering. See
    [`releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md`](releases/phase-3.9/FINRA-DAILY-SHORT-VOLUME-NEXT.md).
 
 ## Phase 3.91 — Credit Stress Feature (queued; not started)
 
-Do **not** start this phase while `technology-daily-short-flow-v3-shadow` is still accumulating
+Do **not** start this phase while `technology-unified-shorts-v5-shadow` is still accumulating
 prospective evidence. Phase 3.91 begins only after the current shadow experiment reaches a deliberate
 evaluation boundary, so CDS evidence is not mixed into its hypothesis or historical comparison.
 

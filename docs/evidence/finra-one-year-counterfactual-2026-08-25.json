@@ -1,0 +1,40 @@
+{
+  "backfill": {
+    "earliest_after": "2025-08-25",
+    "earliest_before": "2026-03-16",
+    "errors": 0,
+    "files_checked": 148,
+    "files_fetched": 142,
+    "finra_fingerprint_after": "45ceb5a56d775167146e065ff76b8e95dfa5861c711d614d1753568f90acfa7c",
+    "latest": "2026-08-24",
+    "observations_after": 5958,
+    "observations_before": 2632,
+    "rows_inserted": 3326,
+    "unavailable": 6
+  },
+  "baseline_artifact": "docs/evidence/unified-shorts-baseline-2026-08-25.json",
+  "baseline_artifact_sha256": "1eba314031fa4393b54e22030144f30d80514af94017f6e47cd31fb4e29d79c5",
+  "captured_at": "2026-08-25T16:19:19+00:00",
+  "comparison_schema": "finra-one-year-counterfactual-v1",
+  "counterfactual": {
+    "accuracy_delta_pp": -1.7,
+    "all_confirmed_before_independence_gate": 368,
+    "average_utility_delta": -0.26,
+    "confirmed": 175,
+    "confirmed_signal_changes": 5,
+    "counterfactual_accuracy_pct": 51.4,
+    "evidence_status": "retrospective_only",
+    "methodology_version": "finra-daily-flow-retrospective-counterfactual-v1",
+    "original_accuracy_pct": 53.1,
+    "overlays": 533,
+    "promotion_eligible": false,
+    "signal_changes": 8
+  },
+  "immutability": {
+    "backtest_fingerprint_after": "07a74217e5e2119b45170f17e84c7d72ceed9c27bd69f19daf9583dd8588ec95",
+    "backtest_fingerprint_before": "07a74217e5e2119b45170f17e84c7d72ceed9c27bd69f19daf9583dd8588ec95",
+    "backtest_runs_after": 2408,
+    "backtest_runs_before": 2408,
+    "unchanged": true
+  }
+}

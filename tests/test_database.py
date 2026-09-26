@@ -1,4 +1,7 @@
 import sqlite3
+import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 import pytest
 
@@ -31,18 +34,82 @@ from src.data.database import (
     get_portfolio_targets,
     get_dashboard_order,
     save_dashboard_order,
+    save_dashboard_market_snapshot,
+    get_dashboard_market_snapshot,
     get_active_backtest,
     save_active_backtest,
+    get_connection,
     init_db,
     get_model_gate_exclusions,
     save_model_gate_exclusions,
 )
 
 
+def test_cold_start_database_bootstrap_is_serialized_and_uses_wal(tmp_path, monkeypatch):
+    database = tmp_path / "concurrent-cold-start.db"
+    from src.data import database as database_module
+
+    real_get_connection = database_module.get_connection
+    calls = 0
+    calls_lock = Lock()
+
+    def delayed_get_connection(db_path=None):
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        time.sleep(0.05)
+        return real_get_connection(db_path)
+
+    monkeypatch.setattr(database_module, "get_connection", delayed_get_connection)
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        list(pool.map(lambda _: init_db(database), range(12)))
+
+    assert calls == 1
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert connection.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
+        ).fetchone()[0] >= 39
+
+
+def test_managed_database_connection_waits_for_locks_and_closes_descriptor(tmp_path):
+    database = tmp_path / "managed-connection.db"
+    init_db(database)
+
+    connection = get_connection(database)
+    with connection:
+        assert connection.execute("PRAGMA busy_timeout").fetchone()[0] == 30_000
+        assert connection.execute("SELECT 1").fetchone()[0] == 1
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connection.execute("SELECT 1")
+
+
 def test_decision_dashboard_order_persists_across_sessions(tmp_path):
     database = tmp_path / "radar.db"
     save_dashboard_order(["NVDA", "GOOG", "AAPL"], database)
     assert get_dashboard_order(database) == ["NVDA", "GOOG", "AAPL"]
+
+
+def test_dashboard_market_snapshot_is_atomic_and_watchlist_scoped(tmp_path):
+    database = tmp_path / "radar.db"
+    rows = [{"Ticker": "AAPL", "Price": 200.0}, {"Ticker": "GOOG", "Price": 300.0}]
+    save_dashboard_market_snapshot(
+        ["GOOG", "AAPL"], rows, [], "2026-08-25T22:00:00", database,
+    )
+
+    assert get_dashboard_market_snapshot(["AAPL", "GOOG"], database) == {
+        "rows": rows,
+        "errors": [],
+        "fetched_at": "2026-08-25T22:00:00",
+    }
+    assert get_dashboard_market_snapshot(["AAPL"], database) is None
+
+    replacement = [{"Ticker": "AAPL", "Price": 201.0}, {"Ticker": "GOOG", "Price": 301.0}]
+    save_dashboard_market_snapshot(
+        ["AAPL", "GOOG"], replacement, ["GOOG: stale"], "2026-08-25T22:05:00", database,
+    )
+    assert get_dashboard_market_snapshot(["GOOG", "AAPL"], database)["rows"] == replacement
 
 
 def test_active_backtest_date_persists_and_clears(tmp_path):

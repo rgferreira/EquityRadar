@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from src.data.database import (
     get_pilot_deployment,
     get_registered_models,
@@ -81,7 +83,41 @@ def test_pilot_calculation_is_the_exact_registered_shadow_transformation():
     assert comparison["Pilot"] == expected["entry_signal"]
     assert comparison["Pilot score"] == expected["entry_score"]
     assert comparison["Technology adj"] == 3.0
-    assert comparison["Daily flow adj"] == -1.5
+    assert comparison["Shorts Entry Δ"] == -1.5
+    assert comparison["Shorts Exit Δ"] == 1.5
+    assert comparison["Shorts source"] == "FINRA daily short flow"
+    assert comparison["Shorts confidence %"] == 100.0
+    assert comparison["Included in Pilot"] == "Yes"
+
+
+def test_btc_short_context_is_included_in_registered_unified_pilot():
+    current = {
+        "entry_score": 68.0, "entry_signal": "Watch",
+        "exit_score": 42.0, "exit_signal": "Hold",
+    }
+    start = date(2026, 5, 27)
+    observations = [{
+        "id": index + 1, "period_date": (start + timedelta(days=index)).isoformat(),
+        "taker_buy_volume": 100.0, "taker_sell_volume": 115.0 - max(0, index - 79) * 2,
+        "short_account_pct": 40.0 + max(0, index - 79) * 0.12,
+        "open_interest_value_quote": 1_000.0 + index * 5,
+        "known_at": "2026-08-25T08:00:00+00:00",
+        "known_at_status": "verified_observed",
+        "provider_name": "Synthetic Binance",
+    } for index in range(90)]
+
+    comparison = build_pilot_comparison(
+        "BTC-USD", current, technology_evidence={}, daily_flow_evidence={},
+        btc_derivatives_observations=observations,
+        as_of=date(2026, 8, 25),
+    )
+
+    assert comparison["Shorts source"] == "Binance BTC perpetual"
+    assert comparison["Shorts state"] == "Squeeze potential"
+    assert comparison["Shorts Entry Δ"] > 0.0
+    assert comparison["Shorts Exit Δ"] < 0.0
+    assert comparison["Included in Pilot"] == "Yes"
+    assert comparison["Pilot score"] > comparison["Official score"]
 
 
 def test_pilot_deployment_identity_and_empty_maturity_are_explicit(tmp_path):

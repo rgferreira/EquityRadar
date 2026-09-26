@@ -4,9 +4,11 @@ import time
 
 from src.data.market_data import (
     calculate_metrics,
+    calculate_return_since_date,
     clear_market_data_cache,
     fetch_price_history,
     get_price_history_fetched_at,
+    latest_price_observed_at,
     fetch_quote_currency,
 )
 
@@ -21,6 +23,34 @@ def test_calculate_metrics_uses_daily_close_prices():
     assert metrics["return_1m"] == pytest.approx((260 / 239 - 1) * 100)
     assert metrics["ma_200"] == pytest.approx(sum(range(61, 261)) / 200)
     assert metrics["drawdown_from_52w_high"] == 0.0
+
+
+def test_latest_price_observed_at_uses_last_non_missing_close():
+    history = pd.DataFrame(
+        {"Close": [100.0, 101.0, None]},
+        index=pd.to_datetime(["2026-09-04", "2026-09-07", "2026-09-08"]),
+    )
+    assert latest_price_observed_at(history) == "2026-09-07T00:00:00"
+
+
+def test_return_since_date_uses_first_session_on_or_after_trade_date():
+    history = pd.DataFrame(
+        {"Close": [100.0, 105.0, 120.0]},
+        index=pd.to_datetime(["2026-08-07", "2026-08-10", "2026-08-11"]),
+    )
+
+    result = calculate_return_since_date(history, "2026-08-08")
+
+    assert result == pytest.approx((120 / 105 - 1) * 100)
+
+
+@pytest.mark.parametrize("start_date", (None, "not-a-date", "2027-01-01"))
+def test_return_since_date_keeps_unavailable_evidence_missing(start_date):
+    history = pd.DataFrame(
+        {"Close": [100.0]}, index=pd.to_datetime(["2026-08-11"]),
+    )
+
+    assert calculate_return_since_date(history, start_date) is None
 
 
 def test_fetch_price_history_uses_bounded_request(monkeypatch):

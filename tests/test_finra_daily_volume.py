@@ -5,9 +5,14 @@ from src.data.database import (
     save_finra_daily_short_volume_file,
 )
 from src.data.finra_daily_volume import (
+    FINRA_DAILY_HISTORY_DAYS,
     DailyShortVolumeFileUnavailable, FINRADailyShortVolumeProvider,
     backfill_finra_daily_short_volume,
 )
+
+
+def test_default_finra_history_matches_one_year_research_window() -> None:
+    assert FINRA_DAILY_HISTORY_DAYS == 365
 
 
 class FakeResponse:

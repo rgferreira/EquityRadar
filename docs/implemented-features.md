@@ -9,7 +9,7 @@
 - Newly added supported tickers automatically replay the bounded FINRA daily-file window once, even when those
   shared files were already cached for the rest of the watchlist; subsequent updates return to the daily cadence.
 
-- Registered `technology-daily-short-flow-v3-shadow` as the inactive, reversible challenger based on the current live champion; earlier technology-only versions are archived.
+- Registered `technology-unified-shorts-v5-shadow` as the inactive, reversible challenger based on the current live champion. It preserves the FINRA equity adapter and adds a separately normalized Binance BTC-perpetual adapter; prior identities remain archived.
 - Computes a transparent industry-relative Technology Potential proxy from R&D intensity, revenue growth, gross margin, free-cash-flow margin and balance-sheet funding capacity.
 - Applies a confidence-gated Entry modifier capped at +/-5 shadow points; missing evidence is neutral and the live model remains unchanged.
 - Persists only verified point-in-time technology evidence in new simulation snapshots; archived promotion evidence remains separate.
@@ -20,6 +20,9 @@
 - A dedicated read-only page preserves the former-live versus coverage-aware promotion evidence.
 - Paired 3M benchmark-relative outcomes use identical ticker/cutoff evidence and date-clustered uncertainty intervals.
 - Score deltas, signal transitions, maturity, expanding utility and ticker/regime/source drill-downs are visible without exposing model activation controls.
+- Post-promotion monitoring includes a read-only nonstationarity watch. Once ten genuinely prospective
+  independent dates mature, it compares adjacent five-date blocks of date-clustered utility and accuracy;
+  a zero crossing is an inspection cue only and cannot change scores, promotion, or rollback state.
 - All six readiness gates cleared; explicit human promotion activated immutable version `coverage-aware-renormalized-v3-live`, with the former live version retained as rollback anchor.
 - Evidence-integrity correction `coverage-aware-renormalized-v4-finra-freshness-live` supersedes v3 without changing factor weights or thresholds. It gates FINRA evidence by official report date and preserves v3 plus all earlier simulation rows as immutable rollback/audit evidence.
 - Dashboard navigation reuses provider data when a full-watchlist refresh completed less than one minute earlier; explicit refresh remains available and bypasses the cooldown.
@@ -98,6 +101,9 @@ This is the detailed implementation record. For the live backlog and phase bound
 ## Market data
 
 - yfinance supplies one year of daily prices and moving-average/return metrics.
+- BTC-USD Company research includes one year of venue-specific Binance USD-M perpetual daily taker flow, global long/short account share, and open interest. Saved BTC simulations can be enriched by an append-only retrospective overlay using the 11 completed UTC periods strictly before each cutoff. The overlay has decision weight 0.0, is labelled `retrospective_only`, and is excluded from original scores, accuracy, learning, and Shadow because its historical public availability is not point-in-time verified.
+- Dashboard Pilot exposes the registered asset-specific short-pressure effect as separate Entry and Exit deltas with source, confidence, coverage, and inclusion status. BTC uses the Binance perpetual adapter inside the same unified Shorts Shadow; official decisions remain unchanged.
+- FINRA Consolidated NMS daily-flow coverage now targets one full year. An append-only `retrospective_only` replay can attach the registered Shadow transformation to eligible saved simulations, compare paired decision utility and accuracy after the independent-episode gate, and display the result beside Pilot without affecting prospective gates or production scores.
 - Dashboard data refreshes on initial session load and on demand.
 - Dashboard price, percentage, moving-average, and score columns use consistent formatting.
 - Each ticker displays the actual yfinance cache-fetch timestamp.

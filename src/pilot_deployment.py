@@ -7,19 +7,25 @@ from collections.abc import Mapping
 from datetime import date, timedelta
 from pathlib import Path
 
+from src.data.outcome_maturation import get_current_outcome_labels as get_outcome_labels
 from src.data.database import (
-    get_outcome_labels,
+    get_model_gate_exclusions,
+
     get_pilot_deployment,
     get_prediction_snapshots,
     get_shadow_decision_snapshots,
     save_pilot_deployment_opt_in,
 )
 from src.model_registry import technology_potential_shadow_registration
-from src.model_tuning import build_model_tuning_report, prepare_shadow_comparisons
+from src.model_tuning import (
+    build_model_tuning_report, prepare_shadow_comparisons,
+    select_equity_gate_lineage_snapshots,
+)
 from src.shadow_model import technology_potential_shadow_output
+from src.scoring.btc_short_pressure import btc_short_pressure_evidence
 
 
-PILOT_DEPLOYMENT_KEY = "decision-dashboard-technology-daily-flow-v1"
+PILOT_DEPLOYMENT_KEY = "decision-dashboard-unified-shorts-v2"
 PILOT_SURFACE = "decision_dashboard"
 PILOT_ENVIRONMENT_VARIABLE = "PILOT_DECISIONS_ENABLED"
 FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
@@ -72,37 +78,71 @@ def build_pilot_decision(
     current_outputs: Mapping[str, object], *,
     technology_evidence: Mapping[str, object] | None,
     daily_flow_evidence: Mapping[str, object] | None,
+    btc_short_evidence: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Run the exact registered shadow transformation without persistence."""
-    return technology_potential_shadow_output(
-        {
-            "technology_potential": dict(technology_evidence or {}),
-            "daily_short_flow": dict(daily_flow_evidence or {}),
-        },
-        current_outputs,
-    )
+    inputs = {
+        "technology_potential": dict(technology_evidence or {}),
+        "daily_short_flow": dict(daily_flow_evidence or {}),
+    }
+    if btc_short_evidence is not None:
+        inputs["btc_short_pressure"] = dict(btc_short_evidence)
+    return technology_potential_shadow_output(inputs, current_outputs)
 
 
 def build_pilot_comparison(
     ticker: str, current_outputs: Mapping[str, object], *,
     technology_evidence: Mapping[str, object] | None,
     daily_flow_evidence: Mapping[str, object] | None,
+    btc_derivatives_observations: list[Mapping[str, object]] | None = None,
+    as_of: date | None = None,
 ) -> dict[str, object]:
     """Create a display-only Live-versus-Pilot row."""
+    normalized_ticker = ticker.strip().upper()
+    btc_short = (
+        btc_short_pressure_evidence(
+            btc_derivatives_observations or [], as_of=as_of or date.today(),
+        )
+        if normalized_ticker == "BTC-USD" else None
+    )
     pilot = build_pilot_decision(
         current_outputs,
         technology_evidence=technology_evidence,
         daily_flow_evidence=daily_flow_evidence,
+        btc_short_evidence=btc_short,
     )
+    daily_flow = dict(daily_flow_evidence or {})
+    if normalized_ticker == "BTC-USD":
+        short_source = "Binance BTC perpetual"
+        short_state = str((btc_short or {}).get("state") or "Unavailable")
+        short_status = "Registered unified-Shorts Shadow component"
+        short_confidence = float((btc_short or {}).get("confidence") or 0.0) * 100
+        short_entry = float(pilot["shorts_entry_modifier"])
+        short_exit = float(pilot["shorts_exit_modifier"])
+        short_included = "Yes" if bool((btc_short or {}).get("included_in_shadow")) else "Neutral"
+    else:
+        short_source = "FINRA daily short flow"
+        short_state = str(daily_flow.get("coverage") or "unavailable").title()
+        short_status = "Registered Shadow component"
+        short_confidence = float(daily_flow.get("confidence") or 0.0) * 100
+        short_entry = float(pilot["shorts_entry_modifier"])
+        short_exit = float(pilot["shorts_exit_modifier"])
+        short_included = "Yes"
     return {
-        "Ticker": ticker.strip().upper(),
+        "Ticker": normalized_ticker,
         "Official": str(current_outputs.get("entry_signal") or "Wait"),
         "Pilot": str(pilot["entry_signal"]),
         "Official score": float(current_outputs["entry_score"]),
         "Pilot score": float(pilot["entry_score"]),
         "Delta": float(pilot["entry_score_delta"]),
         "Technology adj": float(pilot["technology_entry_modifier"]),
-        "Daily flow adj": float(pilot["daily_short_flow_entry_modifier"]),
+        "Shorts Entry Δ": short_entry,
+        "Shorts Exit Δ": short_exit,
+        "Shorts source": short_source,
+        "Shorts state": short_state,
+        "Shorts confidence %": short_confidence,
+        "Shorts status": short_status,
+        "Included in Pilot": short_included,
         "Coverage": str(pilot["coverage_mode"]),
         "Decision changed": "Yes" if bool(pilot["signal_changed"]) else "No",
     }
@@ -113,10 +153,10 @@ def pilot_maturity_summary(
 ) -> dict[str, object]:
     """Summarize current-candidate evidence as maturity, never as success odds."""
     version = str(technology_potential_shadow_registration()["model_version"])
-    shadows = [
-        row for row in get_shadow_decision_snapshots(db_path=db_path)
-        if str(row["challenger_model_version"]) == version
-    ]
+    shadows = select_equity_gate_lineage_snapshots(
+        get_shadow_decision_snapshots(db_path=db_path),
+        set(get_model_gate_exclusions(db_path)),
+    )
     comparisons = prepare_shadow_comparisons(
         shadows,
         get_prediction_snapshots(db_path=db_path),

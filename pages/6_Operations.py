@@ -17,6 +17,7 @@ from src.data.database import (
 )
 from src.evidence_monitoring import options_evidence_report
 from src.research_alerts import build_research_alerts
+from src.data_lifecycle import research_lifecycle
 from src.ui import inject_app_styles, page_header, zebra_table
 
 
@@ -37,6 +38,16 @@ page_header(
     "See whether research evidence is fresh, background maintenance is running, and recovery is verified.",
     "Local-only · No execution",
 )
+
+st.subheader("Data lifecycle · what needs attention")
+lifecycle = pd.DataFrame(research_lifecycle())
+actionable = lifecycle[lifecycle["status"].isin(["Stale", "Review gaps", "Gap recovery pending", "Blocked by subscription"])]
+if not actionable.empty:
+    st.dataframe(actionable, hide_index=True, width="stretch")
+else:
+    st.caption("No aged outcome gaps or source-period backlog detected in the lifecycle inventory.")
+with st.expander("Full research inventory · active, maturing and archived"):
+    st.dataframe(lifecycle, hide_index=True, width="stretch")
 
 health = pd.DataFrame(provider_health())
 st.subheader("Provider health")
@@ -141,7 +152,16 @@ with verify_col:
                 if result["valid"] else "Restore drill failed. The live database was never touched."
             )
 
-st.subheader("Options evidence continuity")
+st.subheader("Independent options-chain coverage")
+from src.data.options_context import options_coverage
+from src.data.research_signals import statuses as research_statuses
+chain_coverage = options_coverage([t for t in get_watchlist() if not t.endswith("-USD")] + ["SPY", "QQQ"])
+st.dataframe(pd.DataFrame(chain_coverage), hide_index=True, width="stretch")
+st.caption("Persisted chains with liquidity checks and approximate Greeks. Usable context is not predictive validation or promotion readiness.")
+with st.expander("Macro, institutional and entry-research refresh status"):
+    st.dataframe(pd.DataFrame(research_statuses()), hide_index=True, width="stretch")
+
+st.subheader("Legacy aggregate options evidence")
 st.caption(
     "Monitoring only. Options evidence remains excluded from live scores until continuity, overlap, "
     "and a separate purged evaluation all pass."
@@ -160,10 +180,11 @@ else:
     )
 
 st.subheader("Research alerts")
+st.caption("Provider recovery detection checks the latest 500 transitions; previously saved alerts remain available.")
 try:
     save_research_alerts(build_research_alerts(
         get_backtest_runs(), positioning_histories=positioning_histories,
-        provider_transitions=get_provider_health_transitions(),
+        provider_transitions=get_provider_health_transitions(limit=500),
     ))
     alerts = get_research_alerts()
 except Exception:

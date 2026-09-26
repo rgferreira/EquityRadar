@@ -1,0 +1,12 @@
+{
+  "candidates": 1891,
+  "created": 1512,
+  "pending": 379,
+  "failed": 0,
+  "horizons_created": 1512,
+  "duration_seconds": 19.65,
+  "legacy_cutoffs_reprocessed": 967,
+  "legacy_failed": 0,
+  "price_histories": 26,
+  "unavailable_price_histories": 0
+}

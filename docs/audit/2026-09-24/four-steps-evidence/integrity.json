@@ -1,0 +1,36 @@
+{
+  "backtest_runs": {
+    "original_rows_changed_or_missing": 0
+  },
+  "prediction_input_snapshots": {
+    "original_rows_changed_or_missing": 0
+  },
+  "prediction_snapshots": {
+    "original_rows_changed_or_missing": 0
+  },
+  "shadow_decision_snapshots": {
+    "original_rows_changed_or_missing": 0
+  },
+  "entry_research_snapshots": {
+    "original_rows_changed_or_missing": 0
+  },
+  "quick_check": "ok",
+  "orphan_signal_references": 0,
+  "new_tables": [
+    "entry_context_paths",
+    "entry_context_reports",
+    "entry_context_snapshots",
+    "research_option_capture_index",
+    "research_signal_batches",
+    "research_signal_status"
+  ],
+  "outcome_label_observations": {
+    "original_rows_changed_or_missing": 0
+  },
+  "whale_disclosure_observations": {
+    "original_rows_changed_or_missing": 0
+  },
+  "legacy_outcome_observations": {
+    "original_rows_changed_or_missing": 0
+  }
+}

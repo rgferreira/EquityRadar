@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlencode, urlparse
 from urllib.request import urlopen
+from urllib.error import HTTPError
 
 from src.data.database import init_db, record_provider_health, save_whale_ingestion
 
@@ -19,6 +20,13 @@ from src.data.database import init_db, record_provider_health, save_whale_ingest
 MAX_FMP_PAGE_SIZE = 25
 MAX_FMP_RESPONSE_BYTES = 2 * 1024 * 1024
 SUPPORTED_CHAMBERS = {"house", "senate"}
+
+
+class CongressRequestError(RuntimeError):
+    """Keep only a safe HTTP code, never a credential-bearing URL or body."""
+    def __init__(self, code=None):
+        self.code = code
+        super().__init__("Congress provider request failed" + (f" (HTTP {code})" if code else ""))
 
 
 def _canonical_json(value: object) -> str:
@@ -78,7 +86,7 @@ class FMPCongressTradingProvider:
         if not api_key:
             raise ValueError("FMP_API_KEY is not configured")
         validated_base_url = _validated_https_url(base_url)
-        if validated_base_url is None:
+        if validated_base_url is None or urlparse(base_url).hostname not in {"financialmodelingprep.com", "www.financialmodelingprep.com"}:
             raise ValueError("FMP base URL must be credential-free HTTPS without query or fragment")
         self.api_key = api_key
         self.base_url = validated_base_url.rstrip("/")
@@ -108,6 +116,8 @@ class FMPCongressTradingProvider:
                     payload = json.loads(body)
             else:
                 payload = self.requester(url)
+        except HTTPError as exc:
+            raise CongressRequestError(exc.code) from None
         except Exception:
             # urllib errors may include the complete URL, including the API key.
             raise RuntimeError("FMP congressional request failed") from None
@@ -299,12 +309,13 @@ def ingest_congress_page(
             provider.provider_key, health_ticker, "failed",
             error=safe_error, db_path=db_path,
         )
-        raise RuntimeError(safe_error) from None
+        raise CongressRequestError(getattr(exc, "code", None)) from None
     record_provider_health(provider.provider_key, health_ticker, "healthy", db_path=db_path)
     return {
         **result,
         "provider_key": batch.provider_key,
         "endpoint": batch.endpoint,
+        "raw_payload_id": raw_payload["raw_payload_id"],
         "rows_received": len(batch.rows),
         "fetched_at": batch.fetched_at,
     }

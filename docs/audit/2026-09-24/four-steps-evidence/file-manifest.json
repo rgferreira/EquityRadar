@@ -1,0 +1,135 @@
+[
+  {
+    "file": "src/entry_context.py",
+    "group": "01-validation-candidates",
+    "new_file": true,
+    "sha256": "d65c88e11ff02e38c664140d0738d63e1fa149fc823a1560e13a39f4425818b3",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/strategy_validation.py",
+    "group": "01-validation-candidates",
+    "new_file": true,
+    "sha256": "123522e54cdec34c83fbf1b14a61dbf2266006ddfce3e28898758006a881cb31",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/scoring/current_policy.py",
+    "group": "01-validation-candidates",
+    "new_file": true,
+    "sha256": "44276e487d258548ffbc54af176a4f14af5b512ca3337cab57e2056c2fcef0b3",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "pages/1_Dashboard.py",
+    "group": "01-validation-candidates",
+    "new_file": false,
+    "sha256": "eab60fddc7507d46aeefdd6a18ccdbd3e76864649a6104374fba642b7372b509",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "tests/test_entry_context_v2.py",
+    "group": "01-validation-candidates",
+    "new_file": true,
+    "sha256": "387d9907245d1955f9faee5494c876ae0871b5226d59dfc47b9fb4639f0131e2",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/data/research_signals.py",
+    "group": "02-signal-providers",
+    "new_file": true,
+    "sha256": "35240908f342681e79a4644336020611d5b9397f34b52a98e10409fe0633fa4c",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/data/macro_context.py",
+    "group": "02-signal-providers",
+    "new_file": true,
+    "sha256": "4e53f152aa0e81c6e4210458e26d3e770b520fa9cc48c374379bfb7b4136ad5b",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/data/institutional_positioning.py",
+    "group": "02-signal-providers",
+    "new_file": true,
+    "sha256": "20da3927c6ca233ab6893783cdd9e49651a674f2bcbf51de2ed8eb9ced7c5be0",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/data/options_context.py",
+    "group": "02-signal-providers",
+    "new_file": true,
+    "sha256": "8868e6432264c50a0660dd82e22b0df2be6a933f04236f8ede220eeb853c5435",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "tests/test_research_signal_sources.py",
+    "group": "02-signal-providers",
+    "new_file": true,
+    "sha256": "1cc1671accd9aca1fe4acaffffa123c0c68812f35826940dd639a785af0947df",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/research_pipeline.py",
+    "group": "03-background-ui",
+    "new_file": true,
+    "sha256": "e276199adbd569edbc83207693d8a661348031bf8c5c17bc811ad23f85f0a99c",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "src/operations.py",
+    "group": "03-background-ui",
+    "new_file": false,
+    "sha256": "0aa3bc04ba0bc72f2879d012b615957aa97c1128d226448dffc29ab562a52f82",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "scripts/run_entry_context.py",
+    "group": "03-background-ui",
+    "new_file": true,
+    "sha256": "dd54d9db7019bd5096dc70e8a25e29ac08fdcf96ce8c664f8aeac46e2116ed81",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "pages/9_Research_Lab.py",
+    "group": "03-background-ui",
+    "new_file": false,
+    "sha256": "74be883f159df07f2f862839b4fca0c99bc0d4bbb55c8c5d67934b6cd4f13897",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "pages/6_Operations.py",
+    "group": "03-background-ui",
+    "new_file": false,
+    "sha256": "fdb7a9eec9f69bbba760f74d4ae6d59b8c7cf9185900cee921755971e6738a73",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "pages/8_WhaleSeeker.py",
+    "group": "03-background-ui",
+    "new_file": false,
+    "sha256": "a243aa267b20ccbb4b2bcd41334f35ce586c1f1bbaec197b21150ff80fba36bd",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "tests/test_operations_ui.py",
+    "group": "03-background-ui",
+    "new_file": false,
+    "sha256": "bc8aaf3cd7922a094dc22757bf3a187311cbb2c3b8ae217c4fa5a58a4976ac08",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "docs/experiments/entry-context-v2.md",
+    "group": "04-documentation",
+    "new_file": true,
+    "sha256": "658b444819e4106b684c2e57e389ee2307ec590e1e949ba342e6f2bcc9a0e397",
+    "trailing_whitespace_lines": 0
+  },
+  {
+    "file": "docs/audit/2026-09-24/CUATRO_PASOS_IMPLEMENTADOS_ES.md",
+    "group": "04-documentation",
+    "new_file": true,
+    "sha256": "676e70b5757671a2965a8805cb18f555cf8d3a3403b65f6368d16b667f51940a",
+    "trailing_whitespace_lines": 0
+  }
+]

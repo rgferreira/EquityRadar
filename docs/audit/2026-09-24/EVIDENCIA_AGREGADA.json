@@ -1,0 +1,663 @@
+{
+  "review_date": "2026-09-24",
+  "head": "c4801c8",
+  "scope": "existing working tree, production SQLite read-only; no portfolio or Journal values",
+  "shadow": {
+    "lineage": {
+      "coverage": {
+        "snapshots": 1440,
+        "tickers": 22,
+        "independent_dates": 90,
+        "matured_observations": 179,
+        "matured_dates": 28,
+        "signal_changes": 80,
+        "matured_signal_changes": 0,
+        "changed_dates": 0,
+        "pending_signal_changes": 80,
+        "pending_changed_dates": 41,
+        "captured_changed_dates": 41,
+        "changed_maturity_units": 3.75,
+        "changed_pipeline_progress_pct": 88,
+        "label_statuses": {
+          "available": 278,
+          "awaiting_outcome": 1160,
+          "pending": 2
+        }
+      },
+      "gate": {
+        "status": "Collecting evidence",
+        "rationale": "The independent-date coverage gates have not matured yet.",
+        "criteria": [
+          {
+            "criterion": "Independent outcome maturity",
+            "passed": true,
+            "observed": "28 dates",
+            "required": "≥ 10 matured dates",
+            "purpose": "Avoid treating many tickers from a few dates as independent evidence.",
+            "available": true,
+            "progress_pct": 100,
+            "progress_detail": "Matured 28/10 independent dates"
+          },
+          {
+            "criterion": "Decision-change maturity",
+            "passed": false,
+            "observed": "0 dates",
+            "required": "≥ 5 dates with matured signal changes",
+            "purpose": "Evaluate dates on which the challenger would actually alter a decision.",
+            "available": true,
+            "progress_pct": 88,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 3.75/5"
+          },
+          {
+            "criterion": "Utility improvement uncertainty",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "> 0% lower 95% confidence bound",
+            "purpose": "Require paired benchmark-relative improvement beyond sampling uncertainty.",
+            "available": false,
+            "progress_pct": 88,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 3.75/5"
+          },
+          {
+            "criterion": "Decision accuracy non-deterioration",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "≥ 0 pp paired accuracy delta",
+            "purpose": "Prevent higher utility from hiding systematically worse diagnostic accuracy.",
+            "available": false,
+            "progress_pct": 88,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 3.75/5"
+          },
+          {
+            "criterion": "Across-date consistency",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "≥ 60% positive changed-signal dates",
+            "purpose": "Prevent one exceptional cutoff from dominating the conclusion.",
+            "available": false,
+            "progress_pct": 88,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 3.75/5"
+          },
+          {
+            "criterion": "Ticker concentration",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "≥ 3 tickers and largest share ≤ 35%",
+            "purpose": "Require the result not to depend mainly on one security.",
+            "available": false,
+            "progress_pct": 88,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 3.75/5"
+          }
+        ],
+        "passed": 1,
+        "total": 6
+      },
+      "all_paired": {
+        "observations": 179,
+        "utility_delta_pct": {
+          "estimate": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "independent_dates": 28
+        },
+        "accuracy_delta": {
+          "estimate": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "independent_dates": 28
+        },
+        "live_utility_pct": {
+          "estimate": -3.855073,
+          "ci_low": -8.33468,
+          "ci_high": 0.624534,
+          "independent_dates": 28
+        },
+        "shadow_utility_pct": {
+          "estimate": -3.855073,
+          "ci_low": -8.33468,
+          "ci_high": 0.624534,
+          "independent_dates": 28
+        }
+      },
+      "changed_paired": {
+        "observations": 0,
+        "utility_delta_pct": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        },
+        "accuracy_delta": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        },
+        "live_utility_pct": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        },
+        "shadow_utility_pct": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        }
+      },
+      "by_simulation_source": [
+        {
+          "simulation_source": "live",
+          "snapshots": 1137,
+          "matured": 0,
+          "independent_dates": 0,
+          "signal_changes": 80,
+          "mean_score_delta": 0.32,
+          "utility_delta_pct": null,
+          "accuracy_delta_pp": null
+        },
+        {
+          "simulation_source": "manual",
+          "snapshots": 72,
+          "matured": 69,
+          "independent_dates": 23,
+          "signal_changes": 0,
+          "mean_score_delta": 0.0,
+          "utility_delta_pct": 0.0,
+          "accuracy_delta_pp": 0.0
+        },
+        {
+          "simulation_source": "suggested",
+          "snapshots": 231,
+          "matured": 110,
+          "independent_dates": 5,
+          "signal_changes": 0,
+          "mean_score_delta": 0.0,
+          "utility_delta_pct": 0.0,
+          "accuracy_delta_pp": 0.0
+        }
+      ],
+      "compute_seconds": 0.017,
+      "first_changed_dates": [
+        "2026-07-15",
+        "2026-07-16",
+        "2026-07-17",
+        "2026-07-18",
+        "2026-07-19",
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22"
+      ],
+      "created_range": [
+        "2026-07-15 21:36:12",
+        "2026-09-24 07:57:14"
+      ],
+      "entry_transitions": {
+        "Watch -> Buy candidate": 12,
+        "Buy candidate -> Watch": 5,
+        "Watch -> Wait": 21,
+        "Wait -> Watch": 42
+      }
+    },
+    "v5_only": {
+      "coverage": {
+        "snapshots": 340,
+        "tickers": 22,
+        "independent_dates": 18,
+        "matured_observations": 22,
+        "matured_dates": 1,
+        "signal_changes": 12,
+        "matured_signal_changes": 0,
+        "changed_dates": 0,
+        "pending_signal_changes": 12,
+        "pending_changed_dates": 10,
+        "captured_changed_dates": 10,
+        "changed_maturity_units": 0.87,
+        "changed_pipeline_progress_pct": 59,
+        "label_statuses": {
+          "available": 46,
+          "awaiting_outcome": 294
+        }
+      },
+      "gate": {
+        "status": "Collecting evidence",
+        "rationale": "The independent-date coverage gates have not matured yet.",
+        "criteria": [
+          {
+            "criterion": "Independent outcome maturity",
+            "passed": false,
+            "observed": "1 dates",
+            "required": "≥ 10 matured dates",
+            "purpose": "Avoid treating many tickers from a few dates as independent evidence.",
+            "available": true,
+            "progress_pct": 10,
+            "progress_detail": "Matured 1/10 independent dates"
+          },
+          {
+            "criterion": "Decision-change maturity",
+            "passed": false,
+            "observed": "0 dates",
+            "required": "≥ 5 dates with matured signal changes",
+            "purpose": "Evaluate dates on which the challenger would actually alter a decision.",
+            "available": true,
+            "progress_pct": 59,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 0.87/5"
+          },
+          {
+            "criterion": "Utility improvement uncertainty",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "> 0% lower 95% confidence bound",
+            "purpose": "Require paired benchmark-relative improvement beyond sampling uncertainty.",
+            "available": false,
+            "progress_pct": 59,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 0.87/5"
+          },
+          {
+            "criterion": "Decision accuracy non-deterioration",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "≥ 0 pp paired accuracy delta",
+            "purpose": "Prevent higher utility from hiding systematically worse diagnostic accuracy.",
+            "available": false,
+            "progress_pct": 59,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 0.87/5"
+          },
+          {
+            "criterion": "Across-date consistency",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "≥ 60% positive changed-signal dates",
+            "purpose": "Prevent one exceptional cutoff from dominating the conclusion.",
+            "available": false,
+            "progress_pct": 59,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 0.87/5"
+          },
+          {
+            "criterion": "Ticker concentration",
+            "passed": false,
+            "observed": "Unavailable",
+            "required": "≥ 3 tickers and largest share ≤ 35%",
+            "purpose": "Require the result not to depend mainly on one security.",
+            "available": false,
+            "progress_pct": 59,
+            "progress_detail": "Captured 5/5 changed-signal dates · 3M maturity 0.87/5"
+          }
+        ],
+        "passed": 0,
+        "total": 6
+      },
+      "all_paired": {
+        "observations": 22,
+        "utility_delta_pct": {
+          "estimate": 0.0,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 1
+        },
+        "accuracy_delta": {
+          "estimate": 0.0,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 1
+        },
+        "live_utility_pct": {
+          "estimate": -11.079009,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 1
+        },
+        "shadow_utility_pct": {
+          "estimate": -11.079009,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 1
+        }
+      },
+      "changed_paired": {
+        "observations": 0,
+        "utility_delta_pct": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        },
+        "accuracy_delta": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        },
+        "live_utility_pct": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        },
+        "shadow_utility_pct": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 0
+        }
+      },
+      "by_simulation_source": [
+        {
+          "simulation_source": "live",
+          "snapshots": 294,
+          "matured": 0,
+          "independent_dates": 0,
+          "signal_changes": 12,
+          "mean_score_delta": 0.14,
+          "utility_delta_pct": null,
+          "accuracy_delta_pp": null
+        },
+        {
+          "simulation_source": "suggested",
+          "snapshots": 46,
+          "matured": 22,
+          "independent_dates": 1,
+          "signal_changes": 0,
+          "mean_score_delta": 0.0,
+          "utility_delta_pct": 0.0,
+          "accuracy_delta_pp": 0.0
+        }
+      ],
+      "compute_seconds": 0.005,
+      "first_changed_dates": [
+        "2026-08-25",
+        "2026-08-28",
+        "2026-09-14",
+        "2026-09-17",
+        "2026-09-18",
+        "2026-09-19",
+        "2026-09-20",
+        "2026-09-21"
+      ],
+      "created_range": [
+        "2026-08-25 15:11:21",
+        "2026-09-24 07:57:14"
+      ],
+      "entry_transitions": {
+        "Watch -> Buy candidate": 1,
+        "Wait -> Watch": 8,
+        "Watch -> Wait": 3
+      }
+    }
+  },
+  "live_prospective": {
+    "status": "awaiting_maturity",
+    "matured_observations": 0,
+    "independent_dates": 0,
+    "accuracy_pct": null,
+    "utility_pct": null,
+    "accuracy_interval": {
+      "estimate": null,
+      "ci_low": null,
+      "ci_high": null,
+      "independent_dates": 0
+    },
+    "utility_interval": {
+      "estimate": null,
+      "ci_low": null,
+      "ci_high": null,
+      "independent_dates": 0
+    },
+    "temporal_evidence": {
+      "status": "collecting_evidence",
+      "window_dates": 5,
+      "required_dates": 10,
+      "independent_dates": 0,
+      "series": [],
+      "prior_window": null,
+      "recent_window": null,
+      "utility_change_pct": null,
+      "accuracy_change": null,
+      "utility_sign_reversal": false
+    },
+    "frozen_baseline": {
+      "observations": 378,
+      "independent_dates": 21,
+      "accuracy_pct": 46.83,
+      "former_live_accuracy_pct": 43.12
+    }
+  },
+  "sql_experiment": {
+    "projection_rows": 1800,
+    "build_seconds": 12.068937040981837,
+    "read_seconds": 0.028628083993680775,
+    "baseline_seconds": 12.418153709033504,
+    "exact_same_results": true,
+    "returned_rows": 2531,
+    "scope": "temporary in-memory projection, production database attached read-only"
+  },
+  "current_core_evaluation": {
+    "scope": "current registered core historical reconstructions, current frozen evaluator, excludes SPY BTC-USD SPCX; not prospective live industry alpha",
+    "coverage": {
+      "input_rows": 793,
+      "eligible_rows": 616,
+      "test_rows": 418,
+      "independent_test_dates": 19,
+      "folds": 19
+    },
+    "status": "evaluated",
+    "policies": {
+      "candidate": {
+        "observations": 418,
+        "utility_pct": {
+          "estimate": 0.009793,
+          "ci_low": -5.713382,
+          "ci_high": 5.732968,
+          "independent_dates": 19
+        },
+        "accuracy": {
+          "estimate": 0.497608,
+          "ci_low": 0.446409,
+          "ci_high": 0.548806,
+          "independent_dates": 19
+        }
+      },
+      "base_score": {
+        "observations": 418,
+        "utility_pct": {
+          "estimate": 0.009793,
+          "ci_low": -5.713382,
+          "ci_high": 5.732968,
+          "independent_dates": 19
+        },
+        "accuracy": {
+          "estimate": 0.497608,
+          "ci_low": 0.446409,
+          "ci_high": 0.548806,
+          "independent_dates": 19
+        }
+      },
+      "benchmark": {
+        "observations": 418,
+        "utility_pct": {
+          "estimate": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "independent_dates": 19
+        },
+        "accuracy": {
+          "estimate": null,
+          "ci_low": null,
+          "ci_high": null,
+          "independent_dates": 19
+        },
+        "note": "The benchmark is the zero-relative-return reference; decision accuracy is not applicable."
+      },
+      "always_buy": {
+        "observations": 418,
+        "utility_pct": {
+          "estimate": 9.802702,
+          "ci_low": 4.405126,
+          "ci_high": 15.200277,
+          "independent_dates": 19
+        },
+        "accuracy": {
+          "estimate": 0.502392,
+          "ci_low": 0.435475,
+          "ci_high": 0.56931,
+          "independent_dates": 19
+        }
+      },
+      "always_wait": {
+        "observations": 418,
+        "utility_pct": {
+          "estimate": -9.802702,
+          "ci_low": -15.200277,
+          "ci_high": -4.405126,
+          "independent_dates": 19
+        },
+        "accuracy": {
+          "estimate": 0.497608,
+          "ci_low": 0.43069,
+          "ci_high": 0.564525,
+          "independent_dates": 19
+        }
+      },
+      "technical_momentum": {
+        "observations": 418,
+        "utility_pct": {
+          "estimate": 3.283687,
+          "ci_low": -1.016481,
+          "ci_high": 7.583855,
+          "independent_dates": 19
+        },
+        "accuracy": {
+          "estimate": 0.5311,
+          "ci_low": 0.487448,
+          "ci_high": 0.574753,
+          "independent_dates": 19
+        }
+      }
+    }
+  },
+  "security": {
+    "packages_audited": 62,
+    "vulnerable_packages": [
+      {
+        "name": "gitpython",
+        "version": "3.1.59",
+        "advisories": [
+          {
+            "id": "PYSEC-2026-3983",
+            "aliases": [
+              "GHSA-whh4-5q6c-9v3x",
+              "CVE-2026-87818"
+            ],
+            "fix_versions": [
+              "3.1.60"
+            ]
+          },
+          {
+            "id": "PYSEC-2026-3984",
+            "aliases": [
+              "GHSA-g5vv-9gxw-82hx",
+              "CVE-2026-87819"
+            ],
+            "fix_versions": [
+              "3.1.60"
+            ]
+          },
+          {
+            "id": "PYSEC-2026-3982",
+            "aliases": [
+              "GHSA-239g-whfq-7xj9",
+              "CVE-2026-87817"
+            ],
+            "fix_versions": [
+              "3.1.60"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "pip",
+        "version": "26.1.2",
+        "advisories": [
+          {
+            "id": "PYSEC-2026-3721",
+            "aliases": [
+              "GHSA-qwm4-qh6w-59xr",
+              "CVE-2026-13346"
+            ],
+            "fix_versions": [
+              "26.2"
+            ]
+          },
+          {
+            "id": "PYSEC-2026-3721",
+            "aliases": [
+              "GHSA-qwm4-qh6w-59xr",
+              "CVE-2026-13346"
+            ],
+            "fix_versions": [
+              "26.2.0"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "soupsieve",
+        "version": "2.8.4",
+        "advisories": [
+          {
+            "id": "CVE-2026-85999",
+            "aliases": [
+              "GHSA-j934-xhv5-fg8f"
+            ],
+            "fix_versions": [
+              "2.9.0"
+            ]
+          },
+          {
+            "id": "CVE-2026-86000",
+            "aliases": [
+              "GHSA-gjv8-xp57-g29c"
+            ],
+            "fix_versions": [
+              "2.9.0"
+            ]
+          }
+        ]
+      }
+    ],
+    "bandit_totals": {
+      "CONFIDENCE.HIGH": 13,
+      "CONFIDENCE.LOW": 2,
+      "CONFIDENCE.MEDIUM": 8,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 9,
+      "SEVERITY.MEDIUM": 14,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 15085,
+      "nosec": 0,
+      "skipped_tests": 1
+    }
+  },
+  "tests": {
+    "pytest_passed": 305,
+    "pytest_seconds": 92.44,
+    "compile": "passed",
+    "imported_modules": 59,
+    "pip_check": "passed"
+  },
+  "additional_verified_counts": {
+    "legacy_outcome_rows": 16696417,
+    "legacy_table_mb": 1841.1,
+    "database_mb": 1934.02,
+    "unreplayable_live_industry_predictions": 1294,
+    "exact_manual_core_predictions": 577,
+    "exact_suggested_core_predictions": 317,
+    "april_may_available_labels_without_3m": 124,
+    "options_coverage_ready_tickers": 23,
+    "options_report_tickers": 26,
+    "changed_dates": 41,
+    "weekend_changed_dates": 11
+  }
+}

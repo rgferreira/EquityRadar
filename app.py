@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from src.data.database import acknowledge_model_gate_modal
+from src.data.database import acknowledge_model_gate_modal, init_db
 from src.model_gate_alerts import process_model_gate_alert
 from src.model_registry import ACTIVE_SHADOW_ENABLED, TECHNOLOGY_POTENTIAL_SHADOW_VERSION
 from src.operations import start_local_scheduler
@@ -11,6 +11,10 @@ st.set_page_config(
     page_title="Personal Equity Radar", page_icon="📈", layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# Bootstrap the shared database before any scheduler, alert, or page session can
+# touch it. Later page-level calls are serialized process-local no-ops.
+init_db()
 
 # Server-lifetime maintenance does not depend on a browser page remaining open.
 start_local_scheduler()
@@ -58,6 +62,7 @@ pages = [
     st.Page("pages/4_Journal.py", title="Journal", icon="📝", url_path="Journal"),
     st.Page("pages/0_Watchlist.py", title="Watchlist", icon="⚙️", url_path="Watchlist"),
     st.Page("pages/5_Model_Tuning.py", title="Model tuning", icon="🧪", url_path="Model-tuning"),
+    st.Page("pages/9_Research_Lab.py", title="Entry research", icon="🔬", url_path="Entry-research"),
     st.Page("pages/6_Operations.py", title="Operations", icon="🩺", url_path="Operations"),
     st.Page("pages/7_Scenario_Lab.py", title="Scenario lab", icon="🧭", url_path="Scenario-lab"),
 ]

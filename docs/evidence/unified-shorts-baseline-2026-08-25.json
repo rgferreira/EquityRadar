@@ -1,0 +1,76 @@
+{
+  "active_shadow_version": "technology-unified-shorts-v5-shadow",
+  "captured_at": "2026-08-25T15:47:49+00:00",
+  "pilot_maturity": {
+    "candidate_model_version": "technology-unified-shorts-v5-shadow",
+    "gate_status": "Collecting evidence",
+    "gates_passed": 0,
+    "gates_total": 6,
+    "independent_dates": 1,
+    "matured_observations": 0,
+    "matured_signal_changes": 0,
+    "next_maturity_date": "2026-11-25",
+    "pending_changed_dates": 1,
+    "pipeline_progress_pct": 10,
+    "signal_changes": 1,
+    "snapshots": 9
+  },
+  "reports": {
+    "technology-daily-short-flow-v3-shadow": {
+      "comparison_rows": 1245,
+      "config_hash": "d4d56e729f9ab92c2362a95c9b59c0f22a7fd1b8e4bc3a67004d18e803bab01e",
+      "coverage": {
+        "captured_changed_dates": 32,
+        "changed_dates": 0,
+        "changed_maturity_units": 2.12,
+        "changed_pipeline_progress_pct": 71,
+        "independent_dates": 75,
+        "label_statuses": {"available": 241, "awaiting_outcome": 994, "pending": 2, "unavailable": 8},
+        "matured_dates": 27,
+        "matured_observations": 161,
+        "matured_signal_changes": 0,
+        "pending_changed_dates": 32,
+        "pending_signal_changes": 69,
+        "signal_changes": 69,
+        "snapshots": 1245,
+        "tickers": 25
+      },
+      "gate": {"passed": 1, "status": "Collecting evidence", "total": 6},
+      "shadow_snapshots": 1338
+    },
+    "technology-unified-shorts-v5-shadow": {
+      "comparison_rows": 9,
+      "config_hash": "6df908d5e51208b40af9f559b3568bf1a094b585ce0fdc497a95fb0a37a5b3bb",
+      "coverage": {
+        "captured_changed_dates": 1,
+        "changed_dates": 0,
+        "changed_maturity_units": 0.0,
+        "changed_pipeline_progress_pct": 10,
+        "independent_dates": 1,
+        "label_statuses": {"awaiting_outcome": 9},
+        "matured_dates": 0,
+        "matured_observations": 0,
+        "matured_signal_changes": 0,
+        "pending_changed_dates": 1,
+        "pending_signal_changes": 1,
+        "signal_changes": 1,
+        "snapshots": 9,
+        "tickers": 9
+      },
+      "gate": {"passed": 0, "status": "Collecting evidence", "total": 6},
+      "shadow_snapshots": 9
+    }
+  },
+  "snapshot_schema": "unified-shorts-baseline-v1",
+  "source_state": {
+    "backtest_fingerprint_sha256": "07a74217e5e2119b45170f17e84c7d72ceed9c27bd69f19daf9583dd8588ec95",
+    "backtest_runs": 2408,
+    "finra_earliest": "2026-03-16",
+    "finra_fingerprint_sha256": "a830b461336e15eb23fa3a5c92565cfc57b90585904898eb3abbc6537e0e11df",
+    "finra_latest": "2026-08-24",
+    "finra_observations": 2632,
+    "prediction_snapshots": 2860,
+    "shadow_snapshots_all_versions": 2635,
+    "watchlist_symbols": 25
+  }
+}

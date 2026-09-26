@@ -43,7 +43,7 @@ def _fetch_price_history_cached(ticker: str, period: str, timeout: int) -> pd.Da
 
 
 def fetch_price_history(
-    ticker: str, timeout: int = DEFAULT_REQUEST_TIMEOUT_SECONDS, period: str = "1y"
+    ticker: str, timeout: int = DEFAULT_REQUEST_TIMEOUT_SECONDS, period: str = "1y", *, force_refresh: bool = False
 ) -> pd.DataFrame:
     """Fetch daily prices for a supported range, reusing cached responses."""
     normalized_ticker = ticker.strip().upper()
@@ -51,12 +51,24 @@ def fetch_price_history(
         raise ValueError("Ticker cannot be empty")
     if period not in SUPPORTED_PERIODS:
         raise ValueError(f"Unsupported price-history period: {period}")
-    return _fetch_price_history_cached(normalized_ticker, period, timeout).copy()
+    fetcher = _fetch_price_history_cached.__wrapped__ if force_refresh else _fetch_price_history_cached
+    return fetcher(normalized_ticker, period, timeout).copy()
 
 
 def get_price_history_fetched_at(ticker: str, period: str = "1y") -> str | None:
     """Return when this process last fetched a ticker/range from yfinance."""
     return _price_history_fetched_at.get((ticker.strip().upper(), period))
+
+
+def latest_price_observed_at(history: pd.DataFrame) -> str | None:
+    """Return the provider date/time attached to the latest usable close."""
+    if history.empty or "Close" not in history:
+        return None
+    usable = history["Close"].dropna()
+    if usable.empty:
+        return None
+    timestamp = pd.Timestamp(usable.index[-1])
+    return timestamp.isoformat()
 
 
 @lru_cache(maxsize=100)
@@ -95,6 +107,8 @@ def fetch_asset_profile(ticker: str) -> dict[str, str | None]:
 
 def clear_market_data_cache() -> None:
     """Force the next market-data call to request a new provider response."""
+    from src.data.price_cache import invalidate_price_cache
+    invalidate_price_cache()
     _fetch_price_history_cached.cache_clear()
     _price_history_fetched_at.clear()
     fetch_quote_currency.cache_clear()
@@ -131,3 +145,33 @@ def calculate_metrics(history: pd.DataFrame) -> dict[str, float | None]:
         "ma_100": float(close.tail(100).mean()) if len(close) >= 100 else None,
         "ma_200": float(close.tail(200).mean()) if len(close) >= 200 else None,
     }
+
+
+def calculate_return_since_date(
+    history: pd.DataFrame, start_date: object,
+) -> float | None:
+    """Approximate return from the first available adjusted close on/after a date."""
+    if history.empty or "Close" not in history or start_date is None:
+        return None
+    try:
+        start = pd.Timestamp(start_date)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(start):
+        return None
+    if start.tzinfo is not None:
+        start = start.tz_convert(None)
+    start = start.normalize()
+
+    close = pd.to_numeric(history["Close"], errors="coerce").dropna()
+    if close.empty:
+        return None
+    dates = pd.to_datetime(close.index, errors="coerce", utc=True).tz_convert(None).normalize()
+    dated_close = pd.Series(close.to_numpy(), index=dates).loc[lambda series: ~series.index.isna()]
+    eligible = dated_close[dated_close.index >= start]
+    if eligible.empty:
+        return None
+    initial, latest = float(eligible.iloc[0]), float(dated_close.iloc[-1])
+    if initial <= 0 or dated_close.index[-1] < start:
+        return None
+    return (latest / initial - 1) * 100

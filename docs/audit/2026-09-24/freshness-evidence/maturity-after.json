@@ -1,0 +1,165 @@
+{
+  "gate": {
+    "coverage": {
+      "snapshots": 1440,
+      "tickers": 22,
+      "independent_dates": 90,
+      "matured_observations": 232,
+      "matured_dates": 33,
+      "signal_changes": 80,
+      "matured_signal_changes": 0,
+      "changed_dates": 0,
+      "pending_signal_changes": 80,
+      "pending_changed_dates": 41,
+      "captured_changed_dates": 41,
+      "changed_maturity_units": 3.75,
+      "changed_pipeline_progress_pct": 88,
+      "label_statuses": {
+        "available": 232,
+        "pending": 857,
+        "awaiting_outcome": 351
+      }
+    },
+    "gate": {
+      "status": "Collecting evidence",
+      "rationale": "The distinct-date coverage gates have not matured yet.",
+      "criteria": [
+        {
+          "criterion": "Distinct-date outcome maturity",
+          "passed": true,
+          "observed": "33 dates",
+          "required": "\u2265 10 matured dates",
+          "purpose": "Avoid treating many tickers from a few dates as independent evidence.",
+          "available": true,
+          "progress_pct": 100,
+          "progress_detail": "Matured 33/10 distinct dates"
+        },
+        {
+          "criterion": "Decision-change maturity",
+          "passed": false,
+          "observed": "0 dates",
+          "required": "\u2265 5 dates with matured signal changes",
+          "purpose": "Evaluate dates on which the challenger would actually alter a decision.",
+          "available": true,
+          "progress_pct": 88,
+          "progress_detail": "Captured 5/5 changed-signal dates \u00b7 3M maturity 3.75/5"
+        },
+        {
+          "criterion": "Utility improvement uncertainty",
+          "passed": false,
+          "observed": "Unavailable",
+          "required": "> 0% lower 95% confidence bound",
+          "purpose": "Require paired benchmark-relative improvement beyond sampling uncertainty.",
+          "available": false,
+          "progress_pct": 88,
+          "progress_detail": "Captured 5/5 changed-signal dates \u00b7 3M maturity 3.75/5"
+        },
+        {
+          "criterion": "Decision accuracy non-deterioration",
+          "passed": false,
+          "observed": "Unavailable",
+          "required": "\u2265 0 pp paired accuracy delta",
+          "purpose": "Prevent higher utility from hiding systematically worse diagnostic accuracy.",
+          "available": false,
+          "progress_pct": 88,
+          "progress_detail": "Captured 5/5 changed-signal dates \u00b7 3M maturity 3.75/5"
+        },
+        {
+          "criterion": "Across-date consistency",
+          "passed": false,
+          "observed": "Unavailable",
+          "required": "\u2265 60% positive changed-signal dates",
+          "purpose": "Prevent one exceptional cutoff from dominating the conclusion.",
+          "available": false,
+          "progress_pct": 88,
+          "progress_detail": "Captured 5/5 changed-signal dates \u00b7 3M maturity 3.75/5"
+        },
+        {
+          "criterion": "Ticker concentration",
+          "passed": false,
+          "observed": "Unavailable",
+          "required": "\u2265 3 tickers and largest share \u2264 35%",
+          "purpose": "Require the result not to depend mainly on one security.",
+          "available": false,
+          "progress_pct": 88,
+          "progress_detail": "Captured 5/5 changed-signal dates \u00b7 3M maturity 3.75/5"
+        }
+      ],
+      "passed": 1,
+      "total": 6
+    },
+    "all_paired": {
+      "observations": 232,
+      "utility_delta_pct": {
+        "estimate": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "independent_dates": 33
+      },
+      "accuracy_delta": {
+        "estimate": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "independent_dates": 33
+      },
+      "live_utility_pct": {
+        "estimate": -3.803176,
+        "ci_low": -7.758367,
+        "ci_high": 0.152015,
+        "independent_dates": 33
+      },
+      "shadow_utility_pct": {
+        "estimate": -3.803176,
+        "ci_low": -7.758367,
+        "ci_high": 0.152015,
+        "independent_dates": 33
+      }
+    },
+    "changed_paired": {
+      "observations": 0,
+      "utility_delta_pct": {
+        "estimate": null,
+        "ci_low": null,
+        "ci_high": null,
+        "independent_dates": 0
+      },
+      "accuracy_delta": {
+        "estimate": null,
+        "ci_low": null,
+        "ci_high": null,
+        "independent_dates": 0
+      },
+      "live_utility_pct": {
+        "estimate": null,
+        "ci_low": null,
+        "ci_high": null,
+        "independent_dates": 0
+      },
+      "shadow_utility_pct": {
+        "estimate": null,
+        "ci_low": null,
+        "ci_high": null,
+        "independent_dates": 0
+      }
+    }
+  },
+  "coverage": {
+    "archive": {
+      "manual/1M": 1407,
+      "manual/3M": 1369,
+      "manual/6M": 850,
+      "suggested/1M": 340,
+      "suggested/3M": 115,
+      "suggested/6M": 69
+    },
+    "current": {
+      "live/1M": 898,
+      "manual/1M": 1452,
+      "manual/3M": 1407,
+      "manual/6M": 1159,
+      "suggested/1M": 364,
+      "suggested/3M": 290,
+      "suggested/6M": 92
+    }
+  }
+}

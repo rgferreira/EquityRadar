@@ -1,0 +1,59 @@
+{
+  "capture": {
+    "excluded": 0,
+    "inputs": 23,
+    "snapshot_id": "e66a1bf146f86523e9468531f9a80828c82e86e78ff8760fbd174f4c59f769e5",
+    "snapshot_saved": false,
+    "status": "captured"
+  },
+  "completed_at": "2026-09-24T18:03:04.897353+00:00",
+  "options_usable_tickers": 22,
+  "price_failures": 0,
+  "price_histories": 35,
+  "reports": [
+    {
+      "exclusions": {
+        "horizon_not_mature_or_benchmark_missing": 1
+      },
+      "horizon": "1M",
+      "report_id": "14fa5d95a105642d80e4bc68ebb1aac33503dc9c3710378cc5f85b7fbbddf36e",
+      "source": "prospective",
+      "test_cohorts": 0
+    },
+    {
+      "exclusions": {
+        "horizon_not_mature_or_benchmark_missing": 1
+      },
+      "horizon": "3M",
+      "report_id": "b0b0df0189ce485a46035b56e8e63e5dadb6a765c67cabcd0ff09defa9e56d83",
+      "source": "prospective",
+      "test_cohorts": 0
+    },
+    {
+      "exclusions": {
+        "insufficient_purged_prior_dates": 5,
+        "overlapping_test_window": 23
+      },
+      "horizon": "1M",
+      "report_id": "e0c839fa13e7a49f9825f08ba25d33f63abdbe97b7cd5997561491d4fe968aff",
+      "source": "retrospective_unverified",
+      "test_cohorts": 12
+    },
+    {
+      "exclusions": {
+        "horizon_not_mature_or_benchmark_missing": 7,
+        "insufficient_purged_prior_dates": 9,
+        "overlapping_test_window": 20
+      },
+      "horizon": "3M",
+      "report_id": "50401f8998f02b25cb838e84d09c8bd363c418013d801ce13dd59682f41e3158",
+      "source": "retrospective_unverified",
+      "test_cohorts": 4
+    }
+  ],
+  "source_status_counts": {
+    "captured": 0,
+    "empty": 0,
+    "failed": 0
+  }
+}

@@ -8,6 +8,8 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import date
 
+from src.model_registry import EQUITY_GATE_SHADOW_LINEAGE, TECHNOLOGY_POTENTIAL_SHADOW_VERSION
+
 
 MIN_MATURED_DATES = 10
 MIN_CHANGED_DATES = 5
@@ -15,12 +17,38 @@ MIN_POSITIVE_DATE_SHARE = 0.60
 MAX_TICKER_CONCENTRATION = 0.35
 WATCH_TOLERANCE_PCT = 3.0
 THREE_MONTH_MATURITY_DAYS = 92
+TEMPORAL_WINDOW_DATES = 5
 PROMOTION_BASELINE = {
     "observations": 378,
     "independent_dates": 21,
     "accuracy_pct": 46.83,
     "former_live_accuracy_pct": 43.12,
 }
+
+
+def select_equity_gate_lineage_snapshots(
+    rows: Sequence[Mapping[str, object]], excluded_tickers: set[str] | Sequence[str],
+) -> list[Mapping[str, object]]:
+    """Continue equity-only gates across the declared v3→v5 compatible lineage.
+
+    A same-ticker/same-date overlap prefers v5. Excluded assets (notably BTC)
+    never inherit evidence through this compatibility rule.
+    """
+    excluded = {str(ticker).strip().upper() for ticker in excluded_tickers}
+    eligible = [
+        row for row in rows
+        if str(row.get("challenger_model_version")) in EQUITY_GATE_SHADOW_LINEAGE
+        and str(row.get("ticker")).strip().upper() not in excluded
+    ]
+    ranked = sorted(
+        eligible,
+        key=lambda row: str(row.get("challenger_model_version"))
+        == TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+    )
+    by_decision: dict[tuple[str, str], Mapping[str, object]] = {}
+    for row in ranked:
+        by_decision[(str(row.get("ticker")).upper(), str(row.get("as_of_date")))] = row
+    return list(by_decision.values())
 
 
 def _json(value: object) -> dict[str, object]:
@@ -131,9 +159,11 @@ def prepare_shadow_comparisons(
             "shadow_signal": shadow_signal,
             "signal_changed": bool(shadow["signal_changed"]),
             "label_status": (
-                str(label.get("status")) if label else
+                ("pending" if label.get("status") == "available" and outcome is None
+                 else str(label.get("status"))) if label else
                 "awaiting_outcome" if prediction else "prediction_not_linked"
             ),
+            "label_horizon": horizon,
             "outcome_end_date": str(outcome.get("end_date")) if outcome else None,
             "relative_return_pct": float(relative) if isinstance(relative, (int, float)) else None,
             "live_utility_pct": live_utility,
@@ -260,14 +290,14 @@ def build_model_tuning_report(
     )
     criteria = [
         {
-            "criterion": "Independent outcome maturity",
+            "criterion": "Distinct-date outcome maturity",
             "passed": matured_dates >= MIN_MATURED_DATES,
             "observed": f"{matured_dates} dates",
             "required": f"≥ {MIN_MATURED_DATES} matured dates",
             "purpose": "Avoid treating many tickers from a few dates as independent evidence.",
             "available": True,
             "progress_pct": progress(matured_dates, MIN_MATURED_DATES),
-            "progress_detail": f"Matured {matured_dates}/{MIN_MATURED_DATES} independent dates",
+            "progress_detail": f"Matured {matured_dates}/{MIN_MATURED_DATES} distinct dates",
         },
         {
             "criterion": "Decision-change maturity",
@@ -340,7 +370,7 @@ def build_model_tuning_report(
     passed_count = sum(bool(item["passed"]) for item in criteria)
     if matured_dates < MIN_MATURED_DATES or changed_dates < MIN_CHANGED_DATES:
         gate = "Collecting evidence"
-        rationale = "The independent-date coverage gates have not matured yet."
+        rationale = "The distinct-date coverage gates have not matured yet."
     elif passed_count < len(criteria):
         gate = "Inconclusive"
         rationale = "Coverage exists, but one or more performance or robustness gates remain red."
@@ -348,6 +378,12 @@ def build_model_tuning_report(
         gate = "Eligible for human review"
         rationale = "All preregistered readiness gates are green; this is not approval or automatic promotion."
     return {
+        "interpretation": {
+            "pipeline_is_promotion_probability": False,
+            "date_units": "distinct calendar cutoffs; overlapping horizons remain dependent",
+            "intervals_adjusted_for_horizon_overlap": False,
+            "replay_scope": "legacy core inputs do not reproduce industry-calibrated live scoring",
+        },
         "coverage": {
             "snapshots": len(records),
             "tickers": len({str(row["ticker"]) for row in records}),
@@ -413,6 +449,79 @@ def cumulative_curve_overlap(rows: Sequence[Mapping[str, object]]) -> dict[str, 
     }
 
 
+def _temporal_evidence_shift(
+    by_date_utility: Mapping[str, Sequence[float]],
+    by_date_accuracy: Mapping[str, Sequence[float]],
+    *, window_dates: int = TEMPORAL_WINDOW_DATES,
+) -> dict[str, object]:
+    """Compare adjacent date-clustered windows without declaring causal drift.
+
+    Security rows from the same cutoff share market conditions, so each date is
+    reduced to one mean before the two windows are compared.  The result is an
+    inspection aid only: it has no effect on model gates, activation, or scores.
+    """
+    if window_dates < 1:
+        raise ValueError("window_dates must be at least 1")
+    series = []
+    for decision_date in sorted(set(by_date_utility) & set(by_date_accuracy)):
+        utility_values = list(by_date_utility[decision_date])
+        accuracy_values = list(by_date_accuracy[decision_date])
+        if not utility_values or not accuracy_values:
+            continue
+        series.append({
+            "as_of_date": decision_date,
+            "observations": len(utility_values),
+            "utility_pct": round(sum(utility_values) / len(utility_values), 6),
+            "accuracy": round(sum(accuracy_values) / len(accuracy_values), 6),
+        })
+
+    required_dates = window_dates * 2
+    base = {
+        "status": "ready" if len(series) >= required_dates else "collecting_evidence",
+        "window_dates": window_dates,
+        "required_dates": required_dates,
+        "independent_dates": len(series),
+        "series": series,
+        "prior_window": None,
+        "recent_window": None,
+        "utility_change_pct": None,
+        "accuracy_change": None,
+        "utility_sign_reversal": False,
+    }
+    if len(series) < required_dates:
+        return base
+
+    prior_rows = series[-required_dates:-window_dates]
+    recent_rows = series[-window_dates:]
+
+    def window_summary(window: Sequence[Mapping[str, object]]) -> dict[str, object]:
+        return {
+            "start_date": str(window[0]["as_of_date"]),
+            "end_date": str(window[-1]["as_of_date"]),
+            "independent_dates": len(window),
+            "observations": sum(int(row["observations"]) for row in window),
+            "utility_pct": round(
+                sum(float(row["utility_pct"]) for row in window) / len(window), 6,
+            ),
+            "accuracy": round(
+                sum(float(row["accuracy"]) for row in window) / len(window), 6,
+            ),
+        }
+
+    prior = window_summary(prior_rows)
+    recent = window_summary(recent_rows)
+    prior_utility = float(prior["utility_pct"])
+    recent_utility = float(recent["utility_pct"])
+    base.update({
+        "prior_window": prior,
+        "recent_window": recent,
+        "utility_change_pct": round(recent_utility - prior_utility, 6),
+        "accuracy_change": round(float(recent["accuracy"]) - float(prior["accuracy"]), 6),
+        "utility_sign_reversal": prior_utility * recent_utility < 0,
+    })
+    return base
+
+
 def build_post_promotion_report(
     predictions: Sequence[Mapping[str, object]],
     labels: Sequence[Mapping[str, object]], *, model_version: str, promoted_at: str,
@@ -457,6 +566,7 @@ def build_post_promotion_report(
         matured += 1
     accuracy = _cluster_summary(by_date_accuracy)
     utility = _cluster_summary(by_date_utility)
+    temporal_evidence = _temporal_evidence_shift(by_date_utility, by_date_accuracy)
     return {
         "status": "monitoring" if matured else "awaiting_maturity",
         "matured_observations": matured,
@@ -468,5 +578,6 @@ def build_post_promotion_report(
         "utility_pct": utility["estimate"],
         "accuracy_interval": accuracy,
         "utility_interval": utility,
+        "temporal_evidence": temporal_evidence,
         "frozen_baseline": dict(PROMOTION_BASELINE),
     }

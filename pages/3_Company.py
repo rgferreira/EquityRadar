@@ -5,23 +5,29 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import streamlit as st
 
-from src.data.database import get_backtest_runs, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_finra_daily_short_volume, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
+from src.data.database import get_backtest_runs, get_bitcoin_derivatives_daily_observations, get_btc_simulation_enrichments, get_cached_industry_research, get_cached_positioning, get_dashboard_order, get_finra_daily_short_volume, get_journal_entries, get_portfolio_holdings, get_portfolio_targets, get_positioning_history, get_simulation_suggestions, get_watchlist, init_db
 from src.backtesting import decision_accuracy_history, diagnostic_success_rate, decision_outcome, latest_model_runs, learned_score_adjustments
+from src.btc_simulation_enrichment import recalculate_btc_simulation_enrichments
 from src.model_policy import governed_learning_adjustments
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
 from src.data.market_data import calculate_metrics, fetch_price_history
-from src.data.extended_hours import get_extended_hours_quote
+from src.data.database import get_cached_extended_hours_quote
+from src.data.extended_hours_refresh import schedule_extended_hours_refresh
 from src.data.industry_refresh import industry_refresh_status, schedule_industry_refresh
 from src.data.positioning_refresh import finra_backfill_status, positioning_refresh_status, schedule_finra_backfill, schedule_positioning_refresh
 from src.data.finra_daily_volume_refresh import (
     finra_daily_volume_status, schedule_finra_daily_volume_refresh,
+)
+from src.data.bitcoin_derivatives import (
+    bitcoin_derivatives_status, schedule_bitcoin_derivatives_refresh,
 )
 from src.data.yfinance_fundamentals import YFinanceFundamentalsProvider
 from src.scoring.risk import calculate_risk_score, risk_score_details
 from src.scoring.technical import calculate_technical_score
 from src.scoring.technology import technology_potential_evidence
 from src.scoring.daily_short_flow import daily_short_flow_evidence
+from src.scoring.btc_short_pressure import btc_short_pressure_evidence
 from src.scoring.decision import (
     calculate_coverage_aware_entry_score, calculate_exit_review_score,
     entry_label, exit_review_label,
@@ -36,6 +42,8 @@ from src.scoring.position_action import initiation_diagnostic, position_action
 from src.utils.config import FMP_API_KEY
 from src.ui import inject_app_styles, page_header, style_figure, zebra_table
 from src.shadow_model import meaningful_valuation_available
+
+from src.data.price_cache import fetch_cached_price_history as fetch_price_history
 
 st.set_page_config(page_title="Company | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -80,6 +88,7 @@ with ticker_col:
 with history_col:
     history_label = st.radio("Chart history", ["1 year", "3 years"], horizontal=True)
 history_period = "1y" if history_label == "1 year" else "3y"
+is_bitcoin = ticker.strip().upper() in {"BTC-USD", "BTCUSD"}
 company_snapshot = get_cached_industry_research(ticker) or {}
 company_profile = company_snapshot.get("profile") or {}
 company_name = str(company_profile.get("company_name") or ticker)
@@ -90,6 +99,8 @@ schedule_industry_refresh([ticker], max_new=1)
 schedule_positioning_refresh([ticker], max_new=1)
 schedule_finra_backfill([ticker], max_new=1)
 schedule_finra_daily_volume_refresh(tickers)
+if is_bitcoin:
+    schedule_bitcoin_derivatives_refresh()
 
 @st.fragment(run_every=4)
 def render_selected_company_refresh_status() -> None:
@@ -144,12 +155,31 @@ def render_positioning_refresh_status() -> None:
 
 render_positioning_refresh_status()
 
+if is_bitcoin:
+    @st.fragment(run_every=4)
+    def render_bitcoin_derivatives_refresh_status() -> None:
+        schedule_bitcoin_derivatives_refresh()
+        status = bitcoin_derivatives_status()
+        if status == "Updating":
+            st.caption("Bitcoin perpetual-futures flow is updating in the background…")
+        elif status == "Provider unavailable":
+            st.caption("Bitcoin derivatives data is temporarily unavailable; cached observations are preserved.")
+        key = "company_bitcoin_derivatives_status"
+        previous = st.session_state.get(key)
+        st.session_state[key] = status
+        if previous is not None and previous != status:
+            st.rerun()
+
+    render_bitcoin_derivatives_refresh_status()
+
 if st.button("← Back to Decision dashboard", type="tertiary"):
     st.switch_page("pages/1_Dashboard.py")
 
 try:
     with st.spinner(f"Loading {ticker} market data…"):
         history = fetch_price_history(ticker, period=history_period)
+    if history.attrs.get("stale"):
+        st.caption(f"Cached price history from {history.attrs.get('fetched_at')}; refreshing in the background.")
     metric_history = history if history_period == "1y" else fetch_price_history(ticker, period="1y")
     metrics = calculate_metrics(metric_history)
     technical = calculate_technical_score(metrics)
@@ -165,7 +195,13 @@ try:
     industry_research = get_cached_industry_research(ticker)
     technology_evidence = technology_potential_evidence(industry_research)
     daily_volume_all = get_finra_daily_short_volume(ticker)
+    bitcoin_derivatives_all = (
+        get_bitcoin_derivatives_daily_observations() if is_bitcoin else []
+    )
     daily_flow_evidence = daily_short_flow_evidence(daily_volume_all)
+    btc_short_evidence = (
+        btc_short_pressure_evidence(bitcoin_derivatives_all) if is_bitcoin else None
+    )
     positioning = get_cached_positioning(ticker)
     positioning_history = get_positioning_history(ticker)
     effective_positioning = effective_positioning_snapshot(positioning, positioning_history)
@@ -173,6 +209,7 @@ try:
     positioning_breakdown = positioning_scores(scoring_positioning)
     positioning_modifier = positioning_score_adjustments(positioning, positioning_history, technical)
     backtest_runs = latest_model_runs(get_backtest_runs(ticker))
+    btc_simulation_enrichments = get_btc_simulation_enrichments() if is_bitcoin else []
     registered_backtests = sum(
         int(run.get("has_prediction_snapshot") or 0) for run in backtest_runs
     )
@@ -180,222 +217,8 @@ try:
     learning_policy = governed_learning_adjustments(learning_modifier)
     industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
     absolute_valuation = calculate_valuation_score(fundamentals)
-    extended_quote = get_extended_hours_quote(ticker)
-
-    if extended_quote:
-        def extended_value(price_field: str, change_field: str) -> str:
-            price = extended_quote.get(price_field)
-            change = extended_quote.get(change_field)
-            if price is None:
-                return "—"
-            suffix = "" if change is None else f" · {float(change):+.2f}%"
-            return f"${float(price):,.2f}{suffix}"
-
-        st.caption("EXTENDED-HOURS AWARENESS · advisory only · excluded from Entry/Exit scores")
-        quote_columns = st.columns(3)
-        quote_columns[0].metric("Regular close", f"${float(metrics['latest_price']):,.2f}")
-        quote_columns[1].metric(
-            "Pre-market", extended_value("premarket_price", "premarket_change_pct"),
-            help=str(extended_quote.get("premarket_timestamp") or "No pre-market quote timestamp"),
-        )
-        quote_columns[2].metric(
-            "After-hours", extended_value("afterhours_price", "afterhours_change_pct"),
-            help=str(extended_quote.get("afterhours_timestamp") or "No after-hours quote timestamp"),
-        )
-        state = str(extended_quote.get("market_state") or "closed")
-        st.caption(
-            f"Market state · {state} · Provider: {extended_quote.get('provider_name')} · "
-            f"Fetched: {extended_quote.get('fetched_at')}"
-        )
-
-    chart_dates = pd.DatetimeIndex(pd.to_datetime(history.index))
-    if chart_dates.tz is not None:
-        chart_dates = chart_dates.tz_localize(None)
-    chart_dates = chart_dates.normalize()
-    history_start = chart_dates.min()
-    daily_volume_rows = [
-        row for row in daily_volume_all
-        if pd.Timestamp(str(row["trade_date"])).normalize() >= history_start
-        and float(row.get("total_volume") or 0) > 0
-    ]
-    daily_flow_frame = pd.DataFrame(daily_volume_rows)
-    if not daily_flow_frame.empty:
-        daily_flow_frame["date"] = pd.to_datetime(daily_flow_frame["trade_date"]).dt.normalize()
-        daily_flow_frame["short_share"] = (
-            daily_flow_frame["short_volume"].astype(float)
-            / daily_flow_frame["total_volume"].astype(float) * 100
-        )
-        daily_flow_frame = daily_flow_frame.sort_values("date").drop_duplicates("date", keep="last")
-        daily_flow_frame["average_10d"] = daily_flow_frame["short_share"].rolling(10, min_periods=3).mean()
-    has_daily_flow = not daily_flow_frame.empty
-    figure = make_subplots(
-        rows=3 if has_daily_flow else 2, cols=1, shared_xaxes=True, vertical_spacing=.035,
-        row_heights=[.68, .18, .14] if has_daily_flow else [.78, .22],
-        specs=[[{}], [{"secondary_y": True}], [{}]] if has_daily_flow else [[{}], [{"secondary_y": True}]],
-    )
-    figure.add_scatter(x=chart_dates, y=history["Close"], name="Close", row=1, col=1)
-    for window, label in ((50, "50-day MA"), (100, "100-day MA"), (200, "200-day MA")):
-        moving_average = history["Close"].rolling(window).mean()
-        if moving_average.notna().any():
-            figure.add_scatter(
-                x=chart_dates,
-                y=moving_average,
-                name=label,
-                line={"dash": "dot"},
-                row=1, col=1,
-            )
-    finra_rows = []
-    for observation in positioning_history:
-        if observation.get("snapshot_type") != "historical_short_interest":
-            continue
-        reported = observation.get("reporting_date") or observation.get("snapshot_date")
-        short_data = observation.get("short", {})
-        if not reported or not isinstance(short_data, dict):
-            continue
-        reported_at = pd.Timestamp(str(reported)).normalize()
-        if reported_at < history_start:
-            continue
-        finra_rows.append({
-            "date": reported_at,
-            "change": short_data.get("short_change_pct"),
-            "days": short_data.get("days_to_cover"),
-            "shares": short_data.get("shares_short"),
-            "known_at": observation.get("known_at"),
-            "known_at_status": observation.get("known_at_status"),
-            "age": short_interest_freshness(observation).get("age_days"),
-        })
-    if finra_rows:
-        finra_frame = pd.DataFrame(finra_rows).sort_values("date").drop_duplicates("date", keep="last")
-        colors = ["#ff6375" if float(value or 0) > 0 else "#35d0ba" for value in finra_frame["change"]]
-        hover = [
-            f"FINRA settlement date {row.date:%Y-%m-%d}<br>Short change {float(row.change or 0):+.2f}%"
-            f"<br>Shares short {float(row.shares or 0):,.0f}<br>Days to cover {float(row.days or 0):.2f}"
-            f"<br>Observed by app: {row.known_at or 'unverified legacy'}"
-            f"<br>Current report age: {row.age if row.age is not None else 'unknown'} days"
-            for row in finra_frame.itertuples()
-        ]
-        figure.add_bar(
-            x=finra_frame["date"], y=finra_frame["change"], name="FINRA short Δ",
-            marker_color=colors, customdata=hover, hovertemplate="%{customdata}<extra></extra>",
-            row=2, col=1, secondary_y=False,
-        )
-        figure.add_scatter(
-            x=finra_frame["date"], y=finra_frame["days"], name="Days to cover",
-            mode="lines+markers", line={"color": "#f5c26b", "width": 1.5},
-            marker={"size": 4}, row=2, col=1, secondary_y=True,
-        )
-    if has_daily_flow:
-        daily_colors = [
-            "#ff6375" if pd.notna(average) and float(share) > float(average)
-            else "#35d0ba" if pd.notna(average) else "#70a5ff"
-            for share, average in zip(
-                daily_flow_frame["short_share"], daily_flow_frame["average_10d"], strict=False,
-            )
-        ]
-        daily_hover = [
-            f"Trade date {row.date:%Y-%m-%d}<br>Daily short-sale share {float(row.short_share):.1f}%"
-            f"<br>Short-sale volume {float(row.short_volume):,.0f}"
-            f"<br>Total FINRA-reported volume {float(row.total_volume):,.0f}"
-            f"<br>Observed by app: {row.known_at}<br>Flow proxy — not outstanding short interest"
-            for row in daily_flow_frame.itertuples()
-        ]
-        figure.add_scatter(
-            x=daily_flow_frame["date"], y=daily_flow_frame["short_share"],
-            name="Daily short flow", mode="markers",
-            marker={"size": 5, "color": daily_colors, "opacity": .72},
-            customdata=daily_hover, hovertemplate="%{customdata}<extra></extra>",
-            row=3, col=1,
-        )
-        figure.add_scatter(
-            x=daily_flow_frame["date"], y=daily_flow_frame["average_10d"],
-            name="10D flow average", mode="lines",
-            line={"color": "#70a5ff", "width": 1.6},
-            hovertemplate="10-session average %{y:.1f}%<extra></extra>", row=3, col=1,
-        )
-    chart_start = chart_dates.min()
-    chart_end = chart_dates.max()
-    completed_dates = {str(run["as_of_date"]): run for run in backtest_runs}
-    simulation_markers: list[tuple[pd.Timestamp, str, str]] = []
-    for cutoff, run in completed_dates.items():
-        marker_type = "Suggested simulation" if run.get("simulation_source") == "suggested" else "Manual simulation"
-        marker_color = "#c792ea" if marker_type == "Suggested simulation" else "#7aa2f7"
-        simulation_markers.append((pd.Timestamp(cutoff), marker_type, marker_color))
-    for suggestion in get_simulation_suggestions():
-        cutoff = str(suggestion["suggested_date"])
-        if cutoff not in completed_dates:
-            simulation_markers.append((pd.Timestamp(cutoff), "Suggested · pending", "#f5c26b"))
-    visible_marker_types: dict[str, str] = {}
-    for marker_date, marker_type, marker_color in simulation_markers:
-        if not chart_start <= marker_date <= chart_end:
-            continue
-        figure.add_vline(
-            x=marker_date, line_width=1, line_dash="dot", line_color=marker_color,
-            opacity=.72, row="all", col=1,
-        )
-        visible_marker_types[marker_type] = marker_color
-    for marker_type, marker_color in visible_marker_types.items():
-        figure.add_scatter(
-            x=[None], y=[None], mode="lines", name=marker_type,
-            line={"color": marker_color, "width": 1, "dash": "dot"}, row=1, col=1,
-        )
-    company_heading = f"{ticker} — {company_name}" if company_name != ticker else ticker
-    st.markdown(f"**{company_heading} · {history_label.lower()} price history**")
-    figure.update_yaxes(title_text="Price", row=1, col=1)
-    figure.update_yaxes(title_text="Short Δ %", row=2, col=1, secondary_y=False, zeroline=True)
-    figure.update_yaxes(title_text="Days", row=2, col=1, secondary_y=True, showgrid=False)
-    if has_daily_flow:
-        figure.update_yaxes(title_text="Daily flow %", range=[0, 100], row=3, col=1)
-    style_figure(figure, height=650 if has_daily_flow else 560)
-    # Plotly's horizontal legend becomes a tall, narrow stack on phones. A
-    # compact semantic legend keeps all series discoverable without consuming
-    # a large part of the chart viewport.
-    figure.update_layout(
-        showlegend=False, hovermode="x unified",
-        margin={"l": 12, "r": 12, "t": 12, "b": 12},
-    )
-    figure.update_xaxes(
-        showspikes=True, spikemode="across", spikesnap="cursor",
-        spikecolor="#94a3b8", spikethickness=1,
-    )
-    legend_items = [
-        ("line close", "Close"), ("line ma50", "MA 50"),
-        ("line ma100", "MA 100"), ("line ma200", "MA 200"),
-    ]
-    if finra_rows:
-        legend_items.extend([("bar finra", "FINRA short Δ"), ("line cover", "Days to cover")])
-    if has_daily_flow:
-        legend_items.extend([("dot daily", "Daily short flow"), ("line dailyavg", "10D flow avg")])
-    marker_labels = {
-        "Manual simulation": ("line manual", "Manual sim."),
-        "Suggested simulation": ("line suggested", "Suggested sim."),
-        "Suggested · pending": ("line pending", "Suggested pending"),
-    }
-    legend_items.extend(marker_labels[item] for item in visible_marker_types if item in marker_labels)
-    st.html(
-        "<div class='company-chart-legend' aria-label='Chart legend'>"
-        + "".join(
-            f"<span class='legend-item'><i class='{kind}'></i>{label}</span>"
-            for kind, label in legend_items
-        )
-        + "</div>"
-    )
-    st.plotly_chart(figure, width="stretch")
-    if finra_rows:
-        eligibility = "included in scores" if positioning_modifier["short_scoring_eligible"] else "excluded from scores"
-        st.caption(
-            "FINRA pressure pulse · exact shared calendar axis · bars use official settlement dates · "
-            f"latest report {positioning_modifier.get('short_report_date') or 'unknown'} "
-            f"({positioning_modifier.get('short_age_days') if positioning_modifier.get('short_age_days') is not None else 'unknown'} days old; {eligibility})"
-        )
-    if has_daily_flow:
-        latest_flow_date = daily_flow_frame["date"].max()
-        st.caption(
-            "Daily FINRA short-sale flow · points are the short-sale share of FINRA-reported daily volume · "
-            "coral = above its 10-session average · teal = at/below average · "
-            f"latest trade date {latest_flow_date:%Y-%m-%d} · display-only shadow evidence, excluded from scores"
-        )
-    if visible_marker_types:
-        st.caption("Simulation markers · blue = manual · purple = completed suggestion · gold = suggested and pending")
+    schedule_extended_hours_refresh([ticker], max_new=1)
+    extended_quote = get_cached_extended_hours_quote(ticker)
 
     base_entry_score = (
         float(industry_breakdown["score"])
@@ -435,9 +258,9 @@ try:
         f"Historical success unavailable · {entry_success['sample_size']} comparable (need 3)"
     )
     overall_accuracy_text = (
-        "Confirmed decision accuracy unavailable"
+        "Legacy episode success unavailable"
         if learning_modifier["decision_accuracy"] is None else
-        f"Confirmed decision accuracy {float(learning_modifier['decision_accuracy']):.0f}% · "
+        f"Legacy episode success {float(learning_modifier['decision_accuracy']):.0f}% · "
         f"{int(learning_modifier['correct_decisions'])}/{int(learning_modifier['sample_size'])}"
         + (f" · {int(learning_modifier['provisional_runs'])} provisional" if learning_modifier.get("provisional_runs") else "")
     )
@@ -553,25 +376,37 @@ try:
         st.caption(str(technology_evidence["rationale"]))
 
     with st.container(border=True):
-        flow_entry_modifier = float(daily_flow_evidence["entry_modifier"])
+        active_shorts_evidence = btc_short_evidence or daily_flow_evidence
+        flow_entry_modifier = float(active_shorts_evidence["entry_modifier"])
         flow_color = (
             "#38d996" if flow_entry_modifier > 0
             else "#ff6375" if flow_entry_modifier < 0 else "#9aa4b2"
         )
-        st.markdown("**FINRA daily short-flow slope · active shadow component**")
+        st.markdown(
+            "**Binance BTC perpetual shorts · active unified-Shorts Shadow component**"
+            if is_bitcoin else "**FINRA daily short-flow slope · active unified-Shorts Shadow component**"
+        )
         st.markdown(
             f"<span style='color:{flow_color};font-size:1.15rem;font-weight:700'>"
-            f"{float(daily_flow_evidence['slope_pp_per_session']):+.3f} pp/session · "
-            f"{flow_entry_modifier:+.1f} Entry / "
-            f"{float(daily_flow_evidence['exit_modifier']):+.1f} Exit shadow points"
-            f"</span>", unsafe_allow_html=True,
+            + (
+                f"{active_shorts_evidence['state']} · " if is_bitcoin
+                else f"{float(daily_flow_evidence['slope_pp_per_session']):+.3f} pp/session · "
+            )
+            + f"{flow_entry_modifier:+.1f} Entry / "
+            + f"{float(active_shorts_evidence['exit_modifier']):+.1f} Exit shadow points"
+            + "</span>", unsafe_allow_html=True,
+        )
+        context = (
+            f"Short accounts {float(active_shorts_evidence.get('short_account_pct') or 0):.2f}% · "
+            f"10D Δ {float(active_shorts_evidence.get('short_delta_10d_pp') or 0):+.2f} pp · "
+            if is_bitcoin else
+            f"10-session mean {daily_flow_evidence.get('rolling_share_pct') or 0:.2f}% · "
         )
         st.caption(
-            f"10-session mean {daily_flow_evidence.get('rolling_share_pct') or 0:.2f}% · "
-            f"confidence {float(daily_flow_evidence['confidence']):.0%} · "
-            f"{daily_flow_evidence['coverage']} coverage · live contribution exactly 0.0"
+            f"{context}confidence {float(active_shorts_evidence['confidence']):.0%} · "
+            f"{active_shorts_evidence['coverage']} coverage · live contribution exactly 0.0"
         )
-        st.caption(str(daily_flow_evidence["rationale"]))
+        st.caption(str(active_shorts_evidence["rationale"]))
 
     learning_entry_adjustment = float(learning_modifier["entry_adjustment"])
     learning_columns = st.columns(2)
@@ -586,7 +421,7 @@ try:
     with learning_columns[1]:
         learning_outcome_text = (
             "Decision-aware evidence still developing" if learning_modifier["decision_accuracy"] is None
-            else f"Confirmed accuracy · {float(learning_modifier['decision_accuracy']):.0f}% · Weighted monthly {float(learning_modifier['average_composite']):+.2f}%"
+            else f"Legacy episode success · {float(learning_modifier['decision_accuracy']):.0f}% · Weighted monthly {float(learning_modifier['average_composite']):+.2f}%"
         )
         st.markdown(
             f"<div style='background:#d9dde2;color:#111820;border:1px solid #eef1f4;"
@@ -696,236 +531,621 @@ try:
         st.markdown("- **Archived learning diagnostic** — a historical counterfactual retained for research; its live Entry/Exit contribution is exactly zero.")
         st.markdown("- **Exit-review score** — 60% Technical deterioration plus 40% full market-risk deterioration (drawdown and volatility), followed by the bounded positioning modifier; it is not an execution instruction.")
 
+    with st.expander("Price, flows and simulation chart", key="company_price_chart", on_change="rerun") as price_chart:
+        if price_chart.open:
+            if extended_quote:
+                def extended_value(price_field: str, change_field: str) -> str:
+                    price = extended_quote.get(price_field)
+                    change = extended_quote.get(change_field)
+                    if price is None:
+                        return "—"
+                    suffix = "" if change is None else f" · {float(change):+.2f}%"
+                    return f"${float(price):,.2f}{suffix}"
+
+                st.caption("EXTENDED-HOURS AWARENESS · advisory only · excluded from Entry/Exit scores")
+                quote_columns = st.columns(3)
+                quote_columns[0].metric("Regular close", f"${float(metrics['latest_price']):,.2f}")
+                quote_columns[1].metric(
+                    "Pre-market", extended_value("premarket_price", "premarket_change_pct"),
+                    help=str(extended_quote.get("premarket_timestamp") or "No pre-market quote timestamp"),
+                )
+                quote_columns[2].metric(
+                    "After-hours", extended_value("afterhours_price", "afterhours_change_pct"),
+                    help=str(extended_quote.get("afterhours_timestamp") or "No after-hours quote timestamp"),
+                )
+                state = str(extended_quote.get("market_state") or "closed")
+                st.caption(
+                    f"Market state · {state} · Provider: {extended_quote.get('provider_name')} · "
+                    f"Fetched: {extended_quote.get('fetched_at')}"
+                )
+
+            chart_dates = pd.DatetimeIndex(pd.to_datetime(history.index))
+            if chart_dates.tz is not None:
+                chart_dates = chart_dates.tz_localize(None)
+            chart_dates = chart_dates.normalize()
+            history_start = chart_dates.min()
+            daily_volume_rows = [
+                row for row in daily_volume_all
+                if pd.Timestamp(str(row["trade_date"])).normalize() >= history_start
+                and float(row.get("total_volume") or 0) > 0
+            ]
+            daily_flow_frame = pd.DataFrame(daily_volume_rows)
+            if not daily_flow_frame.empty:
+                daily_flow_frame["date"] = pd.to_datetime(daily_flow_frame["trade_date"]).dt.normalize()
+                daily_flow_frame["short_share"] = (
+                    daily_flow_frame["short_volume"].astype(float)
+                    / daily_flow_frame["total_volume"].astype(float) * 100
+                )
+                daily_flow_frame = daily_flow_frame.sort_values("date").drop_duplicates("date", keep="last")
+                daily_flow_frame["average_10d"] = daily_flow_frame["short_share"].rolling(10, min_periods=3).mean()
+            has_daily_flow = not daily_flow_frame.empty
+            bitcoin_derivatives_frame = pd.DataFrame(bitcoin_derivatives_all)
+            if not bitcoin_derivatives_frame.empty:
+                bitcoin_derivatives_frame["date"] = pd.to_datetime(
+                    bitcoin_derivatives_frame["period_date"]
+                ).dt.normalize()
+                bitcoin_derivatives_frame = (
+                    bitcoin_derivatives_frame[bitcoin_derivatives_frame["date"] >= history_start]
+                    .sort_values("date").drop_duplicates("date", keep="last")
+                )
+                total_taker_volume = (
+                    bitcoin_derivatives_frame["taker_buy_volume"].astype(float)
+                    + bitcoin_derivatives_frame["taker_sell_volume"].astype(float)
+                )
+                bitcoin_derivatives_frame["taker_sell_share"] = (
+                    bitcoin_derivatives_frame["taker_sell_volume"].astype(float)
+                    / total_taker_volume.where(total_taker_volume > 0) * 100
+                )
+                bitcoin_derivatives_frame["average_10d"] = (
+                    bitcoin_derivatives_frame["taker_sell_share"].rolling(10, min_periods=3).mean()
+                )
+                bitcoin_derivatives_frame["short_account_delta_pp"] = (
+                    bitcoin_derivatives_frame["short_account_pct"].astype(float).diff()
+                )
+                bitcoin_derivatives_frame["open_interest_billions"] = (
+                    bitcoin_derivatives_frame["open_interest_value_quote"].astype(float) / 1_000_000_000
+                )
+            has_bitcoin_derivatives = not bitcoin_derivatives_frame.empty
+            has_flow_panel = has_daily_flow or has_bitcoin_derivatives
+            figure = make_subplots(
+                rows=3 if has_flow_panel else 2, cols=1, shared_xaxes=True, vertical_spacing=.035,
+                row_heights=[.68, .18, .14] if has_flow_panel else [.78, .22],
+                specs=[[{}], [{"secondary_y": True}], [{}]] if has_flow_panel else [[{}], [{"secondary_y": True}]],
+            )
+            figure.add_scatter(x=chart_dates, y=history["Close"], name="Close", row=1, col=1)
+            for window, label in ((50, "50-day MA"), (100, "100-day MA"), (200, "200-day MA")):
+                moving_average = history["Close"].rolling(window).mean()
+                if moving_average.notna().any():
+                    figure.add_scatter(
+                        x=chart_dates,
+                        y=moving_average,
+                        name=label,
+                        line={"dash": "dot"},
+                        row=1, col=1,
+                    )
+            finra_rows = []
+            for observation in positioning_history:
+                if observation.get("snapshot_type") != "historical_short_interest":
+                    continue
+                reported = observation.get("reporting_date") or observation.get("snapshot_date")
+                short_data = observation.get("short", {})
+                if not reported or not isinstance(short_data, dict):
+                    continue
+                reported_at = pd.Timestamp(str(reported)).normalize()
+                if reported_at < history_start:
+                    continue
+                finra_rows.append({
+                    "date": reported_at,
+                    "change": short_data.get("short_change_pct"),
+                    "days": short_data.get("days_to_cover"),
+                    "shares": short_data.get("shares_short"),
+                    "known_at": observation.get("known_at"),
+                    "known_at_status": observation.get("known_at_status"),
+                    "age": short_interest_freshness(observation).get("age_days"),
+                })
+            if finra_rows:
+                finra_frame = pd.DataFrame(finra_rows).sort_values("date").drop_duplicates("date", keep="last")
+                colors = ["#ff6375" if float(value or 0) > 0 else "#35d0ba" for value in finra_frame["change"]]
+                hover = [
+                    f"FINRA settlement date {row.date:%Y-%m-%d}<br>Short change {float(row.change or 0):+.2f}%"
+                    f"<br>Shares short {float(row.shares or 0):,.0f}<br>Days to cover {float(row.days or 0):.2f}"
+                    f"<br>Observed by app: {row.known_at or 'unverified legacy'}"
+                    f"<br>Current report age: {row.age if row.age is not None else 'unknown'} days"
+                    for row in finra_frame.itertuples()
+                ]
+                figure.add_bar(
+                    x=finra_frame["date"], y=finra_frame["change"], name="FINRA short Δ",
+                    marker_color=colors, customdata=hover, hovertemplate="%{customdata}<extra></extra>",
+                    row=2, col=1, secondary_y=False,
+                )
+                figure.add_scatter(
+                    x=finra_frame["date"], y=finra_frame["days"], name="Days to cover",
+                    mode="lines+markers", line={"color": "#f5c26b", "width": 1.5},
+                    marker={"size": 4}, row=2, col=1, secondary_y=True,
+                )
+            if has_bitcoin_derivatives:
+                bitcoin_colors = [
+                    "#ff6375" if pd.notna(value) and float(value) > 0 else "#35d0ba"
+                    for value in bitcoin_derivatives_frame["short_account_delta_pp"]
+                ]
+                bitcoin_hover = []
+                for observation in bitcoin_derivatives_frame.itertuples():
+                    delta = (
+                        "unavailable" if pd.isna(observation.short_account_delta_pp)
+                        else f"{float(observation.short_account_delta_pp):+.2f} pp"
+                    )
+                    bitcoin_hover.append(
+                        f"UTC period {observation.date:%Y-%m-%d}<br>Short-account change {delta}"
+                        f"<br>Accounts net short {float(observation.short_account_pct):.2f}%"
+                        f"<br>Open-interest value {float(observation.open_interest_value_quote):,.0f} USDT"
+                        f"<br>Observed by app: {observation.known_at}<br>Binance BTCUSDT perpetual only"
+                    )
+                figure.add_bar(
+                    x=bitcoin_derivatives_frame["date"],
+                    y=bitcoin_derivatives_frame["short_account_delta_pp"],
+                    name="BTC short accounts Δ", marker_color=bitcoin_colors,
+                    customdata=bitcoin_hover, hovertemplate="%{customdata}<extra></extra>",
+                    row=2, col=1, secondary_y=False,
+                )
+                figure.add_scatter(
+                    x=bitcoin_derivatives_frame["date"],
+                    y=bitcoin_derivatives_frame["open_interest_billions"],
+                    name="BTC perpetual OI", mode="lines+markers",
+                    line={"color": "#f5c26b", "width": 1.5}, marker={"size": 4},
+                    hovertemplate="Open-interest value %{y:.2f}bn USDT<extra></extra>",
+                    row=2, col=1, secondary_y=True,
+                )
+            if has_daily_flow:
+                daily_colors = [
+                    "#ff6375" if pd.notna(average) and float(share) > float(average)
+                    else "#35d0ba" if pd.notna(average) else "#70a5ff"
+                    for share, average in zip(
+                        daily_flow_frame["short_share"], daily_flow_frame["average_10d"], strict=False,
+                    )
+                ]
+                daily_hover = [
+                    f"Trade date {row.date:%Y-%m-%d}<br>Daily short-sale share {float(row.short_share):.1f}%"
+                    f"<br>Short-sale volume {float(row.short_volume):,.0f}"
+                    f"<br>Total FINRA-reported volume {float(row.total_volume):,.0f}"
+                    f"<br>Observed by app: {row.known_at}<br>Flow proxy — not outstanding short interest"
+                    for row in daily_flow_frame.itertuples()
+                ]
+                figure.add_scatter(
+                    x=daily_flow_frame["date"], y=daily_flow_frame["short_share"],
+                    name="Daily short flow", mode="markers",
+                    marker={"size": 5, "color": daily_colors, "opacity": .72},
+                    customdata=daily_hover, hovertemplate="%{customdata}<extra></extra>",
+                    row=3, col=1,
+                )
+                figure.add_scatter(
+                    x=daily_flow_frame["date"], y=daily_flow_frame["average_10d"],
+                    name="10D flow average", mode="lines",
+                    line={"color": "#70a5ff", "width": 1.6},
+                    hovertemplate="10-session average %{y:.1f}%<extra></extra>", row=3, col=1,
+                )
+            elif has_bitcoin_derivatives:
+                bitcoin_flow_colors = [
+                    "#ff6375" if pd.notna(average) and float(share) > float(average)
+                    else "#35d0ba" if pd.notna(average) else "#70a5ff"
+                    for share, average in zip(
+                        bitcoin_derivatives_frame["taker_sell_share"],
+                        bitcoin_derivatives_frame["average_10d"], strict=False,
+                    )
+                ]
+                bitcoin_flow_hover = [
+                    f"UTC period {row.date:%Y-%m-%d}<br>Taker-sell flow {float(row.taker_sell_share):.1f}%"
+                    f"<br>Taker buy volume {float(row.taker_buy_volume):,.3f} BTC"
+                    f"<br>Taker sell volume {float(row.taker_sell_volume):,.3f} BTC"
+                    f"<br>Observed by app: {row.known_at}<br>Binance BTCUSDT perpetual only"
+                    for row in bitcoin_derivatives_frame.itertuples()
+                ]
+                figure.add_scatter(
+                    x=bitcoin_derivatives_frame["date"],
+                    y=bitcoin_derivatives_frame["taker_sell_share"],
+                    name="BTC taker-sell flow", mode="markers",
+                    marker={"size": 5, "color": bitcoin_flow_colors, "opacity": .72},
+                    customdata=bitcoin_flow_hover, hovertemplate="%{customdata}<extra></extra>",
+                    row=3, col=1,
+                )
+                figure.add_scatter(
+                    x=bitcoin_derivatives_frame["date"], y=bitcoin_derivatives_frame["average_10d"],
+                    name="10D BTC flow average", mode="lines",
+                    line={"color": "#70a5ff", "width": 1.6},
+                    hovertemplate="10-session average %{y:.1f}%<extra></extra>", row=3, col=1,
+                )
+            chart_start = chart_dates.min()
+            chart_end = chart_dates.max()
+            completed_dates = {str(run["as_of_date"]): run for run in backtest_runs}
+            simulation_markers: list[tuple[pd.Timestamp, str, str]] = []
+            for cutoff, run in completed_dates.items():
+                marker_type = "Suggested simulation" if run.get("simulation_source") == "suggested" else "Manual simulation"
+                marker_color = "#c792ea" if marker_type == "Suggested simulation" else "#7aa2f7"
+                simulation_markers.append((pd.Timestamp(cutoff), marker_type, marker_color))
+            for suggestion in get_simulation_suggestions():
+                cutoff = str(suggestion["suggested_date"])
+                if cutoff not in completed_dates:
+                    simulation_markers.append((pd.Timestamp(cutoff), "Suggested · pending", "#f5c26b"))
+            visible_marker_types: dict[str, str] = {}
+            for marker_date, marker_type, marker_color in simulation_markers:
+                if not chart_start <= marker_date <= chart_end:
+                    continue
+                figure.add_vline(
+                    x=marker_date, line_width=1, line_dash="dot", line_color=marker_color,
+                    opacity=.72, row="all", col=1,
+                )
+                visible_marker_types[marker_type] = marker_color
+            for marker_type, marker_color in visible_marker_types.items():
+                figure.add_scatter(
+                    x=[None], y=[None], mode="lines", name=marker_type,
+                    line={"color": marker_color, "width": 1, "dash": "dot"}, row=1, col=1,
+                )
+            company_heading = f"{ticker} — {company_name}" if company_name != ticker else ticker
+            st.markdown(f"**{company_heading} · {history_label.lower()} price history**")
+            figure.update_yaxes(title_text="Price", row=1, col=1)
+            figure.update_yaxes(
+                title_text="Short accounts Δ (pp)" if has_bitcoin_derivatives else "Short Δ %",
+                row=2, col=1, secondary_y=False, zeroline=True,
+            )
+            figure.update_yaxes(
+                title_text="OI (USDT bn)" if has_bitcoin_derivatives else "Days",
+                row=2, col=1, secondary_y=True, showgrid=False,
+            )
+            if has_flow_panel:
+                figure.update_yaxes(title_text="Daily flow %", range=[0, 100], row=3, col=1)
+            style_figure(figure, height=650 if has_flow_panel else 560)
+            # Plotly's horizontal legend becomes a tall, narrow stack on phones. A
+            # compact semantic legend keeps all series discoverable without consuming
+            # a large part of the chart viewport.
+            figure.update_layout(
+                showlegend=False, hovermode="x unified",
+                margin={"l": 12, "r": 12, "t": 12, "b": 12},
+            )
+            figure.update_xaxes(
+                showspikes=True, spikemode="across", spikesnap="cursor",
+                spikecolor="#94a3b8", spikethickness=1,
+            )
+            legend_items = [
+                ("line close", "Close"), ("line ma50", "MA 50"),
+                ("line ma100", "MA 100"), ("line ma200", "MA 200"),
+            ]
+            if finra_rows:
+                legend_items.extend([("bar finra", "FINRA short Δ"), ("line cover", "Days to cover")])
+            if has_daily_flow:
+                legend_items.extend([("dot daily", "Daily short flow"), ("line dailyavg", "10D flow avg")])
+            elif has_bitcoin_derivatives:
+                legend_items.extend([
+                    ("bar finra", "BTC short accounts Δ"), ("line cover", "BTC perp OI"),
+                    ("dot daily", "BTC taker-sell flow"), ("line dailyavg", "10D BTC flow avg"),
+                ])
+            marker_labels = {
+                "Manual simulation": ("line manual", "Manual sim."),
+                "Suggested simulation": ("line suggested", "Suggested sim."),
+                "Suggested · pending": ("line pending", "Suggested pending"),
+            }
+            legend_items.extend(marker_labels[item] for item in visible_marker_types if item in marker_labels)
+            st.html(
+                "<div class='company-chart-legend' aria-label='Chart legend'>"
+                + "".join(
+                    f"<span class='legend-item'><i class='{kind}'></i>{label}</span>"
+                    for kind, label in legend_items
+                )
+                + "</div>"
+            )
+            st.plotly_chart(figure, width="stretch")
+            if finra_rows:
+                eligibility = "included in scores" if positioning_modifier["short_scoring_eligible"] else "excluded from scores"
+                st.caption(
+                    "FINRA pressure pulse · exact shared calendar axis · bars use official settlement dates · "
+                    f"latest report {positioning_modifier.get('short_report_date') or 'unknown'} "
+                    f"({positioning_modifier.get('short_age_days') if positioning_modifier.get('short_age_days') is not None else 'unknown'} days old; {eligibility})"
+                )
+            if has_daily_flow:
+                latest_flow_date = daily_flow_frame["date"].max()
+                st.caption(
+                    "Daily FINRA short-sale flow · points are the short-sale share of FINRA-reported daily volume · "
+                    "coral = above its 10-session average · teal = at/below average · "
+                    f"latest trade date {latest_flow_date:%Y-%m-%d} · display-only shadow evidence, excluded from scores"
+                )
+            elif has_bitcoin_derivatives:
+                earliest_bitcoin_date = bitcoin_derivatives_frame["date"].min()
+                latest_bitcoin_date = bitcoin_derivatives_frame["date"].max()
+                st.caption(
+                    "Bitcoin derivatives pulse · Binance BTCUSDT perpetual only, not the whole crypto market · "
+                    "bars show the daily change in accounts net short; the gold line is total open-interest value · "
+                    "flow points are taker-sell volume as a share of taker buy plus sell volume · "
+                    f"{len(bitcoin_derivatives_frame)} daily periods from {earliest_bitcoin_date:%Y-%m-%d} "
+                    f"to {latest_bitcoin_date:%Y-%m-%d} · display-only, live-model weight 0.0"
+                )
+            if visible_marker_types:
+                st.caption("Simulation markers · blue = manual · purple = completed suggestion · gold = suggested and pending")
+
     fundamentals_tab, metrics_tab, industry_tab, positioning_tab, learning_tab, journal_tab = st.tabs([
         "Fundamentals & valuation", "Market metrics", "Industry & analysts", "Market positioning", "Archived learning", "Journal context"
-    ])
+    ], key="detail_tabs", on_change="rerun")
     with fundamentals_tab:
-        st.subheader("Fundamentals and valuation")
-        if fundamentals:
-            inputs = {
-                "Trailing P/E": "—" if fundamentals.get("trailing_pe") is None else f"{fundamentals['trailing_pe']:.2f}x",
-                "Forward P/E": "—" if fundamentals.get("forward_pe") is None else f"{fundamentals['forward_pe']:.2f}x",
-                "Price/sales TTM": "—" if fundamentals.get("price_to_sales_ttm") is None else f"{fundamentals['price_to_sales_ttm']:.2f}x",
-                "Revenue growth": "—" if fundamentals.get("revenue_growth") is None else f"{fundamentals['revenue_growth'] * 100:.2f}%",
-                "EPS growth": "—" if fundamentals.get("eps_growth") is None else f"{fundamentals['eps_growth'] * 100:.2f}%",
-                "Period end": fundamentals.get("period_end") or fundamentals.get("reporting_date"),
-                "Historical known at": fundamentals.get("known_at"),
-                "Historical status": fundamentals.get("known_at_status") or "unverified legacy",
-                "Provider": fundamentals.get("provider_name"),
-                "Fetched at": fundamentals.get("fetched_at"),
-            }
-            st.dataframe(
-                zebra_table({"Input": list(inputs), "Value": ["—" if value is None else str(value) for value in inputs.values()]}),
-                hide_index=True,
-                width="stretch",
-            )
-            breakdown = valuation_score_breakdown(fundamentals)
-            if breakdown:
+        if fundamentals_tab.open:
+            st.subheader("Fundamentals and valuation")
+            if fundamentals:
+                inputs = {
+                    "Trailing P/E": "—" if fundamentals.get("trailing_pe") is None else f"{fundamentals['trailing_pe']:.2f}x",
+                    "Forward P/E": "—" if fundamentals.get("forward_pe") is None else f"{fundamentals['forward_pe']:.2f}x",
+                    "Price/sales TTM": "—" if fundamentals.get("price_to_sales_ttm") is None else f"{fundamentals['price_to_sales_ttm']:.2f}x",
+                    "Revenue growth": "—" if fundamentals.get("revenue_growth") is None else f"{fundamentals['revenue_growth'] * 100:.2f}%",
+                    "EPS growth": "—" if fundamentals.get("eps_growth") is None else f"{fundamentals['eps_growth'] * 100:.2f}%",
+                    "Period end": fundamentals.get("period_end") or fundamentals.get("reporting_date"),
+                    "Historical known at": fundamentals.get("known_at"),
+                    "Historical status": fundamentals.get("known_at_status") or "unverified legacy",
+                    "Provider": fundamentals.get("provider_name"),
+                    "Fetched at": fundamentals.get("fetched_at"),
+                }
                 st.dataframe(
-                    zebra_table({"Component": [key.replace("_", " ").title() for key in breakdown], "Score": list(breakdown.values())}),
+                    zebra_table({"Input": list(inputs), "Value": ["—" if value is None else str(value) for value in inputs.values()]}),
                     hide_index=True,
                     width="stretch",
                 )
-        else:
-            st.warning("No fundamentals were available from FMP or Yahoo Finance. Price data is unaffected.")
+                breakdown = valuation_score_breakdown(fundamentals)
+                if breakdown:
+                    st.dataframe(
+                        zebra_table({"Component": [key.replace("_", " ").title() for key in breakdown], "Score": list(breakdown.values())}),
+                        hide_index=True,
+                        width="stretch",
+                    )
+            else:
+                st.warning("No fundamentals were available from FMP or Yahoo Finance. Price data is unaffected.")
 
     with industry_tab:
-        st.subheader("Industry calibration and analyst expectations")
-        if industry_research:
-            profile = industry_research.get("profile", {})
-            st.caption(
-                f"{profile.get('sector') or 'Unknown sector'} · {profile.get('industry') or 'Unknown industry'} · "
-                f"Provider: {industry_research.get('provider_name')} · Fetched: {industry_research.get('fetched_at')} · "
-                f"Historical status: {industry_research.get('known_at_status') or 'unverified legacy'}"
-            )
-            feature_rows = [
-                {"Dimension": "Business quality", "Score": industry_breakdown["business_quality"], "Weight": "25%", "Confidence": f"{float(industry_breakdown['quality_confidence']):.0%}"},
-                {"Dimension": "Relative valuation", "Score": industry_breakdown["relative_valuation"], "Weight": "30%", "Confidence": f"{float(industry_breakdown['valuation_confidence']):.0%}"},
-                {"Dimension": "Technical timing", "Score": industry_breakdown["technical_timing"], "Weight": "20%", "Confidence": "100%"},
-                {"Dimension": "Risk resilience", "Score": industry_breakdown["risk_resilience"], "Weight": "15%", "Confidence": "100%"},
-                {"Dimension": "Analyst sentiment", "Score": industry_breakdown["analyst_sentiment"], "Weight": "10%", "Confidence": f"{float(industry_breakdown['analyst_confidence']):.0%}"},
-            ]
-            st.dataframe(zebra_table(feature_rows), hide_index=True, width="stretch")
-            peers = industry_research.get("peer_profiles", [])
-            if peers:
-                st.markdown("**Peer group used**")
-                selection = {
-                    item.get("ticker"): item for item in industry_research.get("peer_selection", [])
-                }
-                peer_rows = [{
-                    "Ticker": peer.get("ticker"),
-                    "Similarity": selection.get(peer.get("ticker"), {}).get("similarity_score"),
-                    "Why selected": ", ".join(selection.get(peer.get("ticker"), {}).get("reasons", [])),
-                    "Forward P/E": peer.get("forward_pe"),
-                    "Price/sales": peer.get("price_to_sales"),
-                    "Revenue growth": None if peer.get("revenue_growth") is None else float(peer["revenue_growth"]) * 100,
-                    "Operating margin": None if peer.get("operating_margin") is None else float(peer["operating_margin"]) * 100,
-                    "FCF margin": None if peer.get("free_cash_flow_margin") is None else float(peer["free_cash_flow_margin"]) * 100,
-                } for peer in peers]
-                st.dataframe(zebra_table(peer_rows), hide_index=True, width="stretch", column_config={
-                    "Similarity": st.column_config.NumberColumn(format="%.1f/100"),
-                    "Forward P/E": st.column_config.NumberColumn(format="%.2fx"),
-                    "Price/sales": st.column_config.NumberColumn(format="%.2fx"),
-                    "Revenue growth": st.column_config.NumberColumn(format="%.2f%%"),
-                    "Operating margin": st.column_config.NumberColumn(format="%.2f%%"),
-                    "FCF margin": st.column_config.NumberColumn(format="%.2f%%"),
-                })
-            targets = industry_research.get("price_targets", {})
-            recommendations = industry_research.get("recommendations", {})
-            analyst_cols = st.columns(3)
-            analyst_cols[0].metric("Analyst sentiment", f"{float(industry_breakdown['analyst_sentiment']):.0f}/100")
-            analyst_cols[1].metric("Median target upside", "—" if targets.get("median_upside_pct") is None else f"{float(targets['median_upside_pct']):.1f}%")
-            coverage = sum(float(recommendations.get(key, 0) or 0) for key in ("strongBuy", "buy", "hold", "sell", "strongSell"))
-            analyst_cols[2].metric("Analyst coverage", f"{coverage:.0f}" if coverage else "—")
-            with st.expander("Industry Feature evidence"):
-                for heading, notes in (
-                    ("Business quality", industry_breakdown["quality_notes"]),
-                    ("Relative valuation", industry_breakdown["valuation_notes"]),
-                    ("Analyst sentiment", industry_breakdown["analyst_notes"]),
-                ):
-                    st.markdown(f"**{heading}**")
-                    for note in notes:
-                        st.write(f"- {note}")
-        else:
-            st.warning("Industry and analyst research is currently unavailable; the feature remains neutral.")
+        if industry_tab.open:
+            st.subheader("Industry calibration and analyst expectations")
+            if industry_research:
+                profile = industry_research.get("profile", {})
+                st.caption(
+                    f"{profile.get('sector') or 'Unknown sector'} · {profile.get('industry') or 'Unknown industry'} · "
+                    f"Provider: {industry_research.get('provider_name')} · Fetched: {industry_research.get('fetched_at')} · "
+                    f"Historical status: {industry_research.get('known_at_status') or 'unverified legacy'}"
+                )
+                feature_rows = [
+                    {"Dimension": "Business quality", "Score": industry_breakdown["business_quality"], "Weight": "25%", "Confidence": f"{float(industry_breakdown['quality_confidence']):.0%}"},
+                    {"Dimension": "Relative valuation", "Score": industry_breakdown["relative_valuation"], "Weight": "30%", "Confidence": f"{float(industry_breakdown['valuation_confidence']):.0%}"},
+                    {"Dimension": "Technical timing", "Score": industry_breakdown["technical_timing"], "Weight": "20%", "Confidence": "100%"},
+                    {"Dimension": "Risk resilience", "Score": industry_breakdown["risk_resilience"], "Weight": "15%", "Confidence": "100%"},
+                    {"Dimension": "Analyst sentiment", "Score": industry_breakdown["analyst_sentiment"], "Weight": "10%", "Confidence": f"{float(industry_breakdown['analyst_confidence']):.0%}"},
+                ]
+                st.dataframe(zebra_table(feature_rows), hide_index=True, width="stretch")
+                peers = industry_research.get("peer_profiles", [])
+                if peers:
+                    st.markdown("**Peer group used**")
+                    selection = {
+                        item.get("ticker"): item for item in industry_research.get("peer_selection", [])
+                    }
+                    peer_rows = [{
+                        "Ticker": peer.get("ticker"),
+                        "Similarity": selection.get(peer.get("ticker"), {}).get("similarity_score"),
+                        "Why selected": ", ".join(selection.get(peer.get("ticker"), {}).get("reasons", [])),
+                        "Forward P/E": peer.get("forward_pe"),
+                        "Price/sales": peer.get("price_to_sales"),
+                        "Revenue growth": None if peer.get("revenue_growth") is None else float(peer["revenue_growth"]) * 100,
+                        "Operating margin": None if peer.get("operating_margin") is None else float(peer["operating_margin"]) * 100,
+                        "FCF margin": None if peer.get("free_cash_flow_margin") is None else float(peer["free_cash_flow_margin"]) * 100,
+                    } for peer in peers]
+                    st.dataframe(zebra_table(peer_rows), hide_index=True, width="stretch", column_config={
+                        "Similarity": st.column_config.NumberColumn(format="%.1f/100"),
+                        "Forward P/E": st.column_config.NumberColumn(format="%.2fx"),
+                        "Price/sales": st.column_config.NumberColumn(format="%.2fx"),
+                        "Revenue growth": st.column_config.NumberColumn(format="%.2f%%"),
+                        "Operating margin": st.column_config.NumberColumn(format="%.2f%%"),
+                        "FCF margin": st.column_config.NumberColumn(format="%.2f%%"),
+                    })
+                targets = industry_research.get("price_targets", {})
+                recommendations = industry_research.get("recommendations", {})
+                analyst_cols = st.columns(3)
+                analyst_cols[0].metric("Analyst sentiment", f"{float(industry_breakdown['analyst_sentiment']):.0f}/100")
+                analyst_cols[1].metric("Median target upside", "—" if targets.get("median_upside_pct") is None else f"{float(targets['median_upside_pct']):.1f}%")
+                coverage = sum(float(recommendations.get(key, 0) or 0) for key in ("strongBuy", "buy", "hold", "sell", "strongSell"))
+                analyst_cols[2].metric("Analyst coverage", f"{coverage:.0f}" if coverage else "—")
+                with st.expander("Industry Feature evidence"):
+                    for heading, notes in (
+                        ("Business quality", industry_breakdown["quality_notes"]),
+                        ("Relative valuation", industry_breakdown["valuation_notes"]),
+                        ("Analyst sentiment", industry_breakdown["analyst_notes"]),
+                    ):
+                        st.markdown(f"**{heading}**")
+                        for note in notes:
+                            st.write(f"- {note}")
+            else:
+                st.warning("Industry and analyst research is currently unavailable; the feature remains neutral.")
 
     with positioning_tab:
-        st.subheader("Market positioning")
-        st.caption("Factored into decisions through small, reliability-gated modifiers")
-        if positioning:
-            if positioning_modifier["short_scoring_eligible"]:
-                st.success(
-                    f"Short-interest report {positioning_modifier['short_report_date']} · "
-                    f"{positioning_modifier['short_age_days']} days old · eligible for scoring"
+        if positioning_tab.open:
+            st.subheader("Market positioning")
+            st.caption("Factored into decisions through small, reliability-gated modifiers")
+            if positioning:
+                if positioning_modifier["short_scoring_eligible"]:
+                    st.success(
+                        f"Short-interest report {positioning_modifier['short_report_date']} · "
+                        f"{positioning_modifier['short_age_days']} days old · eligible for scoring"
+                    )
+                else:
+                    st.error(
+                        f"Short-interest evidence {positioning_modifier['short_evidence_status']} · "
+                        "excluded from Entry/Exit scores; missing evidence is not interpreted as low short interest."
+                    )
+                score_columns = st.columns(4)
+                score_columns[0].metric("Long positioning", f"{positioning_breakdown['long_positioning']:.1f}/100")
+                score_columns[1].metric("Short pressure", f"{positioning_breakdown['short_pressure']:.1f}/100")
+                score_columns[2].metric("Squeeze potential", f"{positioning_breakdown['squeeze_potential']:.1f}/100")
+                score_columns[3].metric("Confidence", f"{positioning_breakdown['confidence']:.0f}/100")
+                st.info(f"Decision implication: {positioning_breakdown['decision_implication']}")
+                modifier_columns = st.columns(3)
+                modifier_columns[0].metric("Entry adjustment", f"{float(positioning_modifier['entry_adjustment']):+.1f}")
+                modifier_columns[1].metric("Exit adjustment", f"{float(positioning_modifier['exit_adjustment']):+.1f}")
+                modifier_columns[2].metric("Modifier reliability", f"{float(positioning_modifier['reliability']):.0f}/100")
+                if positioning_modifier.get("short_reversal_confirmed"):
+                    st.success(f"Short reversal lever: {positioning_modifier['short_reversal_lever']}")
+                else:
+                    st.caption(f"Short reversal lever · {positioning_modifier['short_reversal_lever']}")
+                st.caption(
+                    f"Provider: {positioning_modifier.get('short_evidence_source') or positioning.get('provider_name')} · Short-interest report: "
+                    f"{positioning_modifier.get('short_report_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')} · "
+                    f"Historical status: {positioning.get('known_at_status') or 'unverified legacy'}"
                 )
+                short = scoring_positioning.get("short", {}) if isinstance(scoring_positioning, dict) else {}
+                options = scoring_positioning.get("options", {}) if isinstance(scoring_positioning, dict) else {}
+                ownership = scoring_positioning.get("ownership", {}) if isinstance(scoring_positioning, dict) else {}
+                rows = [
+                    {"Signal": "Short float", "Value": "—" if short.get("short_percent_float") is None else f"{float(short['short_percent_float']):.2%}"},
+                    {"Signal": "Short-interest change", "Value": "—" if short.get("short_change_pct") is None else f"{float(short['short_change_pct']):+.2f}%"},
+                    {"Signal": "Days to cover", "Value": "—" if short.get("days_to_cover") is None else f"{float(short['days_to_cover']):.2f}"},
+                    {"Signal": "Put/call volume", "Value": "—" if options.get("put_call_volume_ratio") is None else f"{float(options['put_call_volume_ratio']):.2f}"},
+                    {"Signal": "Put/call open interest", "Value": "—" if options.get("put_call_oi_ratio") is None else f"{float(options['put_call_oi_ratio']):.2f}"},
+                    {"Signal": "Median contract IV", "Value": "—" if options.get("median_contract_iv") is None else f"{float(options['median_contract_iv']):.2%}"},
+                    {"Signal": "Institutional ownership", "Value": "—" if ownership.get("institutional_percent") is None else f"{float(ownership['institutional_percent']):.2%}"},
+                    {"Signal": "FMP float validation", "Value": "—" if ownership.get("public_float_shares_fmp") is None else f"{float(ownership['public_float_shares_fmp']):,.0f} shares"},
+                ]
+                st.dataframe(zebra_table(rows), hide_index=True, width="stretch")
+                with st.expander("Positioning evidence and interpretation"):
+                    for note in positioning_breakdown["notes"]:
+                        st.write(f"- {note}")
+                    st.markdown("**Historical calibration**")
+                    for note in positioning_modifier["notes"]:
+                        st.write(f"- {note}")
+                st.info("Options may be bought, written, or used as hedges. Short-sale volume is not used as a substitute for open short interest.")
             else:
-                st.error(
-                    f"Short-interest evidence {positioning_modifier['short_evidence_status']} · "
-                    "excluded from Entry/Exit scores; missing evidence is not interpreted as low short interest."
-                )
-            score_columns = st.columns(4)
-            score_columns[0].metric("Long positioning", f"{positioning_breakdown['long_positioning']:.1f}/100")
-            score_columns[1].metric("Short pressure", f"{positioning_breakdown['short_pressure']:.1f}/100")
-            score_columns[2].metric("Squeeze potential", f"{positioning_breakdown['squeeze_potential']:.1f}/100")
-            score_columns[3].metric("Confidence", f"{positioning_breakdown['confidence']:.0f}/100")
-            st.info(f"Decision implication: {positioning_breakdown['decision_implication']}")
-            modifier_columns = st.columns(3)
-            modifier_columns[0].metric("Entry adjustment", f"{float(positioning_modifier['entry_adjustment']):+.1f}")
-            modifier_columns[1].metric("Exit adjustment", f"{float(positioning_modifier['exit_adjustment']):+.1f}")
-            modifier_columns[2].metric("Modifier reliability", f"{float(positioning_modifier['reliability']):.0f}/100")
-            if positioning_modifier.get("short_reversal_confirmed"):
-                st.success(f"Short reversal lever: {positioning_modifier['short_reversal_lever']}")
-            else:
-                st.caption(f"Short reversal lever · {positioning_modifier['short_reversal_lever']}")
-            st.caption(
-                f"Provider: {positioning_modifier.get('short_evidence_source') or positioning.get('provider_name')} · Short-interest report: "
-                f"{positioning_modifier.get('short_report_date') or 'unknown'} · Fetched: {positioning.get('fetched_at')} · "
-                f"Historical status: {positioning.get('known_at_status') or 'unverified legacy'}"
-            )
-            short = scoring_positioning.get("short", {}) if isinstance(scoring_positioning, dict) else {}
-            options = scoring_positioning.get("options", {}) if isinstance(scoring_positioning, dict) else {}
-            ownership = scoring_positioning.get("ownership", {}) if isinstance(scoring_positioning, dict) else {}
-            rows = [
-                {"Signal": "Short float", "Value": "—" if short.get("short_percent_float") is None else f"{float(short['short_percent_float']):.2%}"},
-                {"Signal": "Short-interest change", "Value": "—" if short.get("short_change_pct") is None else f"{float(short['short_change_pct']):+.2f}%"},
-                {"Signal": "Days to cover", "Value": "—" if short.get("days_to_cover") is None else f"{float(short['days_to_cover']):.2f}"},
-                {"Signal": "Put/call volume", "Value": "—" if options.get("put_call_volume_ratio") is None else f"{float(options['put_call_volume_ratio']):.2f}"},
-                {"Signal": "Put/call open interest", "Value": "—" if options.get("put_call_oi_ratio") is None else f"{float(options['put_call_oi_ratio']):.2f}"},
-                {"Signal": "Median contract IV", "Value": "—" if options.get("median_contract_iv") is None else f"{float(options['median_contract_iv']):.2%}"},
-                {"Signal": "Institutional ownership", "Value": "—" if ownership.get("institutional_percent") is None else f"{float(ownership['institutional_percent']):.2%}"},
-                {"Signal": "FMP float validation", "Value": "—" if ownership.get("public_float_shares_fmp") is None else f"{float(ownership['public_float_shares_fmp']):,.0f} shares"},
-            ]
-            st.dataframe(zebra_table(rows), hide_index=True, width="stretch")
-            with st.expander("Positioning evidence and interpretation"):
-                for note in positioning_breakdown["notes"]:
-                    st.write(f"- {note}")
-                st.markdown("**Historical calibration**")
-                for note in positioning_modifier["notes"]:
-                    st.write(f"- {note}")
-            st.info("Options may be bought, written, or used as hedges. Short-sale volume is not used as a substitute for open short interest.")
-        else:
-            st.info("Positioning coverage is being assembled automatically. Price and company research remain available.")
+                st.info("Positioning coverage is being assembled automatically. Price and company research remain available.")
 
     with learning_tab:
-        st.subheader("Archived learning diagnostic")
-        st.caption("Historical research only · live Entry/Exit contribution is exactly 0.0. The legacy outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%.")
-        if backtest_runs:
-            st.caption(
-                f"Model lineage · {registered_backtests} immutable prediction(s) · "
-                f"{len(backtest_runs) - registered_backtests} compatibility-only run(s)"
+        if learning_tab.open:
+            st.subheader("Archived learning diagnostic")
+            st.caption("Historical research only · live Entry/Exit contribution is exactly 0.0. The legacy outcome composite weights normalized 1M/3M/6M returns at 50%/30%/20%.")
+            if backtest_runs:
+                st.caption(
+                    f"Model lineage · {registered_backtests} immutable prediction(s) · "
+                    f"{len(backtest_runs) - registered_backtests} compatibility-only run(s)"
+                )
+            learning_columns = st.columns(4)
+            learning_columns[0].metric("Confirmed / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
+            learning_columns[1].metric(
+                "Confirmed accuracy", "—" if learning_modifier["decision_accuracy"] is None else f"{float(learning_modifier['decision_accuracy']):.0f}%",
             )
-        learning_columns = st.columns(4)
-        learning_columns[0].metric("Confirmed / saved", f"{int(learning_modifier['sample_size'])}/{int(learning_modifier['total_runs'])}")
-        learning_columns[1].metric(
-            "Confirmed accuracy", "—" if learning_modifier["decision_accuracy"] is None else f"{float(learning_modifier['decision_accuracy']):.0f}%",
-        )
-        learning_columns[2].metric("Entry evidence", f"{float(learning_modifier['entry_adjustment']):+.1f}")
-        learning_columns[3].metric("Exit evidence", f"{float(learning_modifier['exit_adjustment']):+.1f}")
-        st.markdown(
-            f"<div style='display:flex;gap:1rem;flex-wrap:wrap'>"
-            f"<span style='color:{learning_entry_color};font-weight:700'>Entry diagnostic {learning_entry_adjustment:+.1f}</span>"
-            f"<span style='color:{learning_exit_color};font-weight:700'>Exit-review diagnostic {learning_exit_adjustment:+.1f}</span>"
-            f"</div>", unsafe_allow_html=True,
-        )
-        if int(learning_modifier["sample_size"]) < 3:
-            st.info(f"Diagnostic evidence remains neutral · {learning_modifier['reason']}.")
-        else:
-            st.info(f"Quarantined · not applied to current scores. {learning_modifier['reason']}.")
-        if backtest_runs:
-            history_rows = pd.DataFrame([{**run, **decision_outcome(run)} for run in backtest_runs])[[
-                "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
-                "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
-            ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
-                               "verdict": "Decision conclusion", "learning_priority": "Learning value",
-                               "should_learn": "Used for learning", "learning_reason": "Why"})
-            st.dataframe(zebra_table(history_rows), hide_index=True, width="stretch")
-        else:
-            st.info("No saved simulations exist for this ticker yet.")
+            learning_columns[2].metric("Entry evidence", f"{float(learning_modifier['entry_adjustment']):+.1f}")
+            learning_columns[3].metric("Exit evidence", f"{float(learning_modifier['exit_adjustment']):+.1f}")
+            st.markdown(
+                f"<div style='display:flex;gap:1rem;flex-wrap:wrap'>"
+                f"<span style='color:{learning_entry_color};font-weight:700'>Entry diagnostic {learning_entry_adjustment:+.1f}</span>"
+                f"<span style='color:{learning_exit_color};font-weight:700'>Exit-review diagnostic {learning_exit_adjustment:+.1f}</span>"
+                f"</div>", unsafe_allow_html=True,
+            )
+            if int(learning_modifier["sample_size"]) < 3:
+                st.info(f"Diagnostic evidence remains neutral · {learning_modifier['reason']}.")
+            else:
+                st.info(f"Quarantined · not applied to current scores. {learning_modifier['reason']}.")
+            if backtest_runs:
+                history_rows = pd.DataFrame([{**run, **decision_outcome(run)} for run in backtest_runs])[[
+                    "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
+                    "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
+                ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
+                                   "verdict": "Decision conclusion", "learning_priority": "Learning value",
+                                   "should_learn": "Used for learning", "learning_reason": "Why"})
+                st.dataframe(zebra_table(history_rows), hide_index=True, width="stretch")
+            else:
+                st.info("No saved simulations exist for this ticker yet.")
+
+            if is_bitcoin:
+                st.divider()
+                st.subheader("BTC retrospective derivatives overlay")
+                st.warning(
+                    "Research overlay only: these derivatives records were observed after the "
+                    "historical cutoffs. Their decision weight is 0.0 and they are excluded from "
+                    "accuracy, learning, Shadow, and the original Entry/Exit scores."
+                )
+                if st.button("Recalculate BTC simulation overlays", key="recalculate_btc_overlays"):
+                    recalculation = recalculate_btc_simulation_enrichments()
+                    st.success(
+                        f"BTC overlays checked: {recalculation['eligible_cutoffs']} eligible · "
+                        f"{recalculation['inserted']} added · "
+                        f"{recalculation['already_present']} already present."
+                    )
+                    st.rerun()
+                if btc_simulation_enrichments:
+                    overlay_rows = []
+                    for enrichment in btc_simulation_enrichments:
+                        overlay = enrichment["metrics"]
+                        overlay_rows.append({
+                            "Cutoff date": enrichment["as_of_date"],
+                            "Original signal": enrichment["source_entry_signal"],
+                            "Short Δ 10D (pp)": overlay["short_delta_10d_pp"],
+                            "Taker-sell flow (%)": overlay["taker_sell_share_pct"],
+                            "Flow vs 10D avg (pp)": overlay["taker_sell_vs_average_pp"],
+                            "OI Δ 10D (%)": overlay["open_interest_change_10d_pct"],
+                            "Retrospective reading": overlay["directional_read"],
+                            "1M outcome (%)": enrichment["outcome_1m"],
+                            "3M outcome (%)": enrichment["outcome_3m"],
+                            "6M outcome (%)": enrichment["outcome_6m"],
+                            "Evidence": enrichment["evidence_status"],
+                        })
+                    overlay_frame = pd.DataFrame(overlay_rows)
+                    overlay_columns = st.columns(3)
+                    overlay_columns[0].metric("Enriched cutoffs", len(overlay_frame))
+                    overlay_columns[1].metric(
+                        "Short pressure building",
+                        int((overlay_frame["Retrospective reading"] == "Short pressure building").sum()),
+                    )
+                    overlay_columns[2].metric(
+                        "3M outcomes available", int(overlay_frame["3M outcome (%)"].notna().sum()),
+                    )
+                    st.dataframe(zebra_table(overlay_frame), hide_index=True, width="stretch")
+                    st.caption(
+                        "Each row uses 11 completed UTC periods strictly before its cutoff. "
+                        "Historical public availability is not point-in-time verified."
+                    )
+                else:
+                    st.info("No eligible BTC simulation overlays have been generated yet.")
 
     with metrics_tab:
-        st.subheader("Calculated metrics")
-        percentage_metrics = {"return_1m", "return_3m", "return_6m", "return_12m", "drawdown_from_52w_high"}
-        metric_rows = []
-        for key, value in metrics.items():
-            if value is None:
-                formatted_value = "—"
-            elif key in percentage_metrics:
-                formatted_value = f"{value:.2f}%"
-            else:
-                formatted_value = f"${value:.2f}"
-            metric_rows.append({"Metric": key.replace("_", " ").title(), "Value": formatted_value})
-        st.dataframe(zebra_table(metric_rows), hide_index=True, width="stretch")
+        if metrics_tab.open:
+            st.subheader("Calculated metrics")
+            percentage_metrics = {"return_1m", "return_3m", "return_6m", "return_12m", "drawdown_from_52w_high"}
+            metric_rows = []
+            for key, value in metrics.items():
+                if value is None:
+                    formatted_value = "—"
+                elif key in percentage_metrics:
+                    formatted_value = f"{value:.2f}%"
+                else:
+                    formatted_value = f"${value:.2f}"
+                metric_rows.append({"Metric": key.replace("_", " ").title(), "Value": formatted_value})
+            st.dataframe(zebra_table(metric_rows), hide_index=True, width="stretch")
 
     with journal_tab:
-        st.subheader("Latest journal entries")
-        entries = get_journal_entries(ticker=ticker)
-        if entries:
-            current_price = metrics["latest_price"]
-            enriched_entries = []
-            for entry in entries:
-                enriched = dict(entry)
-                target = enriched.get("target_price")
-                enriched["target_upside_downside_pct"] = (
-                    (float(target) / current_price - 1) * 100 if target and current_price else None
+        if journal_tab.open:
+            st.subheader("Latest journal entries")
+            entries = get_journal_entries(ticker=ticker)
+            if entries:
+                current_price = metrics["latest_price"]
+                enriched_entries = []
+                for entry in entries:
+                    enriched = dict(entry)
+                    target = enriched.get("target_price")
+                    enriched["target_upside_downside_pct"] = (
+                        (float(target) / current_price - 1) * 100 if target and current_price else None
+                    )
+                    enriched_entries.append(enriched)
+                st.dataframe(
+                    zebra_table(enriched_entries),
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "target_price": st.column_config.NumberColumn("Target price", format="$%.2f"),
+                        "target_upside_downside_pct": st.column_config.NumberColumn("Upside/downside", format="%.2f%%"),
+                    },
                 )
-                enriched_entries.append(enriched)
-            st.dataframe(
-                zebra_table(enriched_entries),
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "target_price": st.column_config.NumberColumn("Target price", format="$%.2f"),
-                    "target_upside_downside_pct": st.column_config.NumberColumn("Upside/downside", format="%.2f%%"),
-                },
-            )
-        else:
-            st.caption("No journal entries for this ticker yet.")
+            else:
+                st.caption("No journal entries for this ticker yet.")
 
     st.divider()
-    st.subheader("Decision accuracy over time")
+    st.subheader("Legacy episode success over time")
     accuracy_history = decision_accuracy_history(backtest_runs)
     st.caption(
-        "Cumulative confirmed accuracy after each independent decision episode. "
+        "Retrospective absolute-return success by decision episode; not calibrated accuracy or benchmark outperformance. "
         "Provisional, noisy and same-episode simulations are excluded."
     )
     if accuracy_history:

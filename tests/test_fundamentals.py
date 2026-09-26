@@ -93,3 +93,17 @@ def test_yfinance_adapter_normalizes_public_company_fields(monkeypatch):
     assert result.eps_growth == 0.22
     assert result.provider_name == "Yahoo Finance"
     assert result.period_end == result.reporting_date
+
+
+def test_fmp_rejects_foreign_origins_and_redacts_transport_errors(monkeypatch):
+    import pytest
+    for origin in ("http://financialmodelingprep.com/stable", "https://example.com", "https://user@financialmodelingprep.com"):
+        with pytest.raises(ValueError, match="official HTTPS"):
+            FMPProvider("synthetic-key", origin)
+    def fail(*a, **k):
+        raise RuntimeError("https://financialmodelingprep.com?apikey=synthetic-key")
+    monkeypatch.setattr("src.data.fmp.urlopen", fail)
+    with pytest.raises(RuntimeError) as error:
+        FMPProvider("synthetic-key")._get("ratios-ttm", symbol="TEST")
+    assert "synthetic-key" not in str(error.value)
+    assert "https://" not in str(error.value)

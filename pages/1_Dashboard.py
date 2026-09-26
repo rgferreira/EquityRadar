@@ -4,6 +4,7 @@ import json
 import html
 import pandas as pd
 import streamlit as st
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
@@ -11,8 +12,11 @@ from src.data.database import (
     get_cached_industry_research,
     get_cached_extended_hours_quote,
     get_cached_positioning,
+    get_bitcoin_derivatives_daily_observations,
     get_finra_daily_short_volume,
     get_model_gate_exclusions,
+    get_dashboard_market_snapshot,
+    save_dashboard_market_snapshot,
     save_dashboard_order,
     get_portfolio_holdings,
     get_portfolio_targets,
@@ -24,10 +28,16 @@ from src.data.database import (
     get_watchlist,
     init_db,
 )
-from src.data.market_data import calculate_metrics, clear_market_data_cache, fetch_price_history, get_price_history_fetched_at
+from src.data.market_data import (
+    calculate_metrics,
+    clear_market_data_cache,
+    fetch_price_history,
+    get_price_history_fetched_at,
+    latest_price_observed_at,
+)
 from src.data.dashboard_refresh import (
     automatic_dashboard_refresh_due, last_dashboard_provider_refresh_at,
-    record_dashboard_provider_refresh,
+    record_dashboard_provider_refresh, dashboard_snapshot_is_fresh,
 )
 from src.data.fmp import FMPProvider
 from src.data.fundamentals import FallbackFundamentalsProvider, get_fundamentals
@@ -40,11 +50,13 @@ from src.scoring.risk import calculate_risk_score, explain_risk_score, risk_scor
 from src.scoring.technical import calculate_technical_score, explain_technical_score
 from src.scoring.technology import technology_potential_evidence
 from src.scoring.daily_short_flow import daily_short_flow_evidence
+from src.scoring.btc_short_pressure import btc_short_pressure_evidence
 from src.scoring.decision import (
     calculate_coverage_aware_entry_score, calculate_exit_review_score,
     entry_label, exit_review_label,
 )
 from src.scoring.valuation import calculate_valuation_score, explain_valuation_score
+from src.scoring.current_policy import combine_current_decisions
 from src.scoring.industry import industry_entry_score
 from src.scoring.positioning import apply_positioning_adjustment, positioning_score_adjustments
 from src.scoring.position_action import initiation_diagnostic, position_action
@@ -59,13 +71,26 @@ from src.pilot_deployment import (
     pilot_maturity_summary,
     set_pilot_opt_in,
 )
+from src.finra_simulation_enrichment import (
+    finra_counterfactual_summary, recalculate_finra_simulation_enrichments,
+)
 from src.data.backtest_refresh import (
     backtest_status, outcome_refresh_in_flight, schedule_backtest, schedule_outcome_refresh,
 )
 from src.data.cutoff_suggestions import cutoff_suggestion_status, schedule_cutoff_suggestions
 from src.shadow_model import meaningful_valuation_available, persist_live_shadow_observation
 from src.model_registry import ACTIVE_SHADOW_ENABLED
-from src.whaleseeker import whale_dashboard_feed, whaleseeker_runtime_enabled
+from src.whaleseeker import (
+    add_since_trade_returns,
+    empty_disclosure_message,
+    normalize_trade_filter,
+    whale_dashboard_feed,
+    whaleseeker_runtime_enabled,
+)
+
+from src.data.price_cache import fetch_cached_price_history as fetch_price_history
+
+from src.data.dashboard_refresh import schedule_dashboard_price_refresh, dashboard_price_refresh_state
 
 st.set_page_config(page_title="Decision dashboard | Personal Equity Radar", page_icon="📈", layout="wide")
 init_db()
@@ -101,7 +126,7 @@ def request_dashboard_refresh() -> None:
 
 def render_pilot_decisions(frame: pd.DataFrame) -> None:
     """Render an opt-in comparison without changing official Dashboard rows."""
-    st.markdown("#### Modo piloto · Live vs Technology + FINRA flow")
+    st.markdown("#### Modo piloto · Live vs Technology + shorts impact")
     st.caption(
         "Research-only comparison. The Official column remains the decision authority; "
         "Pilot never changes scores, position actions, model registration, or shadow evidence."
@@ -148,10 +173,54 @@ def render_pilot_decisions(frame: pd.DataFrame) -> None:
     st.progress(
         int(maturity["pipeline_progress_pct"]) / 100,
         text=(
-            f"Evidence pipeline · {maturity['independent_dates']} independent dates · "
+            f"Evidence pipeline · {maturity['independent_dates']} cutoff dates · "
             f"{maturity['matured_observations']} matured paired observations"
         ),
     )
+    retrospective = finra_counterfactual_summary()
+    with st.expander("One-year FINRA retrospective counterfactual", expanded=bool(retrospective["overlays"])):
+        st.warning(
+            "Retrospective-only: files retrieved now are replayed against old cutoffs. "
+            "These results cannot change prospective Pilot gates, official accuracy, or production scores."
+        )
+        if st.button("Recalculate FINRA counterfactuals", key="recalculate_finra_counterfactuals"):
+            result = recalculate_finra_simulation_enrichments()
+            st.success(
+                f"Counterfactuals checked: {result['eligible']} eligible · "
+                f"{result['inserted']} added · {result['already_present']} already frozen."
+            )
+            st.rerun()
+        if retrospective["overlays"]:
+            retrospective_columns = st.columns(5)
+            retrospective_columns[0].metric("Replayed cutoffs", int(retrospective["overlays"]))
+            retrospective_columns[1].metric("Independent outcomes", int(retrospective["confirmed"]))
+            retrospective_columns[2].metric(
+                "Original accuracy",
+                "—" if retrospective["original_accuracy_pct"] is None
+                else f"{float(retrospective['original_accuracy_pct']):.1f}%",
+            )
+            retrospective_columns[3].metric(
+                "Shorts counterfactual",
+                "—" if retrospective["counterfactual_accuracy_pct"] is None
+                else f"{float(retrospective['counterfactual_accuracy_pct']):.1f}%",
+                delta=(
+                    None if retrospective["accuracy_delta_pp"] is None
+                    else f"{float(retrospective['accuracy_delta_pp']):+.1f} pp"
+                ),
+            )
+            retrospective_columns[4].metric(
+                "Changed diagnostics", int(retrospective["signal_changes"]),
+            )
+            utility_delta_text = (
+                "—" if retrospective["average_utility_delta"] is None
+                else f"{float(retrospective['average_utility_delta']):+.2f}"
+            )
+            st.caption(
+                f"Average paired utility Δ · {utility_delta_text} · "
+                "promotion eligible: No · baseline snapshot frozen before backfill."
+            )
+        else:
+            st.info("The one-year FINRA history has not been replayed yet.")
     if not bool(state["runtime_enabled"]):
         st.warning("Pilot exposure is disabled by PILOT_DECISIONS_ENABLED. Official decisions are unaffected.")
         return
@@ -166,8 +235,11 @@ def render_pilot_decisions(frame: pd.DataFrame) -> None:
             daily_flow = daily_short_flow_evidence(
                 get_finra_daily_short_volume(ticker), as_of=date.today(),
             )
+            btc_derivatives = (
+                get_bitcoin_derivatives_daily_observations() if ticker == "BTC-USD" else []
+            )
         except Exception:
-            technology, daily_flow = {}, {}
+            technology, daily_flow, btc_derivatives = {}, {}, []
         comparisons.append(build_pilot_comparison(
             ticker,
             {
@@ -178,6 +250,8 @@ def render_pilot_decisions(frame: pd.DataFrame) -> None:
             },
             technology_evidence=technology,
             daily_flow_evidence=daily_flow,
+            btc_derivatives_observations=btc_derivatives,
+            as_of=date.today(),
         ))
     comparison_frame = pd.DataFrame(comparisons)
     st.dataframe(
@@ -189,34 +263,59 @@ def render_pilot_decisions(frame: pd.DataFrame) -> None:
             "Pilot score": st.column_config.NumberColumn(format="%.1f"),
             "Delta": st.column_config.NumberColumn(format="%+.1f"),
             "Technology adj": st.column_config.NumberColumn(format="%+.1f"),
-            "Daily flow adj": st.column_config.NumberColumn(format="%+.1f"),
+            "Shorts Entry Δ": st.column_config.NumberColumn(format="%+.1f"),
+            "Shorts Exit Δ": st.column_config.NumberColumn(format="%+.1f"),
+            "Shorts confidence %": st.column_config.NumberColumn(format="%.0f%%"),
         },
     )
     st.caption(
+        "Shorts Entry/Exit Δ is included in the Pilot score only when Included in Pilot is Yes. "
+        "BTC uses the registered Binance perpetual adapter inside the same unified Shorts Shadow. "
         "A changed Pilot label is an observation to investigate, not an instruction to trade. "
         "The official Portfolio and Watchlist tables above and below remain unchanged."
     )
 
 
+@st.fragment
 def render_whaleseeker_panel(tickers: list[str]) -> None:
     """Show delayed public disclosures as a parallel, zero-weight research layer."""
     if not whaleseeker_runtime_enabled():
         return
     st.markdown("#### WhaleSeeker · Congressional disclosures")
     st.caption(
-        "Public filings relevant to securities on this dashboard. Filing lag and first-seen time "
-        "remain visible; this evidence currently has 0% applied Entry/Exit weight."
+        "Public filings across the local WhaleSeeker sample, optionally restricted to securities "
+        "on this dashboard. Filing lag and first-seen time remain visible; this evidence currently "
+        "has 0% applied Entry/Exit weight."
     )
-    feed = whale_dashboard_feed(tickers)
+    selected_trade = st.segmented_control(
+        "Transaction type",
+        options=("All", "Purchase", "Sale"),
+        default="All",
+        key="dashboard_whaleseeker_trade_filter",
+        width="stretch",
+    )
+    selected_scope = st.segmented_control(
+        "Coverage",
+        options=("All disclosures", "Portfolio & Watchlist"),
+        default="All disclosures",
+        key="dashboard_whaleseeker_scope_filter",
+        width="stretch",
+    )
+    restricted_to_universe = selected_scope == "Portfolio & Watchlist"
+    transaction_types = normalize_trade_filter(selected_trade)
+    feed = whale_dashboard_feed(
+        tickers if restricted_to_universe else None,
+        transaction_types=transaction_types,
+    )
     if not feed:
-        st.info(
-            "No locally imported congressional disclosures match the current Portfolio or Watchlist. "
-            "Use the WhaleSeeker page to import the next bounded historical batch."
-        )
+        st.info(empty_disclosure_message(
+            selected_trade, restricted_to_universe=restricted_to_universe,
+        ))
         st.markdown("🐋 [Open WhaleSeeker](/WhaleSeeker)")
         return
+    feed = add_since_trade_returns(feed)
     display = pd.DataFrame(feed)[[
-        "Ticker", "Politician", "Trade", "Amount", "Traded", "Filed",
+        "Ticker", "Asset", "Since trade %", "Trade", "Traded", "Politician", "Amount", "Filed",
         "Filing lag (days)", "First seen by app", "Source",
     ]]
     st.dataframe(
@@ -224,13 +323,23 @@ def render_whaleseeker_panel(tickers: list[str]) -> None:
         hide_index=True,
         use_container_width=True,
         column_config={
+            "Ticker": st.column_config.TextColumn(
+                help="Provider-reported security symbol. Share classes are preserved; GOOGL is not rewritten as GOOG.",
+                width=80,
+            ),
+            "Asset": st.column_config.TextColumn(width=240),
+            "Since trade %": st.column_config.NumberColumn(format="%+.1f"),
+            "Trade": st.column_config.TextColumn(width=90),
             "Source": st.column_config.LinkColumn("Official source", display_text="Open"),
             "Filing lag (days)": st.column_config.NumberColumn(format="%d"),
         },
     )
     st.caption(
-        "The trade date is historical context, not alert time. Copyable performance must start no "
-        "earlier than a legitimate public-observation and execution timestamp."
+        "Ticker is the symbol reported in the disclosure; Asset supplies the readable issuer and "
+        "share-class context. Symbols are not merged across distinct securities. "
+        "Since trade % uses the first available adjusted close on or after the reported trade date "
+        "and the latest close; it is not the politician's execution price or a copyable return. "
+        "The trade date is historical context, not alert time."
     )
     st.markdown("🐋 [Explore politicians and data coverage](/WhaleSeeker)")
 
@@ -262,13 +371,13 @@ def render_dashboard_table(
             "Diagnostic - position" if key_suffix == "portfolio" else
             "Diagnostic - initiate" if key_suffix == "watchlist" else "Diagnostic"
         ),
-        "Overall decision accuracy": "Accuracy",
+        "Legacy episode success": "Accuracy",
         "Entry score": "Entry<br>score",
         "Exit score": "Exit<br>score",
         "Industry calibrated": "Industry",
     }
     widths = {
-        "Ticker": 68, "Diagnostic": 160, "Overall decision accuracy": 72,
+        "Ticker": 68, "Diagnostic": 160, "Legacy episode success": 72,
         "Price": 152, "+1M": 70, "+3M": 70,
         "Entry score": 76, "Exit score": 76, "Industry calibrated": 66,
     }
@@ -303,7 +412,7 @@ def render_dashboard_table(
             return "—"
         if column == "Price":
             return f"${float(value):,.2f}"
-        if column == "Overall decision accuracy":
+        if column == "Legacy episode success":
             return f"{float(value):.0f}%"
         if column in percentages:
             return f"{float(value):.2f}%"
@@ -498,9 +607,26 @@ if not tickers:
     st.info("Add one or more tickers from Watchlist management to begin.")
     st.stop()
 
+background_ready = st.session_state.pop("dashboard_background_ready", False)
 initial_refresh = not st.session_state.get("dashboard_initial_refresh_done", False)
+persisted_market_snapshot = get_dashboard_market_snapshot(tickers)
+startup_progress = None
 simulation_key = f"{as_of_date:%Y-%m-%d}" if historical_mode else None
-if historical_mode and refresh:
+if (
+    not historical_mode and initial_refresh and not refresh and persisted_market_snapshot
+):
+    startup_progress = st.progress(
+        0.35, text=f"Snapshot loaded · preparing {len(tickers)} of {len(tickers)} securities…",
+    )
+    st.session_state.dashboard_initial_refresh_done = True
+    st.session_state.dashboard_provider_refresh_skipped = True
+    st.session_state.dashboard_rows = list(persisted_market_snapshot["rows"])
+    st.session_state.dashboard_errors = list(persisted_market_snapshot["errors"])
+    st.session_state.last_refreshed_at = str(persisted_market_snapshot["fetched_at"])
+    st.session_state.dashboard_rows_mode = "present"
+    if not dashboard_snapshot_is_fresh(persisted_market_snapshot.get("fetched_at")):
+        st.info(f"Showing saved market data from {persisted_market_snapshot['fetched_at']}; background refresh pending.")
+elif historical_mode and refresh:
     selected_suggestion_record = next(
         (item for item in suggestions if str(item["suggested_date"]) == simulation_key), None,
     ) if using_suggestion else None
@@ -513,10 +639,10 @@ if historical_mode and refresh:
     )
     st.session_state.backtest_active_date = simulation_key
     st.session_state.dashboard_rows_mode = "historical"
-elif not historical_mode and (refresh or initial_refresh or st.session_state.get("dashboard_rows_mode") == "historical"):
+elif not historical_mode and (refresh or initial_refresh or background_ready or st.session_state.get("dashboard_rows_mode") == "historical"):
     # Set this before fetching so a provider error does not cause a refresh loop.
     st.session_state.dashboard_initial_refresh_done = True
-    automatic_provider_refresh = not refresh and automatic_dashboard_refresh_due()
+    automatic_provider_refresh = not refresh and not background_ready and automatic_dashboard_refresh_due()
     provider_refresh = refresh or automatic_provider_refresh
     if provider_refresh:
         clear_market_data_cache()
@@ -533,9 +659,35 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
         None if provider_refresh else
         st.status("Reading cache from last download…", state="running", expanded=False)
     )
+    priority_tickers = [str(item["ticker"]) for item in get_portfolio_holdings()]
+    priority_tickers.extend(ticker for ticker in tickers if ticker not in priority_tickers)
+    histories: dict[str, pd.DataFrame] = {}
+    history_errors: dict[str, Exception] = {}
+    if provider_refresh:
+        with ThreadPoolExecutor(max_workers=min(6, len(priority_tickers))) as pool:
+            pending = {pool.submit(fetch_price_history, ticker): ticker for ticker in priority_tickers}
+            for completed, future in enumerate(as_completed(pending), start=1):
+                ticker = pending[future]
+                try:
+                    histories[ticker] = future.result()
+                except Exception as exc:
+                    history_errors[ticker] = exc
+                if progress is not None:
+                    progress.progress(
+                        completed / len(priority_tickers),
+                        text=f"Downloaded {completed} of {len(priority_tickers)}",
+                    )
+    previous_rows = {
+        str(row.get("Ticker")): dict(row)
+        for row in (persisted_market_snapshot or {}).get("rows", [])
+    }
     for index, ticker in enumerate(tickers, start=1):
         try:
-            history = fetch_price_history(ticker)
+            if ticker in history_errors:
+                raise history_errors[ticker]
+            history = histories.get(ticker)
+            if history is None:
+                history = fetch_price_history(ticker)
             metrics = calculate_metrics(history)
             technical = calculate_technical_score(metrics)
             fundamentals = get_fundamentals(
@@ -550,42 +702,29 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
             industry_risk = min(100, risk + int(risk_details["drawdown_penalty"] or 0))
             industry_research = get_cached_industry_research(ticker)
             industry_breakdown = industry_entry_score(technical, industry_risk, industry_research)
-            calibrated_entry = (
-                float(industry_breakdown["score"])
-                if industry_research else calculate_coverage_aware_entry_score(
-                    technical, valuation, risk,
-                    valuation_available=meaningful_valuation_available(fundamentals),
-                )
-            )
             positioning_modifier = positioning_score_adjustments(
                 get_cached_positioning(ticker), get_positioning_history(ticker), technical,
             )
-            base_exit = calculate_exit_review_score(technical, risk)
-            calibrated_entry = apply_positioning_adjustment(
-                calibrated_entry, float(positioning_modifier["entry_adjustment"]),
-            )
-            calibrated_exit = apply_positioning_adjustment(
-                base_exit, float(positioning_modifier["exit_adjustment"]),
-            )
             learned = learned_score_adjustments(backtest_runs_by_ticker.get(ticker, []))
             learning_policy = governed_learning_adjustments(learned)
-            calibrated_entry = apply_positioning_adjustment(
-                calibrated_entry, float(learning_policy["applied_entry_adjustment"]),
+            current_outputs = combine_current_decisions(
+                technical=technical, valuation=valuation, risk=risk,
+                industry_score=industry_breakdown["score"] if industry_research else None,
+                valuation_available=meaningful_valuation_available(fundamentals),
+                entry_modifier=positioning_modifier["entry_adjustment"], exit_modifier=positioning_modifier["exit_adjustment"],
+                learning_entry=learning_policy["applied_entry_adjustment"], learning_exit=learning_policy["applied_exit_adjustment"],
             )
-            calibrated_exit = apply_positioning_adjustment(
-                calibrated_exit, float(learning_policy["applied_exit_adjustment"]),
-            )
-            current_outputs = {
-                "entry_score": calibrated_entry,
-                "entry_signal": entry_label(calibrated_entry),
-                "exit_score": calibrated_exit,
-                "exit_signal": exit_review_label(calibrated_exit),
-            }
+            calibrated_entry, calibrated_exit = current_outputs["entry_score"], current_outputs["exit_score"]
             if ACTIVE_SHADOW_ENABLED:
                 try:
                     technology_evidence = technology_potential_evidence(industry_research)
                     daily_flow_evidence = daily_short_flow_evidence(
                         get_finra_daily_short_volume(ticker), as_of=date.today(),
+                    )
+                    btc_short_evidence = (
+                        btc_short_pressure_evidence(
+                            get_bitcoin_derivatives_daily_observations(), as_of=date.today(),
+                        ) if ticker == "BTC-USD" else None
                     )
                     frozen_inputs = {
                             "features": {"technical_score": technical, "valuation_score": valuation,
@@ -599,6 +738,8 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                             "technology_potential": technology_evidence,
                             "daily_short_flow": daily_flow_evidence,
                         }
+                    if btc_short_evidence is not None:
+                        frozen_inputs["btc_short_pressure"] = btc_short_evidence
                     persist_live_shadow_observation(
                         ticker=ticker, as_of_date=date.today().isoformat(), surface="decision_dashboard",
                         inputs=frozen_inputs,
@@ -645,9 +786,15 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
                     [*industry_breakdown["quality_notes"], *industry_breakdown["valuation_notes"], *industry_breakdown["analyst_notes"]]
                 ) if industry_research else "Open Company detail once to build the daily peer and analyst snapshot.",
                 "Price data fetched at": get_price_history_fetched_at(ticker),
+                "Price observed at": latest_price_observed_at(history),
+                "Price data status": "Stale cache; refresh pending" if history.attrs.get("stale") else "Current provider response",
             })
         except Exception as exc:
             errors.append(f"{ticker}: {exc}")
+            if ticker in previous_rows:
+                fallback_row = previous_rows[ticker]
+                fallback_row["Price data status"] = "Fallback after refresh failure"
+                rows.append(fallback_row)
         if progress is not None:
             progress.progress(index / len(tickers), text=f"Fetched {index} of {len(tickers)}")
     if progress is not None:
@@ -655,10 +802,10 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
     if cache_status is not None:
         cache_status.update(label="Cache loaded from last download.", state="complete")
     completed_refresh_at = datetime.now()
-    if provider_refresh:
+    if provider_refresh or background_ready:
         record_dashboard_provider_refresh(completed_refresh_at)
     provider_refreshed_at = (
-        completed_refresh_at if provider_refresh else last_dashboard_provider_refresh_at()
+        completed_refresh_at if provider_refresh or background_ready else last_dashboard_provider_refresh_at()
     )
     st.session_state.dashboard_rows = rows
     st.session_state.dashboard_errors = errors
@@ -667,6 +814,12 @@ elif not historical_mode and (refresh or initial_refresh or st.session_state.get
         if provider_refreshed_at else completed_refresh_at.strftime("%Y-%m-%d %H:%M:%S")
     )
     st.session_state.dashboard_rows_mode = "present"
+    if rows and not errors and len(rows) == len(tickers):
+        serializable_rows = json.loads(pd.DataFrame(rows).to_json(orient="records"))
+        save_dashboard_market_snapshot(
+            tickers, serializable_rows, errors,
+            completed_refresh_at.isoformat(timespec="seconds"),
+        )
 
 if historical_mode:
     runs = [run for run in latest_model_runs(all_backtest_runs) if run["as_of_date"] == simulation_key]
@@ -742,7 +895,44 @@ if historical_mode:
 
 rows = st.session_state.get("dashboard_rows", [])
 errors = st.session_state.get("dashboard_errors", [])
+if startup_progress is not None:
+    startup_progress.progress(
+        0.65, text=f"Market data ready · rendering {len(rows)} of {len(tickers)} securities…",
+    )
 if rows:
+    if not historical_mode:
+        fallback_tickers = [
+            str(row.get("Ticker")) for row in rows
+            if row.get("Price data status") == "Fallback after refresh failure"
+        ]
+        observed_dates = []
+        for row in rows:
+            if not row.get("Price observed at"):
+                continue
+            observed = pd.Timestamp(row["Price observed at"])
+            if observed.tzinfo is not None:
+                observed = observed.tz_localize(None)
+            observed_dates.append(observed)
+        if fallback_tickers:
+            st.warning(
+                "Stale-price warning: fresh market data failed for "
+                f"{', '.join(fallback_tickers)}. Their last-known values are shown as fallback."
+            )
+        if len(observed_dates) != len(rows):
+            st.warning(
+                "Price observation time is unavailable for one or more rows. "
+                "Treat those values as potentially stale and refresh before relying on them."
+            )
+        elif observed_dates:
+            oldest_observation = min(observed_dates)
+            if (date.today() - oldest_observation.date()).days > 4:
+                st.warning(
+                    "Stale-price warning: at least one displayed close is more than four calendar days old."
+                )
+            st.caption(
+                "Prices are provider daily closes · oldest/latest observation: "
+                f"{min(observed_dates).date()} / {max(observed_dates).date()}."
+            )
     portfolio_holdings = get_portfolio_holdings()
     portfolio_tickers = [str(item["ticker"]) for item in portfolio_holdings]
     refresh_priority = [*portfolio_tickers, *(ticker for ticker in tickers if ticker not in portfolio_tickers)]
@@ -823,7 +1013,7 @@ if rows:
                     float(row["Entry score"]), str(row["Entry signal"]), str(row["Exit signal"]),
                 )
         frame = pd.DataFrame(rows)
-    frame["Overall decision accuracy"] = frame["Ticker"].map(
+    frame["Legacy episode success"] = frame["Ticker"].map(
         lambda ticker: lesson_summary(backtest_runs_by_ticker.get(str(ticker), [])).get("decision_accuracy")
     )
     above_50 = int((frame["Price"] > frame["50D MA"]).sum())
@@ -867,7 +1057,7 @@ if rows:
     st.session_state.dashboard_selected_metrics = selected_metrics
     identity_columns = [
         "Ticker", *(["Cutoff date"] if historical_mode else []),
-        "Diagnostic", "Overall decision accuracy",
+        "Diagnostic", "Legacy episode success",
     ]
     display_frame = frame[[
         *identity_columns, "Price", "1M %", "3M %",
@@ -902,8 +1092,6 @@ if rows:
                 owned_frame, set(portfolio_tickers), "portfolio", price_freshness, company_names,
                 daily_changes, extended_quotes, gate_exclusions,
             )
-        render_whaleseeker_panel(frame["Ticker"].astype(str).tolist())
-        render_pilot_decisions(frame)
         if not watchlist_frame.empty:
             st.markdown("#### Watchlist opportunities")
             st.caption("Unowned securities · potential position-initiation decisions")
@@ -911,6 +1099,10 @@ if rows:
                 watchlist_frame, set(), "watchlist", price_freshness, company_names,
                 daily_changes, extended_quotes, gate_exclusions,
             )
+        with st.expander("Disclosed flows and pilot research", key="dashboard_research", on_change="rerun") as research_panel:
+            if research_panel.open:
+                render_whaleseeker_panel(frame["Ticker"].astype(str).tolist())
+                render_pilot_decisions(frame)
     else:
         render_dashboard_table(
             display_frame, set(portfolio_tickers), "historical", price_freshness, company_names,
@@ -1120,77 +1312,78 @@ if rows:
         else:
             st.caption("Live decision mode · select Past date to reconstruct an earlier dashboard.")
 
-    with st.expander("Saved simulations & learning history"):
-        saved_runs = latest_model_runs(all_backtest_runs)
-        registered_saved_runs = sum(
-            int(run.get("has_prediction_snapshot") or 0) for run in saved_runs
-        )
-        if not saved_runs:
-            st.info("No persisted simulations yet.")
-        else:
-            archive_tab, learning_tab, audit_tab = st.tabs([
-                "Simulation archive", "Learning by ticker", "Score overlap audit",
-            ])
-            with archive_tab:
-                st.caption(
-                    f"Model lineage · {registered_saved_runs} immutable prediction(s) · "
-                    f"{len(saved_runs) - registered_saved_runs} compatibility-only run(s)"
-                )
-                archive = pd.DataFrame(saved_runs)
-                archive_summary = (
-                    archive.groupby("as_of_date", as_index=False)
-                    .agg(Tickers=("ticker", "nunique"), Completed_3M=("outcome_3m", "count"),
-                         Average_entry=("entry_score", "mean"), Saved_at=("created_at", "max"))
-                    .sort_values("as_of_date", ascending=False)
-                    .rename(columns={"as_of_date": "Cutoff date", "Completed_3M": "3M outcomes",
-                                     "Average_entry": "Average entry", "Saved_at": "Last saved"})
-                )
-                st.dataframe(zebra_table(archive_summary), hide_index=True, width="stretch")
-                if outcome_refresh_in_flight():
-                    st.caption("Refreshing matured forward outcomes automatically…")
-            with learning_tab:
-                learned_ticker = st.selectbox(
-                    "Ticker learning history", sorted({str(run["ticker"]) for run in saved_runs}),
-                    key="learning_history_ticker",
-                )
-                ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
-                learned = learned_score_adjustments(ticker_runs)
-                metric_cols = st.columns(4)
-                metric_cols[0].metric("Confirmed / saved", f"{learned['sample_size']}/{learned['total_runs']}")
-                metric_cols[1].metric("Confirmed accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
-                metric_cols[2].metric("Entry evidence", f"{learned['entry_adjustment']:+.1f}")
-                metric_cols[3].metric("Exit evidence", f"{learned['exit_adjustment']:+.1f}")
-                st.caption(f"Diagnostic only · quarantined · not applied to live scores. {learned['reason']}")
-                learning_history = pd.DataFrame([{**run, **decision_outcome(run)} for run in ticker_runs])[[
-                    "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
-                    "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
-                ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
-                                   "verdict": "Decision conclusion", "learning_priority": "Learning value",
-                                   "should_learn": "Used for learning", "learning_reason": "Why"})
-                st.dataframe(zebra_table(learning_history), hide_index=True, width="stretch")
-            with audit_tab:
-                audit = score_orthogonality_audit(saved_runs)
-                audit_metrics = st.columns(3)
-                audit_metrics[0].metric("Distinct simulations", int(audit["sample_size"]))
-                audit_metrics[1].metric("Matured outcomes", int(audit["matured_outcomes"]))
-                audit_metrics[2].metric(
-                    "Empirical overlap flags",
-                    sum(row["Overlap level"] != "Distinct" for row in audit["pairwise"]),
-                )
-                st.caption("Correlation identifies components moving together; incremental R² estimates whether each adds outcome information beyond the others. It is diagnostic evidence, not an automatic weight change.")
-                st.markdown("**Empirical component overlap**")
-                if audit["pairwise"]:
-                    st.dataframe(zebra_table(pd.DataFrame(audit["pairwise"])), hide_index=True, width="stretch")
-                else:
-                    st.info("More varied simulations are required for empirical pair analysis.")
-                st.markdown("**Incremental outcome information**")
-                if audit["components"]:
-                    st.dataframe(zebra_table(pd.DataFrame(audit["components"])), hide_index=True, width="stretch")
-                st.markdown("**Architectural overlap map**")
-                st.dataframe(zebra_table(pd.DataFrame(audit["semantic"])), hide_index=True, width="stretch")
-                st.markdown("**Recommended review sequence**")
-                for recommendation in audit["recommendations"]:
-                    st.write(f"- {recommendation}")
+    with st.expander("Saved simulations & learning history", key="saved_research", on_change="rerun") as archive:
+        if archive.open:
+            saved_runs = latest_model_runs(all_backtest_runs)
+            registered_saved_runs = sum(
+                int(run.get("has_prediction_snapshot") or 0) for run in saved_runs
+            )
+            if not saved_runs:
+                st.info("No persisted simulations yet.")
+            else:
+                archive_tab, learning_tab, audit_tab = st.tabs([
+                    "Simulation archive", "Learning by ticker", "Score overlap audit",
+                ])
+                with archive_tab:
+                    st.caption(
+                        f"Model lineage · {registered_saved_runs} immutable prediction(s) · "
+                        f"{len(saved_runs) - registered_saved_runs} compatibility-only run(s)"
+                    )
+                    archive = pd.DataFrame(saved_runs)
+                    archive_summary = (
+                        archive.groupby("as_of_date", as_index=False)
+                        .agg(Tickers=("ticker", "nunique"), Completed_3M=("outcome_3m", "count"),
+                             Average_entry=("entry_score", "mean"), Saved_at=("created_at", "max"))
+                        .sort_values("as_of_date", ascending=False)
+                        .rename(columns={"as_of_date": "Cutoff date", "Completed_3M": "3M outcomes",
+                                         "Average_entry": "Average entry", "Saved_at": "Last saved"})
+                    )
+                    st.dataframe(zebra_table(archive_summary), hide_index=True, width="stretch")
+                    if outcome_refresh_in_flight():
+                        st.caption("Refreshing matured forward outcomes automatically…")
+                with learning_tab:
+                    learned_ticker = st.selectbox(
+                        "Ticker learning history", sorted({str(run["ticker"]) for run in saved_runs}),
+                        key="learning_history_ticker",
+                    )
+                    ticker_runs = [run for run in saved_runs if run["ticker"] == learned_ticker]
+                    learned = learned_score_adjustments(ticker_runs)
+                    metric_cols = st.columns(4)
+                    metric_cols[0].metric("Confirmed / saved", f"{learned['sample_size']}/{learned['total_runs']}")
+                    metric_cols[1].metric("Confirmed accuracy", "—" if learned["decision_accuracy"] is None else f"{learned['decision_accuracy']:.0f}%")
+                    metric_cols[2].metric("Entry evidence", f"{learned['entry_adjustment']:+.1f}")
+                    metric_cols[3].metric("Exit evidence", f"{learned['exit_adjustment']:+.1f}")
+                    st.caption(f"Diagnostic only · quarantined · not applied to live scores. {learned['reason']}")
+                    learning_history = pd.DataFrame([{**run, **decision_outcome(run)} for run in ticker_runs])[[
+                        "as_of_date", "entry_signal", "entry_score", "outcome_1m", "outcome_3m", "outcome_6m",
+                        "composite", "verdict", "learning_priority", "should_learn", "learning_reason",
+                    ]].rename(columns={"as_of_date": "Cutoff date", "composite": "Weighted monthly %",
+                                       "verdict": "Decision conclusion", "learning_priority": "Learning value",
+                                       "should_learn": "Used for learning", "learning_reason": "Why"})
+                    st.dataframe(zebra_table(learning_history), hide_index=True, width="stretch")
+                with audit_tab:
+                    audit = score_orthogonality_audit(saved_runs)
+                    audit_metrics = st.columns(3)
+                    audit_metrics[0].metric("Distinct simulations", int(audit["sample_size"]))
+                    audit_metrics[1].metric("Matured outcomes", int(audit["matured_outcomes"]))
+                    audit_metrics[2].metric(
+                        "Empirical overlap flags",
+                        sum(row["Overlap level"] != "Distinct" for row in audit["pairwise"]),
+                    )
+                    st.caption("Correlation identifies components moving together; incremental R² estimates whether each adds outcome information beyond the others. It is diagnostic evidence, not an automatic weight change.")
+                    st.markdown("**Empirical component overlap**")
+                    if audit["pairwise"]:
+                        st.dataframe(zebra_table(pd.DataFrame(audit["pairwise"])), hide_index=True, width="stretch")
+                    else:
+                        st.info("More varied simulations are required for empirical pair analysis.")
+                    st.markdown("**Incremental outcome information**")
+                    if audit["components"]:
+                        st.dataframe(zebra_table(pd.DataFrame(audit["components"])), hide_index=True, width="stretch")
+                    st.markdown("**Architectural overlap map**")
+                    st.dataframe(zebra_table(pd.DataFrame(audit["semantic"])), hide_index=True, width="stretch")
+                    st.markdown("**Recommended review sequence**")
+                    for recommendation in audit["recommendations"]:
+                        st.write(f"- {recommendation}")
 
     with st.expander("Customize order and visible metrics"):
         st.radio("Ordering mode", ["Sort by column", "Manual order"], horizontal=True,
@@ -1229,7 +1422,7 @@ if rows:
         st.caption(
             "The simulation retrieves sufficient history automatically and persists reproducible outcomes."
             if requested_historical_mode else
-            "Prices refresh automatically on first load. Use refresh to request fresh provider data."
+            "The last complete snapshot loads on startup. Refresh requests fresh provider data."
         )
         if not requested_historical_mode and st.session_state.get("dashboard_provider_refresh_skipped"):
             st.caption("Recent provider data reused · automatic full-watchlist refresh is limited to once per minute.")
@@ -1237,3 +1430,25 @@ if errors:
     st.error("Some data could not be fetched:")
     for error in errors:
         st.write(f"- {error}")
+if startup_progress is not None:
+    startup_progress.progress(1.0, text=f"Dashboard ready · {len(rows)} of {len(tickers)} securities")
+
+
+if not historical_mode:
+    @st.fragment(run_every=4)
+    def render_market_cache_refresh() -> None:
+        fetched = st.session_state.get("last_refreshed_at")
+        state = dashboard_price_refresh_state(tickers)
+        if not dashboard_snapshot_is_fresh(fetched):
+            if state["status"] != "running":
+                schedule_dashboard_price_refresh(tickers)
+                state = dashboard_price_refresh_state(tickers)
+            st.caption(f"Last complete market snapshot: {fetched or 'unavailable'}. "
+                       "Cached data remains visible while prices refresh in the background.")
+        if state["status"] == "ready" and state["generation"] != st.session_state.get("dashboard_applied_generation"):
+            st.session_state.dashboard_applied_generation = state["generation"]
+            st.session_state.dashboard_background_ready = True
+            st.rerun()
+        elif state["status"] in {"partial", "failed"}:
+            st.caption("Some providers are unavailable. The previous complete view is retained.")
+    render_market_cache_refresh()

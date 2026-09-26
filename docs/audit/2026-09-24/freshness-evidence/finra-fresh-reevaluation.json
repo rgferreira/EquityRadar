@@ -1,0 +1,17 @@
+{
+  "status": "retrospective_only",
+  "observed_at": "2026-09-24",
+  "method": "Recomputed frozen methodology using current effective legacy outcomes; archived overlays unchanged",
+  "eligible": 628,
+  "insufficient_history": 299,
+  "selected_observations": 223,
+  "distinct_cutoffs": 20,
+  "original_accuracy_pct": 54.26,
+  "counterfactual_accuracy_pct": 52.91,
+  "signal_changes": 8,
+  "selected_signal_changes": 5,
+  "average_utility_delta": -0.2066,
+  "promotion_eligible": false,
+  "statistical_caveat": "Per-ticker overlap filter; cross-ticker dates remain dependent. Accuracy is legacy decision-utility accuracy, not benchmark-relative entry precision.",
+  "accuracy_delta_pp": -1.35
+}

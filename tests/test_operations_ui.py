@@ -41,7 +41,8 @@ def test_operations_empty_state_renders_every_control_group(tmp_path, monkeypatc
     headings = {heading.value for heading in app.subheader}
     assert headings == {
         "Provider health", "Short-interest evidence freshness", "Background maintenance",
-        "Verified local recovery", "Options evidence continuity", "Research alerts",
+        "Verified local recovery", "Independent options-chain coverage", "Legacy aggregate options evidence", "Research alerts",
+        "Data lifecycle · what needs attention",
     }
     assert _button(app, "Verify existing backup").disabled
     assert _button(app, "Run isolated restore drill").disabled

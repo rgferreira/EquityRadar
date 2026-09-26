@@ -52,6 +52,13 @@ After editing:
 4. Review the diff for scope creep, leakage, destructive migrations, privacy issues, and undocumented behavior changes.
 5. Report changed files, tests run, migrations, residual risks, and rollback.
 
+For changes to Streamlit pages, imported Python modules, or the macOS server
+controller, run `scripts/macos/equity-radar-control.zsh restart` and verify that
+it reports both a rendered Dashboard and the ZeroTier route as verified, not
+only a healthy HTTP endpoint. Confirm that the listener is bound to the active
+ZeroTier IPv4 address, never `0.0.0.0` or LAN-wide, so mobile access is tested
+after every change without exposing private research to the local network.
+
 ## Definition of done
 
 A task is complete only when its acceptance criteria are demonstrated, relevant tests pass, no unrelated behavior has changed, and the diff remains small enough to review confidently.

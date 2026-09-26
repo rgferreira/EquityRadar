@@ -23,6 +23,7 @@ from websockets.sync.client import connect
 ROUTES = {
     "/": "Decision dashboard",
     "/Portfolio": "Portfolio",
+    "/WhaleSeeker": "WhaleSeeker",
     "/Company": "Company detail",
     "/Journal": "Investment journal",
     "/Watchlist": "Watchlist management",
@@ -31,6 +32,11 @@ ROUTES = {
     "/Scenario-lab": "Scenario lab",
 }
 VIEWPORTS = {"desktop": (1440, 1000), "phone": (390, 844)}
+ERROR_MARKERS = (
+    "stException", "This app has encountered an error", "Traceback (most recent call last)",
+    "OperationalError",
+)
+EXPECTED_CONTENT_STABILITY_SECONDS = 2.0
 
 
 def find_chromium() -> Path:
@@ -61,6 +67,15 @@ def _cdp_evaluate(socket: object, message_id: int, expression: str) -> dict[str,
             return response
 
 
+def _render_is_complete(status: dict[str, object], expected: str) -> bool:
+    """Stop immediately for a rendered failure or a completed valid script."""
+    html = str(status.get("html") or "")
+    state = str(status.get("state") or "")
+    if any(marker in html for marker in ERROR_MARKERS):
+        return True
+    return state == "notRunning" and expected in html
+
+
 def render(chromium: Path, url: str, width: int, height: int, expected: str) -> str:
     """Render after Streamlit finishes, not after an arbitrary virtual-time budget."""
     profile = tempfile.TemporaryDirectory(prefix="equity-radar-chromium-")
@@ -75,6 +90,7 @@ def render(chromium: Path, url: str, width: int, height: int, expected: str) -> 
         start_new_session=True,
     )
     html = ""
+    expected_seen_at: float | None = None
     try:
         port_file = Path(profile.name) / "DevToolsActivePort"
         deadline = time.monotonic() + 30
@@ -101,7 +117,8 @@ def render(chromium: Path, url: str, width: int, height: int, expected: str) -> 
                 try:
                     response = _cdp_evaluate(socket, message_id, """
                         JSON.stringify({
-                          html: document.body.innerText,
+                          html: document.querySelector('[data-testid="stMainBlockContainer"]')
+                            ?.innerText || '',
                           ready: window.prerenderReady === true,
                           state: document.querySelector('[data-testid="stApp"]')
                             ?.getAttribute('data-test-script-state') || ''
@@ -117,12 +134,18 @@ def render(chromium: Path, url: str, width: int, height: int, expected: str) -> 
                 if isinstance(value, str):
                     status = json.loads(value)
                     html = str(status.get("html") or "")
-                    has_result = expected in html or any(marker in html for marker in (
-                        "stException", "This app has encountered an error",
-                        "Traceback (most recent call last)",
-                    ))
-                    if has_result:
+                    if _render_is_complete(status, expected):
                         return html
+                    if expected in html:
+                        if expected_seen_at is None:
+                            expected_seen_at = time.monotonic()
+                        elif (
+                            time.monotonic() - expected_seen_at
+                            >= EXPECTED_CONTENT_STABILITY_SECONDS
+                        ):
+                            return html
+                    else:
+                        expected_seen_at = None
                 time.sleep(0.1)
         raise RuntimeError(f"Streamlit did not finish rendering {url} within 30 seconds")
     finally:
@@ -135,10 +158,30 @@ def render(chromium: Path, url: str, width: int, height: int, expected: str) -> 
         profile.cleanup()
 
 
-def run(base_url: str) -> dict[str, object]:
+def _assert_server_health(base_url: str) -> None:
     with urlopen(f"{base_url}/_stcore/health", timeout=5) as response:
         if response.read().decode().strip() != "ok":
             raise RuntimeError("Streamlit health endpoint is not ready")
+
+
+def probe_route(
+    base_url: str, route: str = "/", expected: str = "Decision dashboard",
+) -> dict[str, object]:
+    """Prove that a route starts a real Streamlit session without an error page."""
+    _assert_server_health(base_url)
+    chromium = find_chromium()
+    dom = render(chromium, f"{base_url}{route}", 1280, 900, expected)
+    errors = [marker for marker in ERROR_MARKERS if marker in dom]
+    return {
+        "route": route,
+        "expected": expected,
+        "passed": expected in dom and not errors,
+        "errors": errors,
+    }
+
+
+def run(base_url: str) -> dict[str, object]:
+    _assert_server_health(base_url)
     chromium = find_chromium()
     checks = []
     for viewport, (width, height) in VIEWPORTS.items():
@@ -147,14 +190,12 @@ def run(base_url: str) -> dict[str, object]:
             attempts = 0
             for attempts in range(1, 4):
                 dom = render(chromium, f"{base_url}{route}", width, height, expected)
-                if expected in dom or any(marker in dom for marker in (
-                    "stException", "This app has encountered an error", "Traceback (most recent call last)",
-                )):
+                if expected in dom or any(marker in dom for marker in ERROR_MARKERS):
                     break
             errors = []
             if expected not in dom:
                 errors.append(f"missing expected text: {expected}")
-            for marker in ("stException", "This app has encountered an error", "Traceback (most recent call last)"):
+            for marker in ERROR_MARKERS:
                 if marker in dom:
                     errors.append(f"error marker: {marker}")
             checks.append({
@@ -175,8 +216,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:8501")
     parser.add_argument("--output", default="work/ui-acceptance-latest.json")
+    parser.add_argument("--probe-route")
+    parser.add_argument("--probe-expected", default="Decision dashboard")
     args = parser.parse_args()
-    report = run(args.base_url.rstrip("/"))
+    base_url = args.base_url.rstrip("/")
+    if args.probe_route is not None:
+        result = probe_route(base_url, args.probe_route, args.probe_expected)
+        print(
+            f"Route probe: {result['route']} "
+            f"{'ready' if result['passed'] else 'failed'}"
+        )
+        return 0 if result["passed"] else 1
+    report = run(base_url)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

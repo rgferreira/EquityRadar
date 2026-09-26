@@ -12,7 +12,7 @@ from src.data.database import (
     get_finra_daily_short_volume, get_provider_health_states, record_provider_health,
 )
 from src.data.finra_daily_volume import (
-    FINRADailyShortVolumeProvider, backfill_finra_daily_short_volume,
+    FINRA_DAILY_HISTORY_DAYS, FINRADailyShortVolumeProvider, backfill_finra_daily_short_volume,
 )
 from src.data.finra_short_interest import finra_supports_ticker
 
@@ -112,7 +112,7 @@ def finra_daily_volume_refresh_due(
 
 
 def schedule_finra_daily_volume_refresh(
-    tickers: list[str], *, lookback_days: int = 120,
+    tickers: list[str], *, lookback_days: int = FINRA_DAILY_HISTORY_DAYS,
     provider_factory: Callable[[], FINRADailyShortVolumeProvider] = FINRADailyShortVolumeProvider,
     db_path: str | Path | None = None,
 ) -> bool:

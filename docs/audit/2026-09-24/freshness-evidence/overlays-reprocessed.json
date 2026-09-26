@@ -1,0 +1,31 @@
+{
+  "finra": {
+    "active_runs": 967,
+    "eligible": 628,
+    "inserted": 95,
+    "already_present": 533,
+    "insufficient_history": 299,
+    "unsupported": 40
+  },
+  "btc": {
+    "active_cutoffs": 40,
+    "eligible_cutoffs": 28,
+    "inserted": 4,
+    "already_present": 24,
+    "insufficient_history": 12
+  },
+  "finra_summary": {
+    "methodology_version": "finra-daily-flow-retrospective-counterfactual-v1",
+    "evidence_status": "retrospective_only",
+    "overlays": 628,
+    "confirmed": 175,
+    "all_confirmed_before_independence_gate": 387,
+    "signal_changes": 8,
+    "confirmed_signal_changes": 5,
+    "original_accuracy_pct": 53.1,
+    "counterfactual_accuracy_pct": 51.4,
+    "accuracy_delta_pp": -1.7,
+    "average_utility_delta": -0.26,
+    "promotion_eligible": false
+  }
+}

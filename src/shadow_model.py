@@ -71,6 +71,7 @@ def technology_potential_shadow_output(
     """Apply the preregistered Technology and daily short-flow shadow modifiers."""
     evidence = dict(inputs.get("technology_potential") or {})
     daily_flow = dict(inputs.get("daily_short_flow") or {})
+    btc_pressure = dict(inputs.get("btc_short_pressure") or {})
     current_entry = float(current_outputs["entry_score"])
     current_signal = str(current_outputs["entry_signal"])
     technology_modifier = float(evidence.get("entry_modifier") or 0.0)
@@ -80,15 +81,24 @@ def technology_potential_shadow_output(
     else:
         technology_modifier = max(-5.0, min(5.0, technology_modifier))
         technology_mode = f"technology_{evidence.get('coverage') or 'limited'}"
-    flow_entry_modifier = float(daily_flow.get("entry_modifier") or 0.0)
-    flow_exit_modifier = float(daily_flow.get("exit_modifier") or 0.0)
-    if not daily_flow or float(daily_flow.get("confidence") or 0.0) <= 0:
+    shorts_evidence = btc_pressure if "btc_short_pressure" in inputs else daily_flow
+    shorts_adapter = "binance_btc_perpetual" if "btc_short_pressure" in inputs else "finra_daily_flow"
+    flow_entry_modifier = float(shorts_evidence.get("entry_modifier") or 0.0)
+    flow_exit_modifier = float(shorts_evidence.get("exit_modifier") or 0.0)
+    if not shorts_evidence or float(shorts_evidence.get("confidence") or 0.0) <= 0:
         flow_entry_modifier = flow_exit_modifier = 0.0
-        flow_mode = "daily_flow_unavailable"
+        flow_mode = (
+            "daily_flow_unavailable" if shorts_adapter == "finra_daily_flow"
+            else f"{shorts_adapter}_unavailable"
+        )
     else:
         flow_entry_modifier = max(-2.0, min(2.0, flow_entry_modifier))
         flow_exit_modifier = max(-2.0, min(2.0, flow_exit_modifier))
-        flow_mode = f"daily_flow_{daily_flow.get('coverage') or 'limited'}"
+        flow_mode = (
+            f"daily_flow_{shorts_evidence.get('coverage') or 'limited'}"
+            if shorts_adapter == "finra_daily_flow"
+            else f"{shorts_adapter}_{shorts_evidence.get('coverage') or 'limited'}"
+        )
     score = round(max(
         0.0, min(100.0, current_entry + technology_modifier + flow_entry_modifier)
     ), 1)
@@ -110,6 +120,11 @@ def technology_potential_shadow_output(
         "technology_score": float(evidence.get("score") or 50.0),
         "technology_confidence": float(evidence.get("confidence") or 0.0),
         "technology_entry_modifier": round(technology_modifier, 1),
+        "shorts_adapter": shorts_adapter,
+        "shorts_state": str(shorts_evidence.get("state") or shorts_evidence.get("coverage") or "Unavailable"),
+        "shorts_confidence": float(shorts_evidence.get("confidence") or 0.0),
+        "shorts_entry_modifier": round(flow_entry_modifier, 1),
+        "shorts_exit_modifier": round(flow_exit_modifier, 1),
         "daily_short_flow_slope": float(daily_flow.get("slope_pp_per_session") or 0.0),
         "daily_short_flow_confidence": float(daily_flow.get("confidence") or 0.0),
         "daily_short_flow_entry_modifier": round(flow_entry_modifier, 1),

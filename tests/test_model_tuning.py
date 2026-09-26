@@ -4,8 +4,43 @@ from datetime import date
 from src.model_tuning import (
     build_post_promotion_report,
     build_model_tuning_report, cumulative_curve_overlap, cumulative_date_evidence,
-    prepare_shadow_comparisons,
+    prepare_shadow_comparisons, select_equity_gate_lineage_snapshots,
 )
+from src.model_registry import (
+    FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION, TECHNOLOGY_POTENTIAL_SHADOW_VERSION,
+)
+
+
+def test_equity_gate_lineage_continues_v3_to_v5_but_never_inherits_excluded_btc():
+    rows = [
+        {"ticker": "AAPL", "as_of_date": "2026-08-20",
+         "challenger_model_version": FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION, "id": "v3"},
+        {"ticker": "AAPL", "as_of_date": "2026-08-20",
+         "challenger_model_version": TECHNOLOGY_POTENTIAL_SHADOW_VERSION, "id": "v5"},
+        {"ticker": "MSFT", "as_of_date": "2026-08-21",
+         "challenger_model_version": FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION, "id": "legacy"},
+        {"ticker": "BTC-USD", "as_of_date": "2026-08-21",
+         "challenger_model_version": FINRA_DAILY_SHORT_FLOW_SHADOW_VERSION, "id": "btc-v3"},
+    ]
+
+    selected = select_equity_gate_lineage_snapshots(rows, {"BTC-USD"})
+
+    assert {(row["ticker"], row["id"]) for row in selected} == {
+        ("AAPL", "v5"), ("MSFT", "legacy"),
+    }
+
+
+def test_available_one_month_label_keeps_three_month_pipeline_pending():
+    snapshots = [shadow("s", "2026-07-14", "Wait", "Buy candidate", 10)]
+    predictions = [prediction("p", "2026-07-14")]
+    partial = {"prediction_id": "p", "status": "available", "outcomes_json": json.dumps({
+        "1M": {"end_date": "2026-08-13", "relative_return_after_cost_pct": 4}, "3M": None})}
+    rows = prepare_shadow_comparisons(snapshots, predictions, [partial], horizon="3M")
+    assert rows[0]["label_status"] == "pending"
+    assert rows[0]["relative_return_pct"] is None
+    report = build_model_tuning_report(rows, today=date(2026, 9, 24))
+    assert report["coverage"]["changed_maturity_units"] > 0
+    assert report["coverage"]["matured_signal_changes"] == 0
 
 
 def test_post_promotion_monitor_excludes_materialized_history():
@@ -37,6 +72,55 @@ def test_post_promotion_monitor_excludes_materialized_history():
     assert report["matured_observations"] == 1
     assert report["independent_dates"] == 1
     assert report["accuracy_pct"] == 100.0
+    assert report["temporal_evidence"]["status"] == "collecting_evidence"
+    assert report["temporal_evidence"]["required_dates"] == 10
+
+
+def test_post_promotion_temporal_evidence_clusters_dates_and_exposes_reversal():
+    predictions = []
+    labels = []
+    for day in range(1, 11):
+        decision_date = f"2026-01-{day:02d}"
+        relative_returns = (20, 0) if day <= 5 else (-4, -6)
+        for index, relative_return in enumerate(relative_returns):
+            identifier = f"p-{day}-{index}"
+            predictions.append({
+                "prediction_id": identifier,
+                "ticker": ("AAA", "BBB")[index],
+                "as_of_date": decision_date,
+                "model_version": "v3",
+                "created_at": f"{decision_date} 10:00:00",
+                "output_json": '{"entry_signal":"Buy candidate"}',
+            })
+            labels.append({
+                "prediction_id": identifier,
+                "status": "available",
+                "outcomes_json": json.dumps({
+                    "3M": {"relative_return_after_cost_pct": relative_return},
+                }),
+            })
+
+    report = build_post_promotion_report(
+        predictions, labels, model_version="v3", promoted_at="2025-12-31 12:00:00",
+    )
+    temporal = report["temporal_evidence"]
+
+    assert report["matured_observations"] == 20
+    assert report["independent_dates"] == 10
+    assert temporal["status"] == "ready"
+    assert temporal["prior_window"] == {
+        "start_date": "2026-01-01", "end_date": "2026-01-05",
+        "independent_dates": 5, "observations": 10,
+        "utility_pct": 10.0, "accuracy": 0.5,
+    }
+    assert temporal["recent_window"] == {
+        "start_date": "2026-01-06", "end_date": "2026-01-10",
+        "independent_dates": 5, "observations": 10,
+        "utility_pct": -5.0, "accuracy": 0.0,
+    }
+    assert temporal["utility_change_pct"] == -15.0
+    assert temporal["accuracy_change"] == -0.5
+    assert temporal["utility_sign_reversal"] is True
 
 
 def shadow(identifier, decision_date, live_signal, candidate_signal, delta, *, ticker="AAA"):
@@ -216,3 +300,11 @@ def test_daily_shadow_comparisons_keep_first_frozen_observation_only():
 
     assert len(rows) == 1
     assert rows[0]["score_delta"] == 8
+
+
+def test_pipeline_progress_is_not_a_probability_or_independence_claim():
+    from src.model_tuning import build_model_tuning_report
+    interpretation = build_model_tuning_report([])["interpretation"]
+    assert interpretation["pipeline_is_promotion_probability"] is False
+    assert interpretation["intervals_adjusted_for_horizon_overlap"] is False
+    assert "industry-calibrated" in interpretation["replay_scope"]

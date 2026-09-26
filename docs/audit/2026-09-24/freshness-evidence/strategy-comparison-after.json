@@ -1,0 +1,954 @@
+{
+  "retrospective_unverified": {
+    "1M": {
+      "version": "entry-ranking-v1-research",
+      "horizon": "1M",
+      "candidate_dates": 40,
+      "evaluated_nonoverlapping_cohorts": 10,
+      "exclusions": {
+        "invalid_or_inconsistent_returns": 8,
+        "overlapping_evaluation_window": 22
+      },
+      "summary": [
+        {
+          "strategy": "SPY",
+          "cohorts": 10,
+          "mean_net_return_pct": -1.3433514,
+          "mean_excess_pct": 0.0,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": null
+        },
+        {
+          "strategy": "entry-ranking-v1-research",
+          "cohorts": 10,
+          "mean_net_return_pct": -2.26995132,
+          "mean_excess_pct": -0.9265999200000005,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 44.0
+        },
+        {
+          "strategy": "equal_weight_universe",
+          "cohorts": 10,
+          "mean_net_return_pct": -3.1757591545454544,
+          "mean_excess_pct": -1.8324077545454547,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 40.909090909090914
+        },
+        {
+          "strategy": "momentum_without_trend_filter",
+          "cohorts": 10,
+          "mean_net_return_pct": -3.8598412200000007,
+          "mean_excess_pct": -2.5164898200000008,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 44.0
+        },
+        {
+          "strategy": "recorded_entry_score_rank_diagnostic",
+          "cohorts": 10,
+          "mean_net_return_pct": -1.74501876,
+          "mean_excess_pct": -0.4016673600000001,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 44.0
+        },
+        {
+          "strategy": "trend_only_with_cash",
+          "cohorts": 10,
+          "mean_net_return_pct": -1.953641172727273,
+          "mean_excess_pct": -0.6102897727272728,
+          "mean_exposure_pct": 56.363636363636374,
+          "mean_entry_hit_rate_pct": 45.35080442433384
+        }
+      ],
+      "periods": [
+        {
+          "as_of_date": "2025-02-11",
+          "execution_date": "2025-02-12",
+          "end_date": "2025-03-14",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -4.684848200000001,
+              "excess_vs_net_benchmark_pct": 2.1358527999999986,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -9.065876681818182,
+              "excess_vs_net_benchmark_pct": -2.245175681818182,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 36.36363636363637
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -4.684848200000001,
+              "excess_vs_net_benchmark_pct": 2.1358527999999986,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -8.430308136363637,
+              "excess_vs_net_benchmark_pct": -1.6096071363636373,
+              "exposure": 0.7727272727272727,
+              "selected_count": 17,
+              "entry_hit_rate_pct": 23.52941176470588
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -15.0808824,
+              "excess_vs_net_benchmark_pct": -8.2601814,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "SPY": {
+              "net_return_pct": -6.820701,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2025-03-20",
+          "execution_date": "2025-03-21",
+          "end_date": "2025-04-22",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -2.036569600000001,
+              "excess_vs_net_benchmark_pct": 4.576071399999999,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -7.9241007727272725,
+              "excess_vs_net_benchmark_pct": -1.3114597727272725,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 45.45454545454545
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -3.4828534000000007,
+              "excess_vs_net_benchmark_pct": 3.1297875999999993,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -1.6823956363636363,
+              "excess_vs_net_benchmark_pct": 4.930245363636364,
+              "exposure": 0.4545454545454546,
+              "selected_count": 10,
+              "entry_hit_rate_pct": 70.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -3.903993200000001,
+              "excess_vs_net_benchmark_pct": 2.708647799999999,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "SPY": {
+              "net_return_pct": -6.612641,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2025-10-16",
+          "execution_date": "2025-10-17",
+          "end_date": "2025-11-17",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -24.5130978,
+              "excess_vs_net_benchmark_pct": -24.605753800000002,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 0.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -6.016536090909091,
+              "excess_vs_net_benchmark_pct": -6.109192090909091,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 36.36363636363637
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -24.5130978,
+              "excess_vs_net_benchmark_pct": -24.605753800000002,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 0.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -5.827979772727273,
+              "excess_vs_net_benchmark_pct": -5.920635772727273,
+              "exposure": 0.9090909090909092,
+              "selected_count": 20,
+              "entry_hit_rate_pct": 40.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 3.7683426000000004,
+              "excess_vs_net_benchmark_pct": 3.6756866000000006,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "SPY": {
+              "net_return_pct": 0.09265599999999999,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2025-11-28",
+          "execution_date": "2025-12-01",
+          "end_date": "2025-12-31",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 7.2260836,
+              "excess_vs_net_benchmark_pct": 6.7873266,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -0.11730245454545467,
+              "excess_vs_net_benchmark_pct": -0.5560594545454547,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 36.36363636363637
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 7.2260836,
+              "excess_vs_net_benchmark_pct": 6.7873266,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": 1.1154940909090907,
+              "excess_vs_net_benchmark_pct": 0.6767370909090906,
+              "exposure": 0.7272727272727273,
+              "selected_count": 16,
+              "entry_hit_rate_pct": 37.5
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -2.1787656,
+              "excess_vs_net_benchmark_pct": -2.6175226,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 0.0
+            },
+            "SPY": {
+              "net_return_pct": 0.43875700000000006,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-01-15",
+          "execution_date": "2026-01-16",
+          "end_date": "2026-02-18",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -17.9291492,
+              "excess_vs_net_benchmark_pct": -17.0527562,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -12.528718954545456,
+              "excess_vs_net_benchmark_pct": -11.652325954545455,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 22.727272727272727
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -17.9291492,
+              "excess_vs_net_benchmark_pct": -17.0527562,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -7.472180681818182,
+              "excess_vs_net_benchmark_pct": -6.595787681818182,
+              "exposure": 0.6818181818181819,
+              "selected_count": 15,
+              "entry_hit_rate_pct": 33.33333333333333
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 0.4771223999999999,
+              "excess_vs_net_benchmark_pct": 1.3535153999999998,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "SPY": {
+              "net_return_pct": -0.876393,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-02-27",
+          "execution_date": "2026-03-02",
+          "end_date": "2026-03-31",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -7.5037558,
+              "excess_vs_net_benchmark_pct": -2.411776800000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -6.243490590909091,
+              "excess_vs_net_benchmark_pct": -1.1515115909090916,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 45.45454545454545
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -13.384259800000002,
+              "excess_vs_net_benchmark_pct": -8.292280800000004,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -1.2941271818181819,
+              "excess_vs_net_benchmark_pct": 3.7978518181818175,
+              "exposure": 0.36363636363636365,
+              "selected_count": 8,
+              "entry_hit_rate_pct": 50.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -3.6684528000000007,
+              "excess_vs_net_benchmark_pct": 1.4235261999999986,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "SPY": {
+              "net_return_pct": -5.091978999999999,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-03-31",
+          "execution_date": "2026-04-01",
+          "end_date": "2026-05-01",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 31.471969600000005,
+              "excess_vs_net_benchmark_pct": 21.589364600000003,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": 17.42357931818182,
+              "excess_vs_net_benchmark_pct": 7.540974318181819,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 50.0
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 32.2432518,
+              "excess_vs_net_benchmark_pct": 22.360646800000005,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": 7.583996636363637,
+              "excess_vs_net_benchmark_pct": -2.2986083636363626,
+              "exposure": 0.2727272727272727,
+              "selected_count": 6,
+              "entry_hit_rate_pct": 50.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 16.438621,
+              "excess_vs_net_benchmark_pct": 6.556016000000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "SPY": {
+              "net_return_pct": 9.882605,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-05-08",
+          "execution_date": "2026-05-11",
+          "end_date": "2026-06-10",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 0.7691426000000003,
+              "excess_vs_net_benchmark_pct": 2.7452406000000007,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -1.013970272727273,
+              "excess_vs_net_benchmark_pct": 0.9621277272727271,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 36.36363636363637
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 1.8321676000000005,
+              "excess_vs_net_benchmark_pct": 3.8082656000000004,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -1.5158046363636364,
+              "excess_vs_net_benchmark_pct": 0.46029336363636375,
+              "exposure": 0.4545454545454546,
+              "selected_count": 10,
+              "entry_hit_rate_pct": 50.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -3.7595629999999995,
+              "excess_vs_net_benchmark_pct": -1.7834649999999994,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "SPY": {
+              "net_return_pct": -1.9760980000000001,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-06-26",
+          "execution_date": "2026-06-29",
+          "end_date": "2026-07-29",
+          "universe_size": 22,
+          "input_exclusions": 1,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -11.653831200000003,
+              "excess_vs_net_benchmark_pct": -9.996479200000003,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -7.072083818181818,
+              "excess_vs_net_benchmark_pct": -5.414731818181818,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 40.909090909090914
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -22.060249600000002,
+              "excess_vs_net_benchmark_pct": -20.402897600000003,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 0.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -3.271558590909091,
+              "excess_vs_net_benchmark_pct": -1.614206590909091,
+              "exposure": 0.4090909090909091,
+              "selected_count": 9,
+              "entry_hit_rate_pct": 22.22222222222222
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -8.286598000000001,
+              "excess_vs_net_benchmark_pct": -6.629246000000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "SPY": {
+              "net_return_pct": -1.6573520000000002,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-08-18",
+          "execution_date": "2026-08-19",
+          "end_date": "2026-09-18",
+          "universe_size": 22,
+          "input_exclusions": 1,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 6.154542800000001,
+              "excess_vs_net_benchmark_pct": 6.966910800000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": 0.8009087727272729,
+              "excess_vs_net_benchmark_pct": 1.6132767727272728,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 59.09090909090909
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 6.154542800000001,
+              "excess_vs_net_benchmark_pct": 6.966910800000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": 1.258452181818182,
+              "excess_vs_net_benchmark_pct": 2.070820181818182,
+              "exposure": 0.5909090909090909,
+              "selected_count": 13,
+              "entry_hit_rate_pct": 76.92307692307693
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": -1.2560185999999998,
+              "excess_vs_net_benchmark_pct": -0.4436505999999998,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "SPY": {
+              "net_return_pct": -0.812368,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        }
+      ],
+      "promotion_eligible": false,
+      "status": "descriptive_research_only",
+      "drawdown": null,
+      "limitations": [
+        "Historical selection / survivorship and known_at are unverified",
+        "Cohorts are non-overlapping; statistical independence is not established",
+        "Mean cohort returns are not annualized alpha or a portfolio equity curve",
+        "10 bps round trip is an assumption; taxes, slippage and FX are not modeled"
+      ]
+    },
+    "3M": {
+      "version": "entry-ranking-v1-research",
+      "horizon": "3M",
+      "candidate_dates": 40,
+      "evaluated_nonoverlapping_cohorts": 5,
+      "exclusions": {
+        "invalid_or_inconsistent_returns": 2,
+        "overlapping_evaluation_window": 26,
+        "incomplete_outcomes_for_frozen_universe": 7
+      },
+      "summary": [
+        {
+          "strategy": "SPY",
+          "cohorts": 5,
+          "mean_net_return_pct": 3.3708668000000004,
+          "mean_excess_pct": 0.0,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": null
+        },
+        {
+          "strategy": "entry-ranking-v1-research",
+          "cohorts": 5,
+          "mean_net_return_pct": 2.5483787600000003,
+          "mean_excess_pct": -0.8224880399999993,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 44.0
+        },
+        {
+          "strategy": "equal_weight_universe",
+          "cohorts": 5,
+          "mean_net_return_pct": 3.095017336363636,
+          "mean_excess_pct": -0.2758494636363638,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 48.18181818181819
+        },
+        {
+          "strategy": "momentum_without_trend_filter",
+          "cohorts": 5,
+          "mean_net_return_pct": 1.9465779600000002,
+          "mean_excess_pct": -1.4242888399999996,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 44.0
+        },
+        {
+          "strategy": "recorded_entry_score_rank_diagnostic",
+          "cohorts": 5,
+          "mean_net_return_pct": 7.232027120000001,
+          "mean_excess_pct": 3.8611603200000006,
+          "mean_exposure_pct": 100.0,
+          "mean_entry_hit_rate_pct": 52.0
+        },
+        {
+          "strategy": "trend_only_with_cash",
+          "cohorts": 5,
+          "mean_net_return_pct": 1.8008650090909089,
+          "mean_excess_pct": -1.570001790909091,
+          "mean_exposure_pct": 71.81818181818181,
+          "mean_entry_hit_rate_pct": 43.68627450980392
+        }
+      ],
+      "periods": [
+        {
+          "as_of_date": "2025-02-11",
+          "execution_date": "2025-02-12",
+          "end_date": "2025-05-14",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 16.828651200000003,
+              "excess_vs_net_benchmark_pct": 19.249390200000004,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": 2.972573272727273,
+              "excess_vs_net_benchmark_pct": 5.3933122727272735,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 59.09090909090909
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 16.828651200000003,
+              "excess_vs_net_benchmark_pct": 19.249390200000004,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": 2.7936699090909096,
+              "excess_vs_net_benchmark_pct": 5.21440890909091,
+              "exposure": 0.7727272727272727,
+              "selected_count": 17,
+              "entry_hit_rate_pct": 52.94117647058824
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 1.6457050000000009,
+              "excess_vs_net_benchmark_pct": 4.066444000000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "SPY": {
+              "net_return_pct": -2.420739,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2025-05-20",
+          "execution_date": "2025-05-21",
+          "end_date": "2025-08-21",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 13.4872402,
+              "excess_vs_net_benchmark_pct": 4.2249812,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": 13.454184363636363,
+              "excess_vs_net_benchmark_pct": 4.191925363636363,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 63.63636363636363
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 13.4872402,
+              "excess_vs_net_benchmark_pct": 4.2249812,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 60.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": 9.556058863636364,
+              "excess_vs_net_benchmark_pct": 0.2937998636363641,
+              "exposure": 0.7727272727272727,
+              "selected_count": 17,
+              "entry_hit_rate_pct": 58.82352941176471
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 1.9151270000000005,
+              "excess_vs_net_benchmark_pct": -7.347132,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "SPY": {
+              "net_return_pct": 9.262259,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2025-10-02",
+          "execution_date": "2025-10-03",
+          "end_date": "2026-01-05",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -16.380205200000002,
+              "excess_vs_net_benchmark_pct": -19.3498072,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 0.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -1.2087062727272733,
+              "excess_vs_net_benchmark_pct": -4.178308272727273,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 40.909090909090914
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -16.380205200000002,
+              "excess_vs_net_benchmark_pct": -19.3498072,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 0.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -1.4017232272727278,
+              "excess_vs_net_benchmark_pct": -4.371325227272727,
+              "exposure": 0.9090909090909092,
+              "selected_count": 20,
+              "entry_hit_rate_pct": 40.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 21.8084972,
+              "excess_vs_net_benchmark_pct": 18.838895200000003,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "SPY": {
+              "net_return_pct": 2.969602,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-01-15",
+          "execution_date": "2026-01-16",
+          "end_date": "2026-04-20",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": -4.221348600000001,
+              "excess_vs_net_benchmark_pct": -6.867711600000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": -5.563513863636365,
+              "excess_vs_net_benchmark_pct": -8.209876863636364,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 36.36363636363637
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": -4.221348600000001,
+              "excess_vs_net_benchmark_pct": -6.867711600000001,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -0.18003122727272786,
+              "excess_vs_net_benchmark_pct": -2.826394227272728,
+              "exposure": 0.6818181818181819,
+              "selected_count": 15,
+              "entry_hit_rate_pct": 46.666666666666664
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 9.1865314,
+              "excess_vs_net_benchmark_pct": 6.5401684,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 80.0
+            },
+            "SPY": {
+              "net_return_pct": 2.646363,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        },
+        {
+          "as_of_date": "2026-05-08",
+          "execution_date": "2026-05-11",
+          "end_date": "2026-08-11",
+          "universe_size": 22,
+          "input_exclusions": 0,
+          "strategies": {
+            "entry-ranking-v1-research": {
+              "net_return_pct": 3.0275562000000007,
+              "excess_vs_net_benchmark_pct": -1.3692927999999998,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "equal_weight_universe": {
+              "net_return_pct": 5.820549181818182,
+              "excess_vs_net_benchmark_pct": 1.4237001818181811,
+              "exposure": 1.0,
+              "selected_count": 22,
+              "entry_hit_rate_pct": 40.909090909090914
+            },
+            "momentum_without_trend_filter": {
+              "net_return_pct": 0.018552200000000574,
+              "excess_vs_net_benchmark_pct": -4.3782968,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 40.0
+            },
+            "trend_only_with_cash": {
+              "net_return_pct": -1.7636492727272728,
+              "excess_vs_net_benchmark_pct": -6.160498272727273,
+              "exposure": 0.4545454545454546,
+              "selected_count": 10,
+              "entry_hit_rate_pct": 20.0
+            },
+            "recorded_entry_score_rank_diagnostic": {
+              "net_return_pct": 1.6042750000000006,
+              "excess_vs_net_benchmark_pct": -2.792574,
+              "exposure": 1.0,
+              "selected_count": 5,
+              "entry_hit_rate_pct": 20.0
+            },
+            "SPY": {
+              "net_return_pct": 4.3968490000000005,
+              "excess_vs_net_benchmark_pct": 0,
+              "exposure": 1,
+              "selected_count": 1,
+              "entry_hit_rate_pct": null
+            }
+          }
+        }
+      ],
+      "promotion_eligible": false,
+      "status": "insufficient_evidence",
+      "drawdown": null,
+      "limitations": [
+        "Historical selection / survivorship and known_at are unverified",
+        "Cohorts are non-overlapping; statistical independence is not established",
+        "Mean cohort returns are not annualized alpha or a portfolio equity curve",
+        "10 bps round trip is an assumption; taxes, slippage and FX are not modeled"
+      ]
+    }
+  },
+  "prospective": {
+    "1M": {
+      "version": "entry-ranking-v1-research",
+      "horizon": "1M",
+      "candidate_dates": 1,
+      "evaluated_nonoverlapping_cohorts": 0,
+      "exclusions": {
+        "incomplete_outcomes_for_frozen_universe": 1
+      },
+      "summary": [],
+      "periods": [],
+      "promotion_eligible": false,
+      "status": "insufficient_evidence",
+      "drawdown": null,
+      "limitations": [
+        "Historical selection / survivorship and known_at are unverified",
+        "Cohorts are non-overlapping; statistical independence is not established",
+        "Mean cohort returns are not annualized alpha or a portfolio equity curve",
+        "10 bps round trip is an assumption; taxes, slippage and FX are not modeled"
+      ]
+    },
+    "3M": {
+      "version": "entry-ranking-v1-research",
+      "horizon": "3M",
+      "candidate_dates": 1,
+      "evaluated_nonoverlapping_cohorts": 0,
+      "exclusions": {
+        "incomplete_outcomes_for_frozen_universe": 1
+      },
+      "summary": [],
+      "periods": [],
+      "promotion_eligible": false,
+      "status": "insufficient_evidence",
+      "drawdown": null,
+      "limitations": [
+        "Historical selection / survivorship and known_at are unverified",
+        "Cohorts are non-overlapping; statistical independence is not established",
+        "Mean cohort returns are not annualized alpha or a portfolio equity curve",
+        "10 bps round trip is an assumption; taxes, slippage and FX are not modeled"
+      ]
+    }
+  }
+}

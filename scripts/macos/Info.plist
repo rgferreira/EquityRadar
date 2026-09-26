@@ -5,21 +5,27 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>EquityRadarLauncher</string>
+    <string>EquityRadar</string>
     <key>CFBundleIdentifier</key>
     <string>com.rgferreira.EquityRadarLauncher</string>
+    <key>CFBundleIconFile</key>
+    <string>EquityRadar</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Equity Radar Launcher</string>
+    <string>Equity Radar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0</string>
+	<string>2.1</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+	<string>7</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+	<string>26.0</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Equity Radar needs access to its local project files and database in Documents.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

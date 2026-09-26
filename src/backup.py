@@ -59,7 +59,10 @@ def create_verified_backup(
     timestamp = now or datetime.now()
     destination = Path(destination_dir)
     destination.mkdir(parents=True, exist_ok=True)
+    destination.chmod(0o700)
     backup_path = destination / f"equity-radar-{timestamp:%Y%m%d-%H%M%S}.db"
+    backup_path.touch(mode=0o600)
+    backup_path.chmod(0o600)
     with sqlite3.connect(source) as live, sqlite3.connect(backup_path) as backup:
         live.backup(backup)
     verification = verify_sqlite_backup(backup_path)
@@ -74,7 +77,18 @@ def create_verified_backup(
     }
     manifest_path = backup_path.with_suffix(".manifest.json")
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.chmod(0o600)
     return {"database_path": str(backup_path), "manifest_path": str(manifest_path), **manifest}
+
+
+def sqlite_backup_bytes(source: str | Path = DATABASE_PATH) -> bytes:
+    """Create an on-demand consistent download, including committed WAL pages."""
+    with tempfile.TemporaryDirectory(prefix="equity-radar-download-") as directory:
+        target = Path(directory) / "download.db"
+        target.touch(mode=0o600)
+        with sqlite3.connect(source) as live, sqlite3.connect(target) as backup:
+            live.backup(backup)
+        return target.read_bytes()
 
 
 def verify_backup_manifest(manifest_path: str | Path) -> dict[str, object]:

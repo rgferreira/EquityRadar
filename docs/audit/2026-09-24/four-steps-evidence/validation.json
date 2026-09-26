@@ -1,0 +1,61 @@
+{
+  "affected_modules_imported": 9,
+  "automatic_capture": {
+    "daily_capture_first_write_wins": true,
+    "immediate_duplicate_schedule_prevented": true,
+    "shared_dashboard_policy_without_UI": "covered by synthetic test"
+  },
+  "browser": {
+    "exceptions": 0,
+    "horizontal_document_overflow": false,
+    "mobile_viewport": [
+      390,
+      844
+    ],
+    "pages_checked": [
+      "WhaleSeeker institutional expansion",
+      "Entry research prospective",
+      "Entry research retrospective 1M",
+      "Entry research retrospective 3M",
+      "Entry research macro / institutions / options",
+      "Operations independent chains / legacy label"
+    ],
+    "profile": "Chrome Rafael",
+    "viewport_reset": true
+  },
+  "compile": {
+    "command": ".venv/bin/python -m compileall -q src pages scripts/run_entry_context.py",
+    "passed": true
+  },
+  "diff_check": "passed",
+  "historical_redownloads": {
+    "max_observed_change_in_mean_excess_pp": 5.24e-06,
+    "note": "Provider price precision/vintage changed slightly; no byte-exact historical redownload claim",
+    "reports_appended_not_replaced": true
+  },
+  "new_signal_weight": 0,
+  "promotion_performed": false,
+  "prospective_replay": {
+    "both_report_hashes_unchanged": true,
+    "first_capture_unchanged": true,
+    "first_mature_price_path_immutability": "verified with synthetic regression fixture; production captures are not mature yet"
+  },
+  "rollback_patch_dry_runs": 4,
+  "secrets_or_personal_portfolio_data_exported": false,
+  "service": {
+    "dashboard_rendered": true,
+    "listener": "10.147.17.69:8501",
+    "restart": "successful",
+    "wildcard_bind": false,
+    "zerotier_route_verified": true
+  },
+  "tests": {
+    "command": "EQUITY_RADAR_DB_PATH=<isolated temporary DB> .venv/bin/python -m pytest -q",
+    "duration_seconds": 7.17,
+    "failed": 0,
+    "passed": 350,
+    "warnings": [
+      "Existing yfinance raise_errors deprecation"
+    ]
+  }
+}

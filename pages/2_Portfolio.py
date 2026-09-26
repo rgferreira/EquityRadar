@@ -5,6 +5,7 @@ from datetime import date
 import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.data.database import (
     add_portfolio_lot,
@@ -33,13 +34,16 @@ from src.data.extended_hours_refresh import (
     extended_hours_refresh_status, schedule_extended_hours_refresh,
 )
 from src.portfolio import (
-    calculate_flow_adjusted_benchmark, calculate_portfolio_history, calculate_return_risk_metrics, calculate_risk_contributions,
-    calculate_rebalance, enrich_holdings, normalize_performance,
+    calculate_benchmark_comparison, calculate_portfolio_history, calculate_return_risk_metrics,
+    calculate_risk_contributions, calculate_rebalance, enrich_holdings,
 )
 from src.import_export import CSV_TEMPLATE, import_transactions_csv
 from src.downloads import download_link
+from src.backup import sqlite_backup_bytes
 from src.utils.config import DATABASE_PATH, PORTFOLIO_BASE_CURRENCY
 from src.ui import inject_app_styles, page_header, zebra_table
+
+from src.data.price_cache import fetch_cached_price_history as fetch_price_history
 
 st.set_page_config(page_title="Portfolio | Personal Equity Radar", page_icon="💼", layout="wide")
 init_db()
@@ -50,156 +54,159 @@ page_header(
     f"Base currency · {PORTFOLIO_BASE_CURRENCY}",
 )
 
-with st.expander("Import, export, and backup"):
-    st.markdown(download_link("Download transaction CSV template", CSV_TEMPLATE, "portfolio-transactions-template.csv", "text/csv"))
-    pasted_csv = st.text_area("Paste transactions CSV", height=140, placeholder=CSV_TEMPLATE)
-    if pasted_csv.strip() and st.button("Import pasted transactions"):
-        result = import_transactions_csv(pasted_csv)
-        st.success(f"Imported {result['imported']} transaction(s).")
-        for import_error in result["errors"]:
-            st.warning(import_error)
-        if result["imported"]:
-            st.rerun()
+def render_portfolio_management() -> None:
+    with st.expander("Import, export, and backup"):
+        st.markdown(download_link("Download transaction CSV template", CSV_TEMPLATE, "portfolio-transactions-template.csv", "text/csv"))
+        pasted_csv = st.text_area("Paste transactions CSV", height=140, placeholder=CSV_TEMPLATE)
+        if pasted_csv.strip() and st.button("Import pasted transactions"):
+            result = import_transactions_csv(pasted_csv)
+            st.success(f"Imported {result['imported']} transaction(s).")
+            for import_error in result["errors"]:
+                st.warning(import_error)
+            if result["imported"]:
+                st.rerun()
 
-with st.expander("Add purchase lot"):
-    portfolio_choices = ["Add a new ticker…", *get_watchlist()]
-    with st.form("portfolio_lot", clear_on_submit=True):
-        selected_ticker = st.selectbox("Watchlist ticker", portfolio_choices)
-        new_ticker = st.text_input("New ticker", placeholder="MSFT") if selected_ticker == portfolio_choices[0] else ""
-        purchase_date = st.date_input("Purchase date", value=date.today())
-        shares = st.number_input("Shares", min_value=0.0, step=1.0)
-        price_per_share = st.number_input("Price per share", min_value=0.0, step=0.01)
-        fees = st.number_input("Fees", min_value=0.0, step=0.01)
-        fund_from_cash = st.checkbox(
-            "Pay from portfolio cash",
-            value=True,
-            help="Records the purchase cost as a cash outflow so reinvested sale proceeds are not counted twice.",
-        )
-        lot_notes = st.text_input("Notes", placeholder="Broker, account, or optional context")
-        save_lot = st.form_submit_button("Add purchase lot", type="primary")
+    with st.expander("Add purchase lot"):
+        portfolio_choices = ["Add a new ticker…", *get_watchlist()]
+        with st.form("portfolio_lot", clear_on_submit=True):
+            selected_ticker = st.selectbox("Watchlist ticker", portfolio_choices)
+            new_ticker = st.text_input("New ticker", placeholder="MSFT") if selected_ticker == portfolio_choices[0] else ""
+            purchase_date = st.date_input("Purchase date", value=date.today())
+            shares = st.number_input("Shares", min_value=0.0, step=1.0)
+            price_per_share = st.number_input("Price per share", min_value=0.0, step=0.01)
+            fees = st.number_input("Fees", min_value=0.0, step=0.01)
+            fund_from_cash = st.checkbox(
+                "Pay from portfolio cash",
+                value=True,
+                help="Records the purchase cost as a cash outflow so reinvested sale proceeds are not counted twice.",
+            )
+            lot_notes = st.text_input("Notes", placeholder="Broker, account, or optional context")
+            save_lot = st.form_submit_button("Add purchase lot", type="primary")
 
-    if save_lot:
-        portfolio_ticker = new_ticker if selected_ticker == portfolio_choices[0] else selected_ticker
-        try:
-            add_portfolio_lot({
-                "ticker": portfolio_ticker,
-                "purchase_date": purchase_date.isoformat(),
-                "shares": shares,
-                "price_per_share": price_per_share,
-                "fees": fees,
-                "notes": lot_notes,
-                "fund_from_cash": fund_from_cash,
-                "currency": fetch_quote_currency(portfolio_ticker) or PORTFOLIO_BASE_CURRENCY,
-            })
-            st.success(f"Purchase lot added for {portfolio_ticker.strip().upper()}.")
-            st.rerun()
-        except ValueError as exc:
-            st.warning(str(exc))
-
-editable_lots = get_portfolio_lots()
-with st.expander("Edit/Delete lots"):
-    if not editable_lots:
-        st.caption("No purchase lots to edit yet.")
-    else:
-        lot_labels = {
-            f"#{lot['id']} · {lot['ticker']} · {lot['purchase_date'] or 'unknown date'} · {lot['shares']} shares": lot
-            for lot in editable_lots
-        }
-        selected_lot_label = st.selectbox("Lot to edit or delete", list(lot_labels))
-        selected_lot = lot_labels[selected_lot_label]
-        selected_lot_id = int(selected_lot["id"])
-        watchlist = get_watchlist()
-        with st.form("edit_portfolio_lot"):
-            edit_ticker = st.selectbox(
-                "Ticker", watchlist, index=watchlist.index(selected_lot["ticker"]),
-                key=f"edit_lot_ticker_{selected_lot_id}",
-            )
-            edit_date = st.date_input(
-                "Purchase date",
-                value=date.fromisoformat(selected_lot["purchase_date"]) if selected_lot["purchase_date"] else date.today(),
-                key=f"edit_lot_date_{selected_lot_id}",
-            )
-            edit_shares = st.number_input(
-                "Shares", min_value=0.0001, value=float(selected_lot["shares"]), step=1.0,
-                key=f"edit_lot_shares_{selected_lot_id}",
-            )
-            edit_price = st.number_input(
-                "Price per share", min_value=0.01, value=float(selected_lot["price_per_share"] or 0.01), step=0.01,
-                key=f"edit_lot_price_{selected_lot_id}",
-            )
-            edit_fees = st.number_input(
-                "Fees", min_value=0.0, value=float(selected_lot["fees"]), step=0.01,
-                key=f"edit_lot_fees_{selected_lot_id}",
-            )
-            edit_notes = st.text_input(
-                "Notes", value=selected_lot["notes"] or "", key=f"edit_lot_notes_{selected_lot_id}",
-            )
-            update_lot = st.form_submit_button("Update lot")
-        if update_lot:
-            update_portfolio_lot(selected_lot_id, {
-                "ticker": edit_ticker, "purchase_date": edit_date.isoformat(), "shares": edit_shares,
-                "price_per_share": edit_price, "fees": edit_fees, "notes": edit_notes,
-            })
-            st.success("Purchase lot updated.")
-            st.rerun()
-
-        confirm_delete_lot = st.checkbox(
-            "I understand this permanently deletes the selected lot", key="confirm_top_lot_delete",
-        )
-        if st.button("Delete selected lot", disabled=not confirm_delete_lot, key="delete_top_lot"):
-            delete_portfolio_lot(selected_lot_id)
-            st.success("Purchase lot deleted.")
-            st.rerun()
-
-with st.expander("Add cash or dividend transaction"):
-    with st.form("cash_transaction", clear_on_submit=True):
-        cash_type = st.selectbox(
-            "Transaction type", ["deposit", "withdrawal", "dividend", "withholding_tax", "fee", "adjustment"]
-        )
-        cash_date = st.date_input("Transaction date", value=date.today())
-        cash_amount = st.number_input("Amount", value=0.0, step=0.01)
-        cash_currency = st.text_input("Currency", value=PORTFOLIO_BASE_CURRENCY, max_chars=3)
-        cash_ticker = st.selectbox("Related ticker (optional)", ["None", *get_watchlist()])
-        cash_notes = st.text_input("Cash transaction notes")
-        save_cash = st.form_submit_button("Add cash transaction")
-    if save_cash:
-        try:
-            add_cash_transaction({
-                "transaction_date": cash_date.isoformat(), "transaction_type": cash_type,
-                "amount": cash_amount, "currency": cash_currency,
-                "ticker": "" if cash_ticker == "None" else cash_ticker, "notes": cash_notes,
-            })
-            st.success("Cash transaction recorded.")
-            st.rerun()
-        except ValueError as exc:
-            st.warning(str(exc))
-
-holdings_before_sale = get_portfolio_holdings()
-if holdings_before_sale:
-    with st.expander("Record sale"):
-        with st.form("portfolio_sale", clear_on_submit=True):
-            sale_ticker = st.selectbox("Ticker to sell", [str(item["ticker"]) for item in holdings_before_sale])
-            sale_date = st.date_input("Sale date", value=date.today())
-            sale_shares = st.number_input("Shares sold", min_value=0.0, step=1.0)
-            sale_price = st.number_input("Sale price per share", min_value=0.0, step=0.01)
-            sale_fees = st.number_input("Sale fees", min_value=0.0, step=0.01)
-            sale_notes = st.text_input("Sale notes", placeholder="Optional context")
-            save_sale = st.form_submit_button("Record sale")
-        if save_sale:
+        if save_lot:
+            portfolio_ticker = new_ticker if selected_ticker == portfolio_choices[0] else selected_ticker
             try:
-                record_portfolio_sale({
-                    "ticker": sale_ticker, "sale_date": sale_date.isoformat(), "shares": sale_shares,
-                    "price_per_share": sale_price, "fees": sale_fees, "notes": sale_notes,
-                    "currency": fetch_quote_currency(sale_ticker) or PORTFOLIO_BASE_CURRENCY,
+                add_portfolio_lot({
+                    "ticker": portfolio_ticker,
+                    "purchase_date": purchase_date.isoformat(),
+                    "shares": shares,
+                    "price_per_share": price_per_share,
+                    "fees": fees,
+                    "notes": lot_notes,
+                    "fund_from_cash": fund_from_cash,
+                    "currency": fetch_quote_currency(portfolio_ticker) or PORTFOLIO_BASE_CURRENCY,
                 })
-                st.success(f"Sale recorded for {sale_ticker} using FIFO lots.")
+                st.success(f"Purchase lot added for {portfolio_ticker.strip().upper()}.")
                 st.rerun()
             except ValueError as exc:
                 st.warning(str(exc))
 
+    editable_lots = get_portfolio_lots()
+    with st.expander("Edit/Delete lots"):
+        if not editable_lots:
+            st.caption("No purchase lots to edit yet.")
+        else:
+            lot_labels = {
+                f"#{lot['id']} · {lot['ticker']} · {lot['purchase_date'] or 'unknown date'} · {lot['shares']} shares": lot
+                for lot in editable_lots
+            }
+            selected_lot_label = st.selectbox("Lot to edit or delete", list(lot_labels))
+            selected_lot = lot_labels[selected_lot_label]
+            selected_lot_id = int(selected_lot["id"])
+            watchlist = get_watchlist()
+            with st.form("edit_portfolio_lot"):
+                edit_ticker = st.selectbox(
+                    "Ticker", watchlist, index=watchlist.index(selected_lot["ticker"]),
+                    key=f"edit_lot_ticker_{selected_lot_id}",
+                )
+                edit_date = st.date_input(
+                    "Purchase date",
+                    value=date.fromisoformat(selected_lot["purchase_date"]) if selected_lot["purchase_date"] else date.today(),
+                    key=f"edit_lot_date_{selected_lot_id}",
+                )
+                edit_shares = st.number_input(
+                    "Shares", min_value=0.0001, value=float(selected_lot["shares"]), step=1.0,
+                    key=f"edit_lot_shares_{selected_lot_id}",
+                )
+                edit_price = st.number_input(
+                    "Price per share", min_value=0.01, value=float(selected_lot["price_per_share"] or 0.01), step=0.01,
+                    key=f"edit_lot_price_{selected_lot_id}",
+                )
+                edit_fees = st.number_input(
+                    "Fees", min_value=0.0, value=float(selected_lot["fees"]), step=0.01,
+                    key=f"edit_lot_fees_{selected_lot_id}",
+                )
+                edit_notes = st.text_input(
+                    "Notes", value=selected_lot["notes"] or "", key=f"edit_lot_notes_{selected_lot_id}",
+                )
+                update_lot = st.form_submit_button("Update lot")
+            if update_lot:
+                update_portfolio_lot(selected_lot_id, {
+                    "ticker": edit_ticker, "purchase_date": edit_date.isoformat(), "shares": edit_shares,
+                    "price_per_share": edit_price, "fees": edit_fees, "notes": edit_notes,
+                })
+                st.success("Purchase lot updated.")
+                st.rerun()
+
+            confirm_delete_lot = st.checkbox(
+                "I understand this permanently deletes the selected lot", key="confirm_top_lot_delete",
+            )
+            if st.button("Delete selected lot", disabled=not confirm_delete_lot, key="delete_top_lot"):
+                delete_portfolio_lot(selected_lot_id)
+                st.success("Purchase lot deleted.")
+                st.rerun()
+
+    with st.expander("Add cash or dividend transaction"):
+        with st.form("cash_transaction", clear_on_submit=True):
+            cash_type = st.selectbox(
+                "Transaction type", ["deposit", "withdrawal", "dividend", "withholding_tax", "fee", "adjustment"]
+            )
+            cash_date = st.date_input("Transaction date", value=date.today())
+            cash_amount = st.number_input("Amount", value=0.0, step=0.01)
+            cash_currency = st.text_input("Currency", value=PORTFOLIO_BASE_CURRENCY, max_chars=3)
+            cash_ticker = st.selectbox("Related ticker (optional)", ["None", *get_watchlist()])
+            cash_notes = st.text_input("Cash transaction notes")
+            save_cash = st.form_submit_button("Add cash transaction")
+        if save_cash:
+            try:
+                add_cash_transaction({
+                    "transaction_date": cash_date.isoformat(), "transaction_type": cash_type,
+                    "amount": cash_amount, "currency": cash_currency,
+                    "ticker": "" if cash_ticker == "None" else cash_ticker, "notes": cash_notes,
+                })
+                st.success("Cash transaction recorded.")
+                st.rerun()
+            except ValueError as exc:
+                st.warning(str(exc))
+
+    holdings_before_sale = get_portfolio_holdings()
+    if holdings_before_sale:
+        with st.expander("Record sale"):
+            with st.form("portfolio_sale", clear_on_submit=True):
+                sale_ticker = st.selectbox("Ticker to sell", [str(item["ticker"]) for item in holdings_before_sale])
+                sale_date = st.date_input("Sale date", value=date.today())
+                sale_shares = st.number_input("Shares sold", min_value=0.0, step=1.0)
+                sale_price = st.number_input("Sale price per share", min_value=0.0, step=0.01)
+                sale_fees = st.number_input("Sale fees", min_value=0.0, step=0.01)
+                sale_notes = st.text_input("Sale notes", placeholder="Optional context")
+                save_sale = st.form_submit_button("Record sale")
+            if save_sale:
+                try:
+                    record_portfolio_sale({
+                        "ticker": sale_ticker, "sale_date": sale_date.isoformat(), "shares": sale_shares,
+                        "price_per_share": sale_price, "fees": sale_fees, "notes": sale_notes,
+                        "currency": fetch_quote_currency(sale_ticker) or PORTFOLIO_BASE_CURRENCY,
+                    })
+                    st.success(f"Sale recorded for {sale_ticker} using FIFO lots.")
+                    st.rerun()
+                except ValueError as exc:
+                    st.warning(str(exc))
+
+
 holdings = get_portfolio_holdings()
 if not holdings:
     st.info("No stocks are currently marked as owned.")
+    render_portfolio_management()
     st.stop()
 
 portfolio_tickers = [str(holding["ticker"]) for holding in holdings]
@@ -213,12 +220,14 @@ if refresh:
 
 histories, errors = {}, []
 with st.spinner("Valuing portfolio…"):
-    for holding in holdings:
-        ticker = str(holding["ticker"])
-        try:
-            histories[ticker] = fetch_price_history(ticker, period="max")
-        except Exception as exc:
-            errors.append(f"{ticker}: {exc}")
+    with ThreadPoolExecutor(max_workers=min(6, len(portfolio_tickers))) as pool:
+        pending = {pool.submit(fetch_price_history, ticker, period="max"): ticker for ticker in portfolio_tickers}
+        for future in as_completed(pending):
+            ticker = pending[future]
+            try:
+                histories[ticker] = future.result()
+            except Exception:
+                errors.append(f"{ticker}: price history unavailable")
 
 latest_prices = {
     ticker: float(history["Close"].dropna().iloc[-1])
@@ -277,7 +286,7 @@ with st.expander("Portfolio exports"):
     st.caption("The SQLite backup is prepared only on request so normal page loads stay lightweight.")
     if DATABASE_PATH.exists() and st.button("Prepare SQLite database backup", key="prepare_portfolio_backup"):
         st.download_button(
-            "Download SQLite database backup", data=DATABASE_PATH.read_bytes(),
+            "Download SQLite database backup", data=sqlite_backup_bytes(DATABASE_PATH),
             file_name="personal-equity-radar-backup.db", mime="application/x-sqlite3",
             on_click="ignore",
         )
@@ -496,19 +505,42 @@ if not portfolio_history.empty:
             pd.DataFrame(flow_rows, columns=["date", "amount"]).groupby("date")["amount"].sum()
             if flow_rows else pd.Series(dtype=float)
         )
-        adjusted_benchmark = calculate_flow_adjusted_benchmark(
-            benchmark_history["Close"], portfolio_history, external_flows,
+        full_comparison = calculate_benchmark_comparison(
+            portfolio_history, benchmark_history["Close"], external_flows,
         )
-        aligned = pd.concat([
-            normalize_performance(portfolio_history), adjusted_benchmark,
-        ], axis=1, join="inner").dropna()
-        aligned.columns = ["Portfolio", benchmark_label]
-        comparison = go.Figure()
-        comparison.add_scatter(x=aligned.index, y=aligned["Portfolio"], name="Portfolio")
-        comparison.add_scatter(x=aligned.index, y=aligned[benchmark_label], name=benchmark_label)
-        comparison.update_layout(height=380, yaxis_title="Growth of 100", xaxis_title=None)
-        st.plotly_chart(comparison, width="stretch")
-        st.caption("Both curves receive the same proportional jump when new capital enters the portfolio.")
+        if full_comparison.empty:
+            st.info("No shared portfolio and benchmark dates are available for comparison.")
+        else:
+            first_date = pd.Timestamp(full_comparison.index[0]).date()
+            last_date = pd.Timestamp(full_comparison.index[-1]).date()
+            selected_start = st.date_input(
+                "Comparison start date",
+                value=first_date,
+                min_value=first_date,
+                max_value=last_date,
+                key=f"benchmark_start_date_{benchmark_ticker}",
+                help="Both series are reset to 100 at the first shared market close on or after this date.",
+            )
+            aligned = calculate_benchmark_comparison(
+                portfolio_history, benchmark_history["Close"], external_flows, selected_start,
+            ).rename(columns={"Benchmark": benchmark_label})
+            portfolio_return = (float(aligned["Portfolio"].iloc[-1]) / 100 - 1) * 100
+            benchmark_return = (float(aligned[benchmark_label].iloc[-1]) / 100 - 1) * 100
+            relative_lead = portfolio_return - benchmark_return
+            comparison_columns = st.columns(3)
+            comparison_columns[0].metric("Portfolio since start", f"{portfolio_return:+.2f}%")
+            comparison_columns[1].metric(f"{benchmark_label} since start", f"{benchmark_return:+.2f}%")
+            comparison_columns[2].metric("Relative lead", f"{relative_lead:+.2f} pp")
+            comparison = go.Figure()
+            comparison.add_scatter(x=aligned.index, y=aligned["Portfolio"], name="Portfolio")
+            comparison.add_scatter(x=aligned.index, y=aligned[benchmark_label], name=benchmark_label)
+            comparison.update_layout(height=380, yaxis_title="Growth of 100", xaxis_title=None)
+            st.plotly_chart(comparison, width="stretch")
+            effective_start = pd.Timestamp(aligned.index[0]).date()
+            st.caption(
+                f"Rebased to 100 on {effective_start.isoformat()}, the first shared market close on or after the selected date. "
+                "Both curves receive the same proportional jump when new capital enters the portfolio."
+            )
     except Exception as exc:
         st.warning(f"Benchmark unavailable: {exc}")
 
@@ -571,3 +603,7 @@ if errors:
 missing_fx = [currency for currency, rate in fx_rates.items() if rate is None]
 if missing_fx:
     st.warning(f"Missing FX conversion to {PORTFOLIO_BASE_CURRENCY}: {', '.join(sorted(missing_fx))}.")
+
+
+st.subheader("Manage transactions")
+render_portfolio_management()

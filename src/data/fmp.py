@@ -2,7 +2,7 @@
 
 import json
 from datetime import date
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import urlopen
 
 from src.data.fundamentals import Fundamentals
@@ -14,16 +14,30 @@ class FMPProvider:
     def __init__(self, api_key: str, base_url: str = "https://financialmodelingprep.com/stable"):
         if not api_key:
             raise ValueError("FMP_API_KEY is not configured")
+        parsed = urlsplit(base_url)
+        if (parsed.scheme != "https" or parsed.hostname != "financialmodelingprep.com"
+                or parsed.username or parsed.password or parsed.port not in (None, 443)
+                or parsed.query or parsed.fragment):
+            raise ValueError("FMP endpoint must use the official HTTPS origin")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
 
     def _get(self, endpoint: str, **params: object) -> list[dict[str, object]]:
+        if not endpoint or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in endpoint):
+            raise ValueError("Invalid FMP endpoint")
         query = urlencode({**params, "apikey": self.api_key})
-        with urlopen(f"{self.base_url}/{endpoint}?{query}", timeout=10) as response:
-            payload = json.load(response)
-        if isinstance(payload, dict) and payload.get("Error Message"):
-            raise RuntimeError(str(payload["Error Message"]))
-        return payload if isinstance(payload, list) else []
+        try:
+            with urlopen(f"{self.base_url}/{endpoint}?{query}", timeout=10) as response:
+                raw = response.read(2 * 1024 * 1024 + 1)
+            if len(raw) > 2 * 1024 * 1024:
+                raise ValueError("Response too large")
+            payload = json.loads(raw)
+            if isinstance(payload, dict) and payload.get("Error Message"):
+                raise ValueError("Provider rejected request")
+            return payload if isinstance(payload, list) else []
+        except Exception:
+            # Exception URLs and provider error bodies can contain API credentials.
+            raise RuntimeError("FMP request unavailable; check provider configuration") from None
 
     def _optional_get(self, endpoint: str, **params: object) -> list[dict[str, object]]:
         try:

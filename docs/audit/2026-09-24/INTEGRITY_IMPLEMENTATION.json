@@ -1,0 +1,30 @@
+{
+  "backtest_runs": {
+    "original_rows": 2531,
+    "all_original_rows_unchanged": true
+  },
+  "prediction_snapshots": {
+    "original_rows": 3235,
+    "all_original_rows_unchanged": true
+  },
+  "prediction_input_snapshots": {
+    "original_rows": 2548,
+    "all_original_rows_unchanged": true
+  },
+  "outcome_label_observations": {
+    "original_rows": 1873,
+    "all_original_rows_unchanged": true
+  },
+  "shadow_decision_snapshots": {
+    "original_rows": 3010,
+    "all_original_rows_unchanged": true
+  },
+  "model_registry_unchanged": true,
+  "final_query_seconds": [
+    0.0253500840626657,
+    0.02298470796085894,
+    0.023099916987121105,
+    0.022680042078718543,
+    0.022416249965317547
+  ]
+}

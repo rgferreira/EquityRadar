@@ -1,0 +1,388 @@
+{
+  "capture_dates": 40,
+  "contract": {
+    "bootstrap_block": 2,
+    "bootstrap_draws": 2000,
+    "bootstrap_seed": 20260924,
+    "cash_return_pct": 0,
+    "cost_bps": [
+      10,
+      30,
+      50
+    ],
+    "embargo_days": 5,
+    "horizons": {
+      "1M": 21,
+      "3M": 63
+    },
+    "market_average_sessions": 200,
+    "max_names_per_sector": 2,
+    "min_ci_cohorts": 10,
+    "promotion": "disabled",
+    "relative_strength_threshold_pct": 0,
+    "sector_lookback_sessions": 63,
+    "sector_slot_weight": 0.2,
+    "sector_slots": 5,
+    "selection": "recorded_buy_market_ma200_or_sector_63d_top5_max2_per_sector",
+    "version": "entry-context-v2",
+    "warmup_dates": 3
+  },
+  "dataset_signature": "4666a80ed49cb3e5be5e2e3ebfc473241489ed2aadf26566e8f8b9c0ea83b512",
+  "exclusions": {
+    "horizon_not_mature_or_benchmark_missing": 7,
+    "insufficient_purged_prior_dates": 9,
+    "overlapping_test_window": 20
+  },
+  "horizon": "3M",
+  "limitations": [
+    "Legacy data and current adjusted price vintages are retrospective, never unseen out-of-sample evidence",
+    "Watchlist selection/survivorship and discretionary entry/exit differences remain",
+    "Non-overlapping blocks are not proven independent; exploratory intervals do not correct multiple testing",
+    "Daily close drawdown omits intraday moves; no taxes, market impact or FX model",
+    "Unavailable candidates are excluded explicitly; paired excess uses identical dates, total curves may span different dates"
+  ],
+  "mature_complete_dates": 33,
+  "promotion_eligible": false,
+  "source": "retrospective_unverified",
+  "status": "research_only",
+  "summary": [
+    {
+      "cost_bps": 10,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -8.884972983911343,
+      "mean_entry_hit_rate_pct": null,
+      "mean_excess_current_pct": -1.099177272912669,
+      "mean_excess_spy_pct": 0.0,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.051365341183282,
+      "net_return_pct": 21.95211958797987,
+      "positive_excess_cohorts": 0,
+      "strategy": "SPY",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": null
+    },
+    {
+      "cost_bps": 10,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -21.00509978318965,
+      "mean_entry_hit_rate_pct": 46.666666666666664,
+      "mean_excess_current_pct": 0.0,
+      "mean_excess_spy_pct": 1.099177272912669,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0623626125480916,
+      "net_return_pct": 24.953388354672178,
+      "positive_excess_cohorts": 2,
+      "strategy": "candidate_market",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1580088599889742,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 10,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -21.00509978318965,
+      "mean_entry_hit_rate_pct": 46.666666666666664,
+      "mean_excess_current_pct": 0.0,
+      "mean_excess_spy_pct": 1.099177272912669,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0623626125480916,
+      "net_return_pct": 24.953388354672178,
+      "positive_excess_cohorts": 2,
+      "strategy": "current_policy",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1580088599889742,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 10,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -27.381740012377875,
+      "mean_entry_hit_rate_pct": 45.45454545454545,
+      "mean_excess_current_pct": -0.769466157277062,
+      "mean_excess_spy_pct": 0.3297111156356063,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.054664101719906,
+      "net_return_pct": 21.24176207837687,
+      "positive_excess_cohorts": 2,
+      "strategy": "equal_weight_universe",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1666999660594402,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 10,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -27.381740012377875,
+      "mean_entry_hit_rate_pct": 45.45454545454545,
+      "mean_excess_current_pct": -0.769466157277062,
+      "mean_excess_spy_pct": 0.3297111156356063,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.054664101719906,
+      "net_return_pct": 21.24176207837687,
+      "positive_excess_cohorts": 2,
+      "strategy": "market_filter_only",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1666999660594402,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 10,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -49.98948564963429,
+      "mean_entry_hit_rate_pct": 45.0,
+      "mean_excess_current_pct": 2.587043441291434,
+      "mean_excess_spy_pct": 3.6862207142041026,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.088245988649056,
+      "net_return_pct": 26.139407971897334,
+      "positive_excess_cohorts": 1,
+      "strategy": "momentum_v1",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": 1.773114045580621,
+        "omitted": "IONQ"
+      }
+    },
+    {
+      "cost_bps": 30,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -9.006833437619877,
+      "mean_entry_hit_rate_pct": null,
+      "mean_excess_current_pct": -1.0969811128797717,
+      "mean_excess_spy_pct": 0.0,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.049317048281452,
+      "net_return_pct": 20.9803936648036,
+      "positive_excess_cohorts": 0,
+      "strategy": "SPY",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": null
+    },
+    {
+      "cost_bps": 30,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -21.16293186991063,
+      "mean_entry_hit_rate_pct": 46.666666666666664,
+      "mean_excess_current_pct": 0.0,
+      "mean_excess_spy_pct": 1.0969811128797717,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0603033388460963,
+      "net_return_pct": 23.957748040562365,
+      "positive_excess_cohorts": 2,
+      "strategy": "candidate_market",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1396001260852244,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 30,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -21.16293186991063,
+      "mean_entry_hit_rate_pct": 46.666666666666664,
+      "mean_excess_current_pct": 0.0,
+      "mean_excess_spy_pct": 1.0969811128797717,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0603033388460963,
+      "net_return_pct": 23.957748040562365,
+      "positive_excess_cohorts": 2,
+      "strategy": "current_policy",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1396001260852244,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 30,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -27.5268315496345,
+      "mean_entry_hit_rate_pct": 45.45454545454545,
+      "mean_excess_current_pct": -0.7679287612055474,
+      "mean_excess_spy_pct": 0.32905235167422475,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.052612514998269,
+      "net_return_pct": 20.275696350440665,
+      "positive_excess_cohorts": 2,
+      "strategy": "equal_weight_universe",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1552870613814183,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 30,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -27.5268315496345,
+      "mean_entry_hit_rate_pct": 45.45454545454545,
+      "mean_excess_current_pct": -0.7679287612055474,
+      "mean_excess_spy_pct": 0.32905235167422475,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.052612514998269,
+      "net_return_pct": 20.275696350440665,
+      "positive_excess_cohorts": 2,
+      "strategy": "market_filter_only",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1552870613814183,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 30,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -50.08940683209347,
+      "mean_entry_hit_rate_pct": 45.0,
+      "mean_excess_current_pct": 2.581874519453966,
+      "mean_excess_spy_pct": 3.678855632333738,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.086160870337874,
+      "net_return_pct": 25.13431734227547,
+      "positive_excess_cohorts": 1,
+      "strategy": "momentum_v1",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": 1.7895513924705775,
+        "omitted": "IONQ"
+      }
+    },
+    {
+      "cost_bps": 50,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -9.188638647304447,
+      "mean_entry_hit_rate_pct": null,
+      "mean_excess_current_pct": -1.0947893342134973,
+      "mean_excess_spy_pct": 0.0,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0472728417495007,
+      "net_return_pct": 20.01640766448327,
+      "positive_excess_cohorts": 0,
+      "strategy": "SPY",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": null
+    },
+    {
+      "cost_bps": 50,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -21.320449079650594,
+      "mean_entry_hit_rate_pct": 46.666666666666664,
+      "mean_excess_current_pct": 0.0,
+      "mean_excess_spy_pct": 1.0947893342134973,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0582481734208136,
+      "net_return_pct": 22.97003813052998,
+      "positive_excess_cohorts": 2,
+      "strategy": "candidate_market",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1212281178351713,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 50,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -21.320449079650594,
+      "mean_entry_hit_rate_pct": 46.666666666666664,
+      "mean_excess_current_pct": 0.0,
+      "mean_excess_spy_pct": 1.0947893342134973,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0582481734208136,
+      "net_return_pct": 22.97003813052998,
+      "positive_excess_cohorts": 2,
+      "strategy": "current_policy",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1212281178351713,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 50,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -27.671633627465198,
+      "mean_entry_hit_rate_pct": 45.45454545454545,
+      "mean_excess_current_pct": -0.7663944322583411,
+      "mean_excess_spy_pct": 0.3283949019551564,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.050565021217723,
+      "net_return_pct": 19.31732546117204,
+      "positive_excess_cohorts": 2,
+      "strategy": "equal_weight_universe",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1438969255905294,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 50,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -27.671633627465198,
+      "mean_entry_hit_rate_pct": 45.45454545454545,
+      "mean_excess_current_pct": -0.7663944322583411,
+      "mean_excess_spy_pct": 0.3283949019551564,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.050565021217723,
+      "net_return_pct": 19.31732546117204,
+      "positive_excess_cohorts": 2,
+      "strategy": "market_filter_only",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": -1.1438969255905294,
+        "omitted": "MU"
+      }
+    },
+    {
+      "cost_bps": 50,
+      "excess_current_exploratory_95ci": null,
+      "excess_spy_exploratory_95ci": null,
+      "max_drawdown_pct": -50.189128670547724,
+      "mean_entry_hit_rate_pct": 45.0,
+      "mean_excess_current_pct": 2.576715909680055,
+      "mean_excess_spy_pct": 3.6715052438935523,
+      "mean_exposure_pct": 100.0,
+      "mean_traded_notional": 2.0840799118637214,
+      "net_return_pct": 24.137232389718477,
+      "positive_excess_cohorts": 1,
+      "strategy": "momentum_v1",
+      "test_cohorts": 4,
+      "worst_leave_one_name_out": {
+        "mean_excess_spy_pct": 1.805955946648535,
+        "omitted": "IONQ"
+      }
+    }
+  ],
+  "test_cohorts": 4,
+  "unavailable_candidates": {
+    "candidate_sector": 32
+  },
+  "version": "entry-context-v2"
+}
