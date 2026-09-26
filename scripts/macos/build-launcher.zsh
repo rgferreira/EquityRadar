@@ -2,10 +2,11 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/Users/rafaelgonzalezferreira/Documents/PersonalEquityRadar"
+SCRIPT_DIR="${0:A:h}"
+PROJECT_ROOT="${SCRIPT_DIR:h:h}"
 SOURCE_DIR="$PROJECT_ROOT/scripts/macos"
-DEFAULT_DESTINATION="/Users/rafaelgonzalezferreira/Applications/Equity Radar.app"
-DESKTOP_LINK="/Users/rafaelgonzalezferreira/Desktop/Equity Radar.app"
+DEFAULT_DESTINATION="$HOME/Applications/Equity Radar.app"
+DESKTOP_LINK="$HOME/Desktop/Equity Radar.app"
 LAUNCH_SERVICES_REGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 DESTINATION="${1:-$DEFAULT_DESTINATION}"
 BUILD_ROOT="$(/usr/bin/mktemp -d /private/tmp/equity-radar-launcher.XXXXXX)"

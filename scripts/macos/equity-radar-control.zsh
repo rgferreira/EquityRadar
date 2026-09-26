@@ -1,10 +1,11 @@
 #!/bin/zsh
 
-# Standalone lifecycle control for Equity Radar. It intentionally uses absolute
-# project paths so Finder/AppleScript launches do not depend on shell profiles.
+# Standalone lifecycle control for Equity Radar. Resolve the checkout from this
+# script so the repository does not publish or depend on a developer home path.
 set -u
 
-PROJECT_ROOT="/Users/rafaelgonzalezferreira/Documents/PersonalEquityRadar"
+SCRIPT_DIR="${0:A:h}"
+PROJECT_ROOT="${SCRIPT_DIR:h:h}"
 APP="$PROJECT_ROOT/app.py"
 SUPPORT_DIR="$HOME/Library/Application Support/EquityRadar"
 VENV_DIR="$SUPPORT_DIR/venv-3.9"
