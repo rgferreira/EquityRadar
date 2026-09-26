@@ -1,5 +1,18 @@
 # Implemented features
 
+## September 2026 research recovery and risk diagnostics
+
+- Entry context v2 freezes market/sector candidates and evaluates complete daily
+  paths, purged nonoverlapping periods, fees and benchmark excess. Macro, CFTC and
+  option chains are persisted with explicit availability and zero new score weight.
+- Entry risk v3 adds an independent immutable capture clock, inverse-volatility
+  sizing with name caps and a separately available sector cap, paired economic
+  controls at identical exposure, loss concentration, payoff and close-based
+  MAE/MFE, plus date-balanced score bands and within-date rank diagnostics.
+- Existing background maintenance captures and matures both streams. Page
+  rendering reads local reports; legacy/manual simulations and v2 rules remain
+  unchanged. See [validation and limits](audit/2026-09-26/RIESGO_SCORE_Y_VALIDACION_ES.md).
+
 ## Phase 3.9 · Technology Potential shadow challenger
 
 - FINRA consolidated daily short-sale volume now refreshes watchlist-wide into immutable, revision-aware

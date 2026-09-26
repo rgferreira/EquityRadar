@@ -1,0 +1,118 @@
+{
+  "date": "2026-09-26",
+  "browser": "Chrome Rafael",
+  "method": "Reload to heading visible and Streamlit script notRunning; browser and server caches warm; includes automation overhead. Ten samples per route; empirical nearest-rank p95 equals sample maximum. Not a cold-process or mobile-network SLA. Entry research sampled before a later metadata-compaction edit.",
+  "samples_ms": {
+    "Entry-research": [
+      1512,
+      1056,
+      995,
+      965,
+      1097,
+      1181,
+      1039,
+      886,
+      1731,
+      1015
+    ],
+    "Dashboard": [
+      3681,
+      1924,
+      2100,
+      2850,
+      2959,
+      2331,
+      2082,
+      2398,
+      2092,
+      2363
+    ],
+    "Operations": [
+      1498,
+      1601,
+      1267,
+      1384,
+      1357,
+      1551,
+      1487,
+      1405,
+      1258,
+      1378
+    ],
+    "Company": [
+      1280,
+      1097,
+      1303,
+      1221,
+      1554,
+      1197,
+      1208,
+      1186,
+      1808,
+      1461
+    ],
+    "Model-tuning": [
+      1517,
+      1278,
+      1259,
+      1593,
+      1344,
+      1443,
+      1595,
+      1471,
+      1494,
+      1400
+    ],
+    "WhaleSeeker": [
+      882,
+      1055,
+      858,
+      729,
+      873,
+      788,
+      936,
+      866,
+      1169,
+      949
+    ]
+  },
+  "summary": [
+    {
+      "route": "Entry-research",
+      "n": 10,
+      "median_ms": 1047.5,
+      "p95_nearest_rank_ms": 1731
+    },
+    {
+      "route": "Dashboard",
+      "n": 10,
+      "median_ms": 2347.0,
+      "p95_nearest_rank_ms": 3681
+    },
+    {
+      "route": "Operations",
+      "n": 10,
+      "median_ms": 1394.5,
+      "p95_nearest_rank_ms": 1601
+    },
+    {
+      "route": "Company",
+      "n": 10,
+      "median_ms": 1250.5,
+      "p95_nearest_rank_ms": 1808
+    },
+    {
+      "route": "Model-tuning",
+      "n": 10,
+      "median_ms": 1457.0,
+      "p95_nearest_rank_ms": 1595
+    },
+    {
+      "route": "WhaleSeeker",
+      "n": 10,
+      "median_ms": 877.5,
+      "p95_nearest_rank_ms": 1169
+    }
+  ],
+  "page_exceptions": 0
+}

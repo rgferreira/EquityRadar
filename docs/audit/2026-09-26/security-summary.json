@@ -1,0 +1,13 @@
+{
+  "installed_dependencies": 62,
+  "known_vulnerabilities": 0,
+  "skipped_dependencies": [],
+  "database_mode": "0o600",
+  "private_config_mode": "0o600",
+  "private_config_directory_mode": "0o700",
+  "configured_xsrf": true,
+  "configured_cors": true,
+  "usage_telemetry": false,
+  "tracked_sensitive_file_paths": [],
+  "residual": "Network membership remains the access boundary; no application-level user authentication. No external penetration test or clean-machine restore was performed."
+}

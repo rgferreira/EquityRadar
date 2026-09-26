@@ -1,8 +1,34 @@
 # Next best actions
 
-Last reviewed: 2026-07-20. Current internal status: **Phase 3.9 engineering closed; daily-short-flow shadow monitoring continues**.
+Last reviewed: 2026-09-26. Current internal status: **Recovery and entry research v2/v3 implemented; independent prospective evidence is accumulating. No new promotion.**
 
 This is the live planning document. Completed work belongs in [`implemented-features.md`](implemented-features.md); design and source investigations remain in their dedicated documents. Phase 4 has **not started**.
+
+## Current priority after the September recovery
+
+The [four-step implementation](audit/2026-09-24/CUATRO_PASOS_IMPLEMENTADOS_ES.md)
+and [risk/score iteration](audit/2026-09-26/RIESGO_SCORE_Y_VALIDACION_ES.md) supersede
+the July next-action ordering below. Existing v5 shadow lineage stays separate.
+
+1. Preserve automatic prospective A/B and C collection, source freshness, and
+   immutable outcomes. Diagnose missing dates and failures from Operations.
+2. Keep A and C unpromoted: A's better hit rate worsens economics; C reduces
+   historical drawdown but sacrifices excess return, including against the
+   exposure-matched control. Do not retune these candidates against this history.
+3. Use the new date-balanced score bands, within-date rank correlation and
+   matched-band comparisons to define the next distinct selection hypothesis.
+   The current score has not demonstrated reliable monotonic economic ordering.
+4. Admit a single incremental macro/flow/options hypothesis only after adequate
+   quote-date continuity and a separately frozen evaluation. CP spreads, CFTC and
+   options collection are implemented with zero added directional weight. They
+   do not constitute the queued CDS/OAS Phase 3.91 feature.
+5. Dashboard remains the slowest measured route; prioritize profiling its cold
+   path before expanding UI scope. Keep the current ZeroTier boundary, verified
+   private backups and dependency audit. Application-level authentication and
+   a clean-machine recovery drill remain separate follow-up work.
+
+No dated execution commitment or additional automatic promotion is created by
+this ordering. The sections below preserve prior phase boundaries and context.
 
 ## Phase 3.8 - completed implementation sequence
 
@@ -19,9 +45,9 @@ are implemented. The reconciled release boundary and latest acceptance evidence 
 [`releases/phase-3.9/CLOSURE-2026-07-20.md`](releases/phase-3.9/CLOSURE-2026-07-20.md); the original
 [`2026-07-14 acceptance`](releases/phase-3.9/ACCEPTANCE-2026-07-14.md) remains as a historical snapshot.
 
-The next model-research action is to continue collecting genuinely prospective evidence. The
-[`options-positioning-v1`](experiments/options-positioning-v1.md) hypothesis is preregistered, but no new
-shadow model exists and no score change is authorized.
+Continue collecting genuinely prospective evidence. The
+[`options-positioning-v1`](experiments/options-positioning-v1.md) hypothesis remains separate
+from the active v5 shadow and entry-context/risk experiments; options have no new live score weight.
 
 ## Phase 3.9 post-release monitoring — implementation complete; outcomes maturing
 

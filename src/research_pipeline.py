@@ -81,11 +81,17 @@ def run_pipeline(db_path=None, *, include_history=False, refresh_sources=True):
                 report_id = save_report(report, db_path)
                 reports.append({"source": report["source"], "horizon": horizon, "report_id": report_id,
                                 "test_cohorts": report["test_cohorts"], "exclusions": report["exclusions"]})
+        from src.entry_risk import run_research
+        try:
+            risk_research = run_research(histories, prospective, legacy if include_history else None, db_path)
+        except Exception as exc:
+            # V3 records its own failure; never discard a completed v2 capture.
+            risk_research = {"status": "failed", "error_code": type(exc).__name__}
         summary = {"capture": capture, "reports": reports, "source_status_counts": {
             s: sum(r["status"] == s for r in source_results) for s in ("captured", "empty", "failed")},
             "price_histories": len(histories), "price_failures": len(failures),
             "options_usable_tickers": sum(r["status"] == "usable_context" for r in options_coverage(tickers, db_path)),
-            "completed_at": utcnow()}
+            "risk_research": risk_research, "completed_at": utcnow()}
         record_status("pipeline", VERSION, "captured" if capture["status"] == "captured" else "failed",
                       error_code=None if capture["status"] == "captured" else capture["status"], db_path=db_path)
         return summary

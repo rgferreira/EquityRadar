@@ -14,7 +14,7 @@ The documents in this folder have distinct roles so planning, implementation his
 | [`model-governance.md`](model-governance.md) | Explicit registry, immutable prediction lineage, legacy separation and replay | Current |
 | [`nonstationarity-monitor.md`](nonstationarity-monitor.md) | Paper-derived adjacent-window monitor for prospective live-model evidence | Current |
 | [`audit/2026-07-13/FORENSIC_REVIEW_ES.md`](audit/2026-07-13/FORENSIC_REVIEW_ES.md) | Independent forensic review and scientific risk register | Authoritative audit |
-| [`next-best-actions.md`](next-best-actions.md) | Phase 3.9 monitoring, queued Phase 3.91 Credit Stress Feature, and saved Phase 4 candidates | Current |
+| [`next-best-actions.md`](next-best-actions.md) | September recovery, v2/v3 prospective research, remaining risks and preserved phase boundaries | Current |
 | [`implemented-features.md`](implemented-features.md) | Detailed record of behavior already present in the application | Current |
 | [`internal-changelog.md`](internal-changelog.md) | Compact internal phase/checkpoint and scoring-model narrative | Current |
 | [`industry-feature.md`](industry-feature.md) | Industry cohort architecture, calibration and refresh rules | Reference |

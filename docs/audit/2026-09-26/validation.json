@@ -1,0 +1,16 @@
+{
+  "tests_passed": 363,
+  "known_warning": "Existing yfinance raise_errors deprecation",
+  "compile": "passed",
+  "imports": "passed",
+  "cached_replay_identical": true,
+  "first_snapshot_replays": true,
+  "restart_dashboard_and_zerotier_verified": true,
+  "browser_routes": 6,
+  "completed_browser_samples": 60,
+  "browser_exceptions": 0,
+  "mobile_width": 390,
+  "mobile_height": 844,
+  "mobile_horizontal_overflow": false,
+  "viewport_reset": true
+}

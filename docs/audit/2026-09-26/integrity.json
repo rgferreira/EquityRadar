@@ -1,0 +1,15 @@
+{
+  "valid": true,
+  "integrity": "ok",
+  "table_count": 55,
+  "row_counts_match": true,
+  "temporary_copy_removed": true,
+  "original_rows_changed_or_missing": {
+    "entry_context_snapshots": 0,
+    "entry_context_reports": 0,
+    "prediction_input_snapshots": 0,
+    "prediction_snapshots": 0,
+    "backtest_runs": 0,
+    "shadow_decision_snapshots": 0
+  }
+}

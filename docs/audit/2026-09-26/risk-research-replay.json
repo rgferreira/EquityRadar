@@ -1,0 +1,33 @@
+{
+  "capture": {
+    "saved": false,
+    "snapshot_id": "94c7d72a8c4d4d7980fb8e0a81859825d2c1ff00c30cfa7b623f463eb2c33772",
+    "status": "captured"
+  },
+  "reports": [
+    {
+      "horizon": "1M",
+      "report_id": "deae76a3fc873dfefc3b7c558d2d87daa24ed0c9a3abf21a1fe992f81f6e1e12",
+      "source": "prospective",
+      "test_cohorts": 0
+    },
+    {
+      "horizon": "3M",
+      "report_id": "487c00508504deae83c94774d2119c2e8df2b68b53fb5d578f614676ad2216e3",
+      "source": "prospective",
+      "test_cohorts": 0
+    },
+    {
+      "horizon": "1M",
+      "report_id": "985add38c1336d34dc5f032a8022e3470f5216459fa70738b3c2b602d3f11802",
+      "source": "retrospective_unverified",
+      "test_cohorts": 12
+    },
+    {
+      "horizon": "3M",
+      "report_id": "1166c1d50dcfecefff8144920e81c00a00f34dadb45e2598f3803ef3d3d092bb",
+      "source": "retrospective_unverified",
+      "test_cohorts": 4
+    }
+  ]
+}
