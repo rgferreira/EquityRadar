@@ -5,7 +5,11 @@
 set -u
 
 SCRIPT_DIR="${0:A:h}"
-PROJECT_ROOT="${SCRIPT_DIR:h:h}"
+PROJECT_ROOT="${EQUITY_RADAR_PROJECT_ROOT:-${SCRIPT_DIR:h:h}}"
+# The native launcher materializes a bundled copy outside the checkout.
+if [[ -z "${EQUITY_RADAR_PROJECT_ROOT:-}" && ! -f "$PROJECT_ROOT/app.py" ]]; then
+  PROJECT_ROOT="$HOME/Documents/PersonalEquityRadar"
+fi
 APP="$PROJECT_ROOT/app.py"
 SUPPORT_DIR="$HOME/Library/Application Support/EquityRadar"
 VENV_DIR="$SUPPORT_DIR/venv-3.9"

@@ -236,8 +236,8 @@ def test_macos_launcher_is_idempotent_and_scoped_to_equity_radar():
     assert icon_master.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
     assert "EquityRadar.icns in Resources" in project
     assert 'PREVIOUS_APP="$BUILD_ROOT/' in builder
-    assert 'DEFAULT_DESTINATION="/Users/rafaelgonzalezferreira/Applications/Equity Radar.app"' in builder
-    assert 'DESKTOP_LINK="/Users/rafaelgonzalezferreira/Desktop/Equity Radar.app"' in builder
+    assert 'DEFAULT_DESTINATION="$HOME/Applications/Equity Radar.app"' in builder
+    assert 'DESKTOP_LINK="$HOME/Desktop/Equity Radar.app"' in builder
     assert '/bin/ln -s "$DESTINATION" "$DESKTOP_LINK"' in builder
     assert "work/backups/launcher-" not in builder
     assert "Full Xcode unavailable; rebuilt and locally signed the native launcher." in builder

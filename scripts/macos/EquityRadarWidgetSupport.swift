@@ -86,9 +86,10 @@ private func materializedEquityRadarControlScript() throws -> String {
 }
 
 private func verifyEquityRadarProjectAccess() throws {
-    let marker = URL(
-        fileURLWithPath: "/Users/rafaelgonzalezferreira/Documents/PersonalEquityRadar/app.py"
-    )
+    let projectRoot = ProcessInfo.processInfo.environment["EQUITY_RADAR_PROJECT_ROOT"]
+        ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents/PersonalEquityRadar").path
+    let marker = URL(fileURLWithPath: projectRoot).appendingPathComponent("app.py")
     _ = try Data(contentsOf: marker, options: .mappedIfSafe)
 }
 
